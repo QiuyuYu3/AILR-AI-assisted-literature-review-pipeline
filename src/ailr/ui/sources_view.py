@@ -150,7 +150,7 @@ def _extraction_detail(source_id: int) -> Any:
         flag_block = html.Div(
             [
                 html.H6("Flag check", className="mt-3"),
-                html.Ul([html.Li(f"{f.get('criterion', '?')}: {f.get('verdict', '')} — {f.get('reasoning', '')}", className="small") for f in flag]),
+                html.Ul([html.Li(f"{f.get('criterion_id', '?')}: {f.get('verdict', '')} — {f.get('reason', '')}", className="small") for f in flag]),
             ]
         )
     return html.Div([html.Div(src.title if src else "", className="text-muted small mb-2"), table, flag_block])

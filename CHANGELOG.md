@@ -7,6 +7,9 @@
 - UI theme refresh: soft cards, pill buttons/badges, near-black primary + green accent, narrower sidebar.
 - Summary stacked one card per row; abstract and full-text conflicts now shown separately.
 
+### Fixed
+- Conflict cards and Sources now show flag-check criterion/reason instead of "?" (was reading wrong keys).
+
 ---
 ## [0.16.0] – 2026-06-08
 

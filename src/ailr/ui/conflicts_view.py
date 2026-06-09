@@ -42,8 +42,8 @@ def ai_detail_block(ai: dict, flag_check: Any = None) -> Any:
                     html.Div(
                         [
                             dbc.Badge((f.get("verdict") or "").upper(), color=_FLAG_COLORS.get((f.get("verdict") or "").upper(), "secondary"), className="me-2"),
-                            html.Strong(str(f.get("criterion", "?")), className="small me-2"),
-                            html.Span(f.get("reasoning") or "", className="text-muted small"),
+                            html.Strong(str(f.get("criterion_id", "?")), className="small me-2"),
+                            html.Span(f.get("reason") or "", className="text-muted small"),
                         ],
                         className="mb-1",
                     )
