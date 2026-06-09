@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ailr"
+version = "0.16.1"
+description = "AI-assisted literature review pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Qiuyu Yu", email = "qiuyuyu.psych@gmail.com" }]
+dependencies = [
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "rispy>=0.10",
+    "bibtexparser>=1.4",
+    "rapidfuzz>=3.6",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "dash>=2.16",
+    "dash-bootstrap-components>=1.6",
+    "dash-ag-grid>=31.0",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+anthropic = ["anthropic>=0.40"]
+openai = ["openai>=1.40"]
+gemini = ["google-generativeai>=0.8"]
+pdf = ["pymupdf>=1.24", "pymupdf4llm>=0.0.10"]
+# ui and postgres are now core dependencies; kept as no-op aliases for back-compat.
+ui = []
+postgres = []
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+ailr = "ailr.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/QiuyuYu3/AILR-AI-assisted-literature-review-pipeline"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ailr"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/ailr", "README.md", "CHANGELOG.md", "ROADMAP.md", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]

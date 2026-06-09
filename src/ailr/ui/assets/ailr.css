@@ -1,0 +1,178 @@
+/* ailr UI theme: soft cards, light surface, near-black primary + green accent. */
+
+:root {
+  --ailr-bg: #f4f4f2;
+  --ailr-surface: #ffffff;
+  --ailr-text: #1f1f21;
+  --ailr-muted: #8b8b90;
+  --ailr-border: #ececec;
+  --ailr-radius: 16px;
+  --ailr-radius-sm: 10px;
+  --ailr-shadow: 0 1px 2px rgba(20, 20, 30, 0.04), 0 6px 20px rgba(20, 20, 30, 0.05);
+  --ailr-dark: #1d1d1f;
+  --ailr-accent: #16a34a;
+
+  --bs-success: #16a34a;
+  --bs-success-rgb: 22, 163, 74;
+}
+
+body {
+  background-color: var(--ailr-bg);
+  color: var(--ailr-text);
+  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, .h4 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+h5, h6, .h5, .h6 {
+  font-weight: 600;
+}
+.text-muted {
+  color: var(--ailr-muted) !important;
+}
+
+/* Cards */
+.card {
+  border: none;
+  border-radius: var(--ailr-radius);
+  background: var(--ailr-surface);
+  box-shadow: var(--ailr-shadow);
+}
+.card-header {
+  background: transparent;
+  border-bottom: 1px solid var(--ailr-border);
+  font-weight: 600;
+}
+
+/* Buttons: pill shape, near-black primary */
+.btn {
+  border-radius: 999px;
+  font-weight: 500;
+}
+.btn-link {
+  border-radius: 0;
+  text-decoration: none;
+}
+.btn-primary {
+  background-color: var(--ailr-dark);
+  border-color: var(--ailr-dark);
+}
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+  background-color: #000000;
+  border-color: #000000;
+}
+.btn-success {
+  background-color: var(--ailr-accent);
+  border-color: var(--ailr-accent);
+}
+.btn-outline-secondary {
+  border-color: #d8d8da;
+  color: #4a4a4f;
+}
+.btn-outline-secondary:hover {
+  background-color: #f0f0ee;
+  border-color: #cfcfd2;
+  color: var(--ailr-text);
+}
+
+/* Sidebar nav: muted items, white rounded highlight when active */
+/* Sidebar: narrower fixed width, content fills the rest (toggle-safe via flex) */
+#sidebar-col {
+  flex: 0 0 210px;
+  max-width: 210px;
+}
+#content-col {
+  flex: 1 1 0;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+}
+
+.nav-pills .nav-link {
+  color: var(--ailr-muted);
+  border-radius: var(--ailr-radius-sm);
+  padding: 0.4rem 0.75rem;
+  margin-bottom: 1px;
+  font-weight: 500;
+}
+.nav-pills .nav-link:hover {
+  background-color: rgba(20, 20, 30, 0.04);
+  color: var(--ailr-text);
+}
+.nav-pills .nav-link.active,
+.nav-pills .show > .nav-link {
+  background-color: var(--ailr-surface);
+  color: var(--ailr-text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(20, 20, 30, 0.06), 0 2px 8px rgba(20, 20, 30, 0.05);
+}
+
+/* Tabs: neutral, black active (no blue) */
+.nav-tabs {
+  border-bottom: 1px solid var(--ailr-border);
+}
+.nav-tabs .nav-link {
+  color: var(--ailr-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-weight: 500;
+  margin-bottom: -1px;
+}
+.nav-tabs .nav-link:hover {
+  color: var(--ailr-text);
+  border-color: transparent;
+  border-bottom-color: var(--ailr-border);
+}
+.nav-tabs .nav-link.active {
+  color: var(--ailr-text);
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--ailr-dark);
+}
+
+/* Inputs */
+.form-control,
+.form-select {
+  border-radius: var(--ailr-radius-sm);
+  border-color: var(--ailr-border);
+  background-color: var(--ailr-surface);
+}
+.form-control:focus,
+.form-select:focus {
+  border-color: #cdcdd0;
+  box-shadow: 0 0 0 0.2rem rgba(20, 20, 30, 0.04);
+}
+
+/* Badges: pill shape */
+.badge {
+  border-radius: 999px;
+  font-weight: 600;
+  padding: 0.36em 0.7em;
+}
+
+/* Tables */
+.table {
+  --bs-table-bg: transparent;
+}
+.table > :not(caption) > * > * {
+  border-bottom-color: var(--ailr-border);
+}
+
+/* Modals */
+.modal-content {
+  border: none;
+  border-radius: var(--ailr-radius);
+  box-shadow: 0 10px 40px rgba(20, 20, 30, 0.12);
+}
+
+/* Dividers */
+hr {
+  border-color: var(--ailr-border);
+  opacity: 1;
+}

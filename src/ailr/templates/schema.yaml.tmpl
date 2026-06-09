@@ -1,0 +1,57 @@
+# Extraction schema for {{project_name}}.
+#
+# Bibliographic metadata (title, authors, year, journal, doi) comes from the imported
+# record (the `sources` table) and is joined into exports by source_id automatically —
+# do NOT list it here; the AI only extracts what the full text actually adds.
+#
+# Two layers compose the final extraction schema:
+#   1. Suggested      - opt-in from the built-in catalogue by name (`include_suggested`).
+#                       Available: publication_type, country, study_design, sample_size,
+#                                  primary_research_goal, language, keywords.
+#                       Use `all` to enable everything, `[]` for none, or list names.
+#   2. Project fields - your own domain-specific fields under `fields:` below.
+
+include_suggested:
+  - primary_research_goal
+  - sample_size
+
+fields:
+  # Replace these with your own domain-specific fields.
+  #
+  # Field types supported:
+  #   string | integer | number | boolean
+  #   list                 (with item_type)
+  #   object               (with fields: nested list)
+  #   list of objects      (type: list, item_type: object, item_fields: [...])
+  #
+  # Field options:
+  #   description: shown to the LLM and in the codebook
+  #   enum: closed category list
+  #   required: true | false
+  #   multi: true | false   (for list type, allow multi-select in UI)
+
+  - name: population_type
+    description: "Study population characterization"
+    type: string
+    enum: [Typically-developing, Clinical, Mixed, Not-reported]
+    required: true
+
+  - name: example_nested_field
+    description: "Example showing nested object structure"
+    type: object
+    fields:
+      - name: n_units
+        type: integer
+      - name: unit_type
+        type: string
+        enum: [dyads, groups, individuals]
+
+  - name: example_list_of_objects
+    description: "Example showing list-of-objects (multiple findings per paper)"
+    type: list
+    item_type: object
+    item_fields:
+      - name: finding_name
+        type: string
+      - name: value
+        type: string

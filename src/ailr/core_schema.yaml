@@ -1,0 +1,58 @@
+# Built-in field catalogue for ailr.
+#
+# Every field here is a SUGGESTED module (opt-in via `include_suggested: [name, ...]`).
+# Nothing is forced — fully user-customizable. Bibliographic metadata (title/authors/
+# year/journal/doi) is NOT here: it comes from the imported record and is joined by
+# source_id, so the AI only extracts what the full text actually adds.
+#
+# Users add their own domain-specific fields under `fields:` in their schema.yaml.
+
+fields:
+  # title / authors / year / journal / doi are already captured at import (in the
+  # `sources` table) and joined into exports by source_id, so they are NOT
+  # AI-extraction fields. Only fields the full text actually adds belong below.
+
+  # ─── Suggested (opt-in via include_suggested) ─────────────────────────
+  - name: publication_type
+    description: "Journal / Conference / Preprint / Other (only if not clear from the source record)"
+    type: string
+    enum: [Journal, Conference, Preprint, Other]
+    required: false
+    core: false
+
+  - name: country
+    description: "Country of the first author's institution"
+    type: string
+    required: false
+    core: false
+
+  - name: study_design
+    description: "Study design as reported by authors; enum varies by review type, so kept as free text"
+    type: string
+    required: false
+    core: false
+
+  - name: sample_size
+    description: "Total N participants"
+    type: integer
+    required: false
+    core: false
+
+  - name: primary_research_goal
+    description: "1-2 sentences describing the main research aim"
+    type: string
+    required: false
+    core: false
+
+  - name: language
+    description: "Language(s) used in the study"
+    type: string
+    required: false
+    core: false
+
+  - name: keywords
+    description: "Author-supplied keywords"
+    type: list
+    item_type: string
+    required: false
+    core: false
