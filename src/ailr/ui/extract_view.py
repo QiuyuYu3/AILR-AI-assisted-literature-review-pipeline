@@ -306,18 +306,36 @@ def register_callbacks(app: Any) -> None:
         schema_path = project.root / project.config.extraction.schema_path
         fields = compose_schema(schema_path)
 
+        submit_blocked = False
         if trigger == "extract-submit":
             sources = _filtered(db, pid, filt)
             idx = (store or {}).get("idx", 0)
             if 0 <= idx < len(sources):
                 src = sources[idx]
-                ai_rows = {r["field_name"]: r for r in db.list_extractions(src.id, extractor_type="ai")}
-                _save_extraction(
-                    db, src, rid, fields,
-                    val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids,
-                    ai_rows=ai_rows,
+                other = (
+                    db.other_human_extracted(src.id, rid)
+                    if project.config.extraction.workflow == "verify"
+                    else None
                 )
-                feedback = "Extraction saved."
+                if other:
+                    submit_blocked = True
+                    feedback = dbc.Alert(
+                        [
+                            html.Span(f"#{src.id} was already extracted by ", className="me-1"),
+                            html.Strong(other),
+                            html.Span(" — your changes were not saved (verify mode: one human per paper).", className="ms-1"),
+                        ],
+                        color="warning",
+                        className="py-2 mb-0",
+                    )
+                else:
+                    ai_rows = {r["field_name"]: r for r in db.list_extractions(src.id, extractor_type="ai")}
+                    _save_extraction(
+                        db, src, rid, fields,
+                        val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids,
+                        ai_rows=ai_rows,
+                    )
+                    feedback = "Extraction saved."
 
         if trigger == "extract-move-ft":
             sources = _filtered(db, pid, filt)
@@ -356,7 +374,7 @@ def register_callbacks(app: Any) -> None:
             idx += 1
         elif trigger in ("shared-reviewer", "extract-filter"):
             idx = 0
-        elif trigger == "extract-submit":
+        elif trigger == "extract-submit" and not submit_blocked:
             idx += 1
 
         if not sources:

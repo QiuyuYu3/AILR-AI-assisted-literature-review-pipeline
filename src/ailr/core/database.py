@@ -1407,6 +1407,19 @@ class Database:
         ).fetchone()
         return row["reviewer_id"] if row else None
 
+    def other_human_extracted(self, source_id: int, reviewer_id: str) -> Optional[str]:
+        """For verify-mode extraction: the extractor_id of ANOTHER human who already extracted
+        this source, else None. Used to stop a second human from verifying the same paper."""
+        row = self._conn.execute(
+            """
+            SELECT extractor_id FROM extractions
+            WHERE source_id = ? AND extractor_type = 'human' AND extractor_id != ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (source_id, reviewer_id),
+        ).fetchone()
+        return row["extractor_id"] if row else None
+
     def insert_screening_reconciliation(
         self,
         source_id: int,

@@ -6,6 +6,7 @@
 ### Changed
 - UI theme refresh: soft cards, pill buttons/badges, near-black primary + green accent, narrower sidebar.
 - Summary stacked one card per row; abstract and full-text conflicts now shown separately.
+- Extraction `verify` mode enforces one human per paper (mirrors assisted screening); a second human's submit is blocked.
 
 ### Fixed
 - Conflict cards and Sources now show flag-check criterion/reason instead of "?" (was reading wrong keys).
