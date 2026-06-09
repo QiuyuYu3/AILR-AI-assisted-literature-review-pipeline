@@ -27,6 +27,7 @@ from ailr.ui.screen_view import (
 _STATUS_FILTERS = [
     {"label": "To review", "value": "to_review"},
     {"label": "Reviewed by me", "value": "reviewed"},
+    {"label": "To extract", "value": "to_extract"},
     {"label": "All", "value": "all"},
 ]
 
@@ -68,16 +69,20 @@ def layout() -> Any:
                         id="ft-filter-status",
                         options=_STATUS_FILTERS,
                         value="to_review",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Label("Sort", className="fw-bold mt-3"),
-                    dbc.Select(id="ft-sort", options=_SORT_OPTIONS, value="id"),
+                    dbc.Select(id="ft-sort", options=_SORT_OPTIONS, value="id", persistence=True, persistence_type="session"),
 
                     dbc.Label("Tags", className="fw-bold mt-2"),
                     dbc.Select(
                         id="ft-tags-filter",
                         options=[{"label": "(any)", "value": ""}],
                         value="",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Label("Keyword search", className="fw-bold mt-2"),
@@ -85,6 +90,8 @@ def layout() -> Any:
                         id="ft-search",
                         placeholder="Type and press Enter",
                         debounce=True,
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Label("Within", className="small mt-1"),
@@ -93,6 +100,8 @@ def layout() -> Any:
                         options=_WITHIN_OPTIONS,
                         value="title_and_abstract",
                         className="mb-2",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Label("Full-text", className="small"),
@@ -104,6 +113,8 @@ def layout() -> Any:
                         ],
                         value=["has"],
                         className="mb-2",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Label("Display", className="fw-bold mt-2"),
@@ -115,6 +126,18 @@ def layout() -> Any:
                             {"label": "100 per page", "value": "100"},
                         ],
                         value="25",
+                        persistence=True,
+                        persistence_type="session",
+                    ),
+
+                    dbc.Switch(
+                        id="ft-expand-all",
+                        label="Expand all abstracts",
+                        value=True,
+                        className="mt-2",
+                        label_class_name="fw-bold",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Button(
@@ -151,6 +174,22 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
+    @app.callback(
+        Output("tabs", "data", allow_duplicate=True),
+        Output("extract-store", "data", allow_duplicate=True),
+        Input({"type": "ft-open-extract", "source": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _open_extraction(_clicks):
+        trig = ctx.triggered_id
+        if not isinstance(trig, dict) or not any(c.get("value") for c in (ctx.triggered or [])):
+            return no_update, no_update
+        sid = trig.get("source")
+        project = get_project()
+        eligible = project.db.list_full_text_final_includes_with_markdown(project.project_id)
+        idx = next((i for i, s in enumerate(eligible) if s.id == sid), 0)
+        return "extract", {"idx": idx}
+
     @app.callback(
         Output("ft-preprocess-poll", "disabled"),
         Output("ft-preprocess-status", "children"),
@@ -543,8 +582,9 @@ def register_callbacks(app: Any) -> None:
         Input("ft-sort", "value"),
         Input("ft-pagesize", "value"),
         Input("ft-page", "data"),
+        Input("ft-expand-all", "value"),
     )
-    def _render(status, _refresh, reviewer, _tags, _notes, search, within, ftavail, tag_filter, sort_by, pagesize, page_state):
+    def _render(status, _refresh, reviewer, _tags, _notes, search, within, ftavail, tag_filter, sort_by, pagesize, page_state, expand_all):
         project = get_project()
         db = project.db
         pid = project.project_id
@@ -575,6 +615,7 @@ def register_callbacks(app: Any) -> None:
         my_decisions = db.get_decisions_by_reviewer(source_ids, rid, stage="full_text")
         team_size = 2 if workflow == "independent" else 1
         human_counts = db.count_human_decisions_per_source(pid, stage="full_text")
+        extract_ids = {s.id for s in db.list_full_text_final_includes_with_markdown(pid)}
 
         if status == "to_review":
             sources = [
@@ -583,6 +624,8 @@ def register_callbacks(app: Any) -> None:
             ]
         elif status == "reviewed":
             sources = [s for s in all_candidates if s.id in my_decisions]
+        elif status == "to_extract":
+            sources = [s for s in all_candidates if s.id in extract_ids]
         else:
             sources = list(all_candidates)
 
@@ -622,7 +665,10 @@ def register_callbacks(app: Any) -> None:
         )
 
         cards = [
-            _ft_card(s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), db, rid)
+            _ft_card(
+                s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), db, rid,
+                can_extract=s.id in extract_ids, expand_abstract=bool(expand_all),
+            )
             for s in page_sources
         ]
         if not cards:
@@ -643,6 +689,8 @@ def _ft_card(
     peer_count: int,
     db: Any,
     reviewer_id: str,
+    can_extract: bool = False,
+    expand_abstract: bool = False,
 ) -> Any:
     sid = src.id
     decision_color = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -753,6 +801,29 @@ def _ft_card(
         className="mt-1",
     )
 
+    extract_row: Any = None
+    if can_extract:
+        extracted = db.has_extraction(sid, "human")
+        extract_row = html.Div(
+            [
+                dbc.Button(
+                    "Open extraction →",
+                    id={"type": "ft-open-extract", "source": sid},
+                    size="sm", color="primary", outline=True, className="me-2",
+                ),
+                dbc.Badge(
+                    "Extracted" if extracted else "To extract",
+                    color="success" if extracted else "secondary",
+                    className="align-middle",
+                ),
+            ],
+            className="mt-2",
+        )
+
+    abstract_block: Any = None
+    if expand_abstract and src.abstract:
+        abstract_block = html.P(src.abstract, className="text-muted small mt-1 mb-1")
+
     left = html.Div(
         [
             html.Strong(f"#{sid}  ", className="text-muted"),
@@ -773,7 +844,7 @@ def _ft_card(
                 dbc.Row(
                     [
                         dbc.Col(
-                            [left, title_el, meta_el, tag_chips_el, doi_el, read_btn, ai_panel, actions_row],
+                            [left, title_el, meta_el, abstract_block, tag_chips_el, doi_el, read_btn, ai_panel, actions_row, extract_row],
                             width=9,
                         ),
                         dbc.Col(

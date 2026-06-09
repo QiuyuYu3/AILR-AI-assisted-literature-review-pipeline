@@ -63,7 +63,6 @@ def _build_sidebar():
             _nav_link("Workflow", "workflow_fulltext"),
             _nav_link("Full-text review", "full_text"),
             _nav_link("FT Conflicts", "ft_conflicts"),
-            _nav_link("Extraction", "extract"),
             _nav_section("Manage"),
             _nav_link("Import", "import"),
             _nav_link("Sources", "sources"),

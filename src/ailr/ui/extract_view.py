@@ -82,6 +82,7 @@ def ai_extraction_panel() -> list[Any]:
 def layout() -> Any:
     return html.Div(
         [
+            dbc.Button("← Back to full-text review", id="extract-back", color="link", size="sm", className="p-0 mb-2"),
             dbc.Row(
                 [
                     dbc.Col([dbc.Label("Source set", className="small mb-0"),
@@ -142,6 +143,14 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
+    @app.callback(
+        Output("tabs", "data", allow_duplicate=True),
+        Input("extract-back", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _back_to_ft(n):
+        return "full_text" if n else no_update
+
     @app.callback(
         Output("extract-workflow-saved", "children"),
         Input("extract-workflow", "value"),

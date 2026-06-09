@@ -7,6 +7,8 @@
 - UI theme refresh: soft cards, pill buttons/badges, near-black primary + green accent, narrower sidebar.
 - Summary stacked one card per row; abstract and full-text conflicts now shown separately.
 - Extraction `verify` mode enforces one human per paper (mirrors assisted screening); a second human's submit is blocked.
+- Extraction is now entered from Full-text review: a "To extract" filter + per-card "Open extraction" button open the form; removed the separate Extraction sidebar item.
+- Full-text review cards can expand abstracts inline (toggle).
 
 ### Fixed
 - Conflict cards and Sources now show flag-check criterion/reason instead of "?" (was reading wrong keys).
