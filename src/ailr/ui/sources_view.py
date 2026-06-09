@@ -253,6 +253,20 @@ def layout() -> Any:
                         outline=True,
                     ),
                     html.Div(id="sources-tag-feedback", className="mt-2"),
+
+                    html.Hr(),
+                    html.H6("More bulk actions", className="fw-bold"),
+                    dbc.Select(
+                        id="bulk-more-action",
+                        options=[
+                            {"label": "Mark as duplicate", "value": "duplicate"},
+                            {"label": "Move to abstract screening", "value": "to_screening"},
+                            {"label": "Move back to full-text", "value": "to_fulltext"},
+                        ],
+                        value="duplicate",
+                        className="mb-2",
+                    ),
+                    dbc.Button("Apply to selected", id="bulk-more-apply", color="primary", outline=True),
                 ],
                 width=3,
             ),
@@ -447,3 +461,42 @@ def register_callbacks(app: Any) -> None:
             f"Marked {count} source(s) as {decision} (by {rid}).",
             color="success",
         )
+
+    @app.callback(
+        Output("bulk-feedback", "children", allow_duplicate=True),
+        Input("bulk-more-apply", "n_clicks"),
+        State("sources-grid", "selectedRows"),
+        State("bulk-more-action", "value"),
+        State("shared-reviewer", "value"),
+        prevent_initial_call=True,
+    )
+    def _bulk_more(_clicks, selected, action, reviewer):
+        if not selected:
+            return dbc.Alert("No rows selected. Use the checkbox in the leftmost column.", color="warning")
+        rid = (reviewer or "").strip() or "?"
+        db = get_project().db
+        count = 0
+        for row in selected:
+            sid = row.get("id")
+            if sid is None:
+                continue
+            sid = int(sid)
+            if action == "duplicate":
+                db.mark_source_duplicate(sid, True)
+            elif action == "to_screening":
+                db.delete_all_screening_decisions(sid, reviewer_type="human")
+                db.delete_reconciliations_for_source(sid)
+                db.insert_screening_action(sid, rid, action="move_to_screening")
+            elif action == "to_fulltext":
+                db.delete_stage_decisions(sid, "full_text", reviewer_type="human")
+                db.delete_reconciliations_for_source(sid, "full_text_screening")
+                db.insert_screening_action(sid, rid, action="move_to_full_text")
+            else:
+                continue
+            count += 1
+        labels = {
+            "duplicate": "marked as duplicate",
+            "to_screening": "moved to abstract screening",
+            "to_fulltext": "moved back to full-text",
+        }
+        return dbc.Alert(f"{count} source(s) {labels.get(action, action)}.", color="success")

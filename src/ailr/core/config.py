@@ -217,10 +217,11 @@ def save_stage_llm_config(
     stage: Literal["screening", "extraction"],
     provider: Optional[str],
     model: Optional[str],
+    temperature: Optional[float] = None,
 ) -> None:
     """Set or clear a stage's `llm:` override (screening.llm / extraction.llm).
     Blank model clears the override so the stage inherits the top-level `llm:`.
-    temperature/seed/max_retries always inherit from top-level."""
+    seed/max_retries always inherit from top-level."""
     config_path = project_dir / "lit_review.yaml"
     if not config_path.exists():
         raise ProjectNotFoundError(f"lit_review.yaml not found in {project_dir}")
@@ -240,6 +241,8 @@ def save_stage_llm_config(
         override: dict = {"model": str(model).strip()}
         if provider:
             override["provider"] = provider
+        if temperature is not None:
+            override["temperature"] = float(temperature)
         stage_block["llm"] = override
 
     with open(config_path, "w", encoding="utf-8") as f:

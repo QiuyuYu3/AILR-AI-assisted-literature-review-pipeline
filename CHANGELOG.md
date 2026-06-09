@@ -10,6 +10,8 @@
 - Extraction is now entered from Full-text review: a "To extract" filter + per-card "Open extraction" button open the form; removed the separate Extraction sidebar item.
 - Full-text review cards can expand abstracts inline (toggle).
 - Extraction form highlights fields where your value differs from the AI's ("changed from AI" badge + marker).
+- Settings: model config is now per-stage (each has its own provider/model/temperature); removed the redundant top-level Model section.
+- Sources: bulk "Mark as duplicate / Move to abstract screening / Move back to full-text" on selected rows.
 
 ### Fixed
 - Conflict cards and Sources now show flag-check criterion/reason instead of "?" (was reading wrong keys).
