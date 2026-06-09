@@ -621,11 +621,20 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
             **common,
         )
 
+    differs = (
+        ai_value is not None
+        and pre_value is not None
+        and str(pre_value).strip() != str(ai_value).strip()
+    )
+
     children: list[Any] = [label, _desc(field), value_widget]
     if ai_value is not None:
         children.append(
             html.Small(
-                f"AI proposed: {ai_value}",
+                [
+                    dbc.Badge("changed from AI", color="warning", className="me-2") if differs else None,
+                    f"AI proposed: {ai_value}",
+                ],
                 className="text-muted",
                 style={"fontStyle": "italic"},
             )
@@ -639,7 +648,8 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
             value=pre_quote or "",
         )
     )
-    return html.Div(children, className="mb-2")
+    block_style = {"borderLeft": "3px solid #f0ad4e", "paddingLeft": "8px"} if differs else None
+    return html.Div(children, className="mb-2", style=block_style)
 
 
 def _desc(field: FieldSpec) -> Any:
