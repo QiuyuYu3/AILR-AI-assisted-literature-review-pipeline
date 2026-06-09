@@ -616,6 +616,7 @@ def register_callbacks(app: Any) -> None:
         team_size = 2 if workflow == "independent" else 1
         human_counts = db.count_human_decisions_per_source(pid, stage="full_text")
         extract_ids = {s.id for s in db.list_full_text_final_includes_with_markdown(pid)}
+        extracted_ids = db.sources_with_extraction(list(extract_ids), "human")
 
         if status == "to_review":
             sources = [
@@ -668,6 +669,7 @@ def register_callbacks(app: Any) -> None:
             _ft_card(
                 s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), db, rid,
                 can_extract=s.id in extract_ids, expand_abstract=bool(expand_all),
+                extracted=s.id in extracted_ids,
             )
             for s in page_sources
         ]
@@ -691,6 +693,7 @@ def _ft_card(
     reviewer_id: str,
     can_extract: bool = False,
     expand_abstract: bool = False,
+    extracted: bool = False,
 ) -> Any:
     sid = src.id
     decision_color = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -803,7 +806,6 @@ def _ft_card(
 
     extract_row: Any = None
     if can_extract:
-        extracted = db.has_extraction(sid, "human")
         extract_row = html.Div(
             [
                 dbc.Button(

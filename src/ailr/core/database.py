@@ -1839,6 +1839,20 @@ class Database:
         ).fetchone()
         return row is not None
 
+    def sources_with_extraction(self, source_ids: list[int], extractor_type: str = "human") -> set[int]:
+        """Subset of source_ids that have at least one extraction (excluding _flag_check) for this extractor."""
+        if not source_ids:
+            return set()
+        placeholders = ",".join("?" for _ in source_ids)
+        rows = self._conn.execute(
+            f"""
+            SELECT DISTINCT source_id FROM extractions
+            WHERE source_id IN ({placeholders}) AND extractor_type = ? AND field_name != '_flag_check'
+            """,
+            (*source_ids, extractor_type),
+        ).fetchall()
+        return {r["source_id"] for r in rows}
+
     def list_abstract_includes(self, project_id: int) -> list[Source]:
         """Sources flagged include at the abstract stage (by any reviewer). For RIS export to Zotero."""
         sql = """
