@@ -66,11 +66,12 @@ class Project:
         # project folder) > local SQLite file. The yaml holds the DB password, so keep it out of
         # public git (the project template gitignores lit_review.yaml).
         db_url = self._config.storage.database_url
+        audit_log_path = self._root / self._config.logging.audit_log
         if db_url:
-            self._db = Database(db_url)
+            self._db = Database(db_url, audit_log_path=audit_log_path)
         else:
             db_path = self._root / self._config.storage.database
-            self._db = Database(db_path)
+            self._db = Database(db_path, audit_log_path=audit_log_path)
         self._db.init_schema()
         self._project_id = self._db.get_or_create_project(self._config.project.name)
 

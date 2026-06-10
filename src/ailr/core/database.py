@@ -36,6 +36,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError as _SAIntegrityError
 from sqlalchemy.exc import SQLAlchemyError
 
+from ailr.core import audit
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError, DuplicateError
 
@@ -796,7 +797,10 @@ def _row_to_source(row) -> Source:
 
 
 class Database:
-    def __init__(self, url_or_path) -> None:
+    def __init__(self, url_or_path, audit_log_path: Optional[Path] = None) -> None:
+        # audit_log_path: when set, decisions/extractions also get a JSONL backup copy
+        # (best-effort second record). Project supplies it; other callers may omit it.
+        self._audit_path = Path(audit_log_path) if audit_log_path else None
         # Accept either a SQLAlchemy URL ("postgresql+psycopg://...", "sqlite:///...")
         # or a filesystem path/Path (treated as a SQLite file) for backward compatibility.
         if isinstance(url_or_path, str) and "://" in url_or_path:
@@ -814,6 +818,10 @@ class Database:
         self._conn = _EngineConn(self._engine)
         # Retained for the few multi-write methods that need cross-thread atomicity.
         self._lock = threading.RLock()
+
+    def _audit(self, event_type: str, payload: dict[str, Any]) -> None:
+        if self._audit_path is not None:
+            audit.log_event(self._audit_path, event_type, payload)
 
     @property
     def dialect(self) -> str:
@@ -1055,7 +1063,21 @@ class Database:
                 ),
             )
             self._conn.commit()
-            return cur.lastrowid
+            new_id = cur.lastrowid
+            self._audit("screening_decision", {
+                "id": new_id,
+                "source_id": decision.source_id,
+                "reviewer_type": decision.reviewer_type,
+                "reviewer_id": decision.reviewer_id,
+                "decision": decision.decision,
+                "reasoning": decision.reasoning,
+                "evidence_quotes": decision.evidence_quotes,
+                "matched_criteria": decision.matched_criteria,
+                "confidence": decision.confidence,
+                "prompt_version": decision.prompt_version,
+                "stage": decision.stage,
+            })
+            return new_id
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert screening_decision: {e}") from e
 
@@ -1819,7 +1841,21 @@ class Database:
                 ),
             )
             self._conn.commit()
-            return cur.lastrowid
+            new_id = cur.lastrowid
+            self._audit("extraction", {
+                "id": new_id,
+                "source_id": result.source_id,
+                "extractor_type": result.extractor_type,
+                "extractor_id": result.extractor_id,
+                "field_name": result.field_name,
+                "value": result.value,
+                "source_quote": result.source_quote,
+                "page_or_section": result.page_or_section,
+                "confidence": result.confidence,
+                "is_newly_discovered": result.is_newly_discovered,
+                "prompt_version": result.prompt_version,
+            })
+            return new_id
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert extraction: {e}") from e
 
@@ -1840,7 +1876,15 @@ class Database:
                 (source_id, extractor_type, extractor_id, json.dumps(flag_check)),
             )
             self._conn.commit()
-            return cur.lastrowid
+            new_id = cur.lastrowid
+            self._audit("flag_check", {
+                "id": new_id,
+                "source_id": source_id,
+                "extractor_type": extractor_type,
+                "extractor_id": extractor_id,
+                "flag_check": flag_check,
+            })
+            return new_id
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert flag_check: {e}") from e
 

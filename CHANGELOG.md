@@ -1,7 +1,10 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.18.0] – 2026-06-10
+
+### Added
+- Audit log (`data/audit.jsonl`): every screening decision, extraction, and flag-check is also appended as a JSONL line (best-effort backup copy alongside the DB). `core/audit.py` `log_event`/`read_events` implemented (were stubs).
 
 ### Changed
 - Shared database is now configured via `storage.database_url` in `lit_review.yaml` (removed the `AILR_DATABASE_URL` env var); new projects ship a `.gitignore` that excludes `lit_review.yaml` since it holds the DB password.
