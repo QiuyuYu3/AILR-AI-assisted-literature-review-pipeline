@@ -4,6 +4,8 @@ A desktop app for running systematic / scoping / methodological literature revie
 
 Everything is doable from the **web UI** — you don't need the command line.
 
+**[Read the full handbook →](https://qiuyuyu3.github.io/AILR-AI-assisted-literature-review-pipeline/)** — install, a walkthrough of every stage, team setup, and how AI extraction works.
+
 <p align="center">
   <img src="docs/figures/ailr.png" alt="ailr pipeline — import to export" width="720">
 </p>
