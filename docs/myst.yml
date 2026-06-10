@@ -2,6 +2,11 @@ version: 1
 project:
   title: ailr handbook
   description: User handbook for ailr — AI-assisted literature review.
+  authors:
+    - name: Qiuyu Yu
+      affiliations:
+      github: QiuyuYu3
+  github: https://github.com/QiuyuYu3/AILR-AI-assisted-literature-review-pipeline
   toc:
     - file: index.md
     - title: Getting started

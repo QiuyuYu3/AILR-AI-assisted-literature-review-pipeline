@@ -51,20 +51,29 @@ The key lives only in that shell session (gone when you close it) — nothing is
 
 ### A look at the app
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/figures/abstract_workflow_calibration.png" alt="Calibration"><br><sub><b>Calibrate</b> the AI against human judgement (Cohen's κ) before screening.</sub></td>
-    <td width="50%"><img src="docs/figures/abstract_screening1.png" alt="Abstract screening"><br><sub><b>Screen</b> titles/abstracts — the AI stays blinded until you decide.</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/figures/ft_template1.png" alt="Template editor"><br><sub><b>Define</b> the fields to extract in the Template editor.</sub></td>
-    <td><img src="docs/figures/ft_extraction1.png" alt="Extraction verify"><br><sub><b>Verify</b> the AI's values, each backed by a source quote.</sub></td>
-  </tr>
-  <tr>
-    <td><img src="docs/figures/ft_conflicts.png" alt="Full-text conflicts"><br><sub><b>Reconcile</b> full-text disagreements.</sub></td>
-    <td><img src="docs/figures/summary.png" alt="Summary dashboard"><br><sub><b>Track</b> progress at every stage on the dashboard.</sub></td>
-  </tr>
-</table>
+**Calibrate** the AI against human judgement (Cohen's κ) before screening.
+
+![Calibration](docs/figures/abstract_workflow_calibration.png)
+
+**Screen** titles/abstracts — the AI stays blinded until you decide.
+
+![Abstract screening](docs/figures/abstract_screening1.png)
+
+**Define** the fields to extract in the Template editor.
+
+![Template editor](docs/figures/ft_template1.png)
+
+**Verify** the AI's values, each backed by a source quote.
+
+![Extraction verify](docs/figures/ft_extraction1.png)
+
+**Reconcile** full-text disagreements.
+
+![Full-text conflicts](docs/figures/ft_conflicts.png)
+
+**Track** progress at every stage on the dashboard.
+
+![Summary dashboard](docs/figures/summary.png)
 
 ## Workflow modes
 
