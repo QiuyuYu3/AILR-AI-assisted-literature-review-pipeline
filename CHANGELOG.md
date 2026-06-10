@@ -12,6 +12,10 @@
 - Extraction form highlights fields where your value differs from the AI's ("changed from AI" badge + marker).
 - Settings: model config is now per-stage (each has its own provider/model/temperature); removed the redundant top-level Model section.
 - Sources: bulk "Mark as duplicate / Move to abstract screening / Move back to full-text" on selected rows.
+- Sources: bulk include/exclude/uncertain can target the abstract or full-text stage.
+
+### Fixed
+- Reports: compute the AI/human decision pairing once instead of twice when the page opens.
 
 ### Fixed
 - Conflict cards and Sources now show flag-check criterion/reason instead of "?" (was reading wrong keys).

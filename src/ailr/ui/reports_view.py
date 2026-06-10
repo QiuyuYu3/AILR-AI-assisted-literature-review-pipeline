@@ -10,8 +10,7 @@ from ailr.metrics import cohen_kappa, confusion_matrix, percent_agreement
 from ailr.ui._common import get_project
 
 
-def _confusion_block(db: Any, pid: int) -> Any:
-    pairs = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
+def _confusion_block(pairs: list) -> Any:
     if not pairs:
         return html.Small("(no paired AI+human decisions yet)", className="text-muted")
     cats, matrix = confusion_matrix(pairs, categories=["include", "exclude", "uncertain"])
@@ -41,8 +40,7 @@ def _api_block(db: Any, pid: int) -> Any:
     return dbc.Table([head, body], bordered=False, hover=True, size="sm")
 
 
-def _reliability(db: Any, pid: int) -> dict:
-    pairs = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
+def _reliability(pairs: list) -> dict:
     cats = ["include", "exclude", "uncertain"]
     k = cohen_kappa(pairs, categories=cats)
     a = percent_agreement(pairs)
@@ -70,11 +68,12 @@ def _reliability_block(rel: dict) -> Any:
 
 def _metrics_json(proj: Any) -> str:
     db, pid = proj.db, proj.project_id
+    pairs = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
     payload = {
         "screening": {
             "ai": db.screening_summary(pid, "ai"),
             "human": db.screening_summary(pid, "human"),
-            **_reliability(db, pid),
+            **_reliability(pairs),
         }
     }
     return json.dumps(payload, indent=2, ensure_ascii=False)
@@ -162,6 +161,7 @@ def layout() -> Any:
     from ailr.exports.methods import build_methods_skeleton
 
     methods_text = build_methods_skeleton(project)
+    paired = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
 
     return html.Div(
         [
@@ -185,9 +185,9 @@ def layout() -> Any:
             ),
             html.Hr(className="my-4"),
             html.H4("Inter-rater reliability (screening: AI vs human)"),
-            _reliability_block(_reliability(db, pid)),
+            _reliability_block(_reliability(paired)),
             html.H6("Confusion matrix", className="mt-3"),
-            _confusion_block(db, pid),
+            _confusion_block(paired),
             html.Hr(className="my-4"),
             html.H4("API usage"),
             html.P("Per provider/model token + cost + latency. Mock runs are not billed.", className="text-muted small"),

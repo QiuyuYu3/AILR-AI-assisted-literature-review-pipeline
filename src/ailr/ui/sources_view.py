@@ -189,6 +189,16 @@ def layout() -> Any:
                     html.Hr(),
 
                     html.H6("Bulk action"),
+                    dbc.Label("Stage"),
+                    dbc.Select(
+                        id="bulk-stage",
+                        options=[
+                            {"label": "Abstract screening", "value": "abstract"},
+                            {"label": "Full-text screening", "value": "full_text"},
+                        ],
+                        value="abstract",
+                        className="mb-2",
+                    ),
                     dbc.Label("Decision"),
                     dbc.Select(
                         id="bulk-decision",
@@ -423,13 +433,14 @@ def register_callbacks(app: Any) -> None:
         Output("bulk-feedback", "children"),
         Input("bulk-apply", "n_clicks"),
         State("sources-grid", "selectedRows"),
+        State("bulk-stage", "value"),
         State("bulk-decision", "value"),
         State("bulk-reasoning", "value"),
         State("bulk-confidence", "value"),
         State("shared-reviewer", "value"),
         prevent_initial_call=True,
     )
-    def _bulk_apply(_clicks, selected, decision, reasoning, confidence, reviewer):
+    def _bulk_apply(_clicks, selected, stage, decision, reasoning, confidence, reviewer):
         rid = (reviewer or "").strip()
         if not rid:
             return dbc.Alert("Set your reviewer ID at the top first.", color="warning")
@@ -438,6 +449,7 @@ def register_callbacks(app: Any) -> None:
 
         project = get_project()
         db = project.db
+        stage = stage if stage in ("abstract", "full_text") else "abstract"
         reason_text = (reasoning or "").strip() or "(bulk action)"
         conf = float(confidence) if confidence else None
 
@@ -453,12 +465,14 @@ def register_callbacks(app: Any) -> None:
                     reviewer_type="human",
                     reviewer_id=rid,
                     source_id=int(sid),
+                    stage=stage,
                     confidence=conf,
                 )
             )
             count += 1
+        stage_label = "abstract" if stage == "abstract" else "full-text"
         return dbc.Alert(
-            f"Marked {count} source(s) as {decision} (by {rid}).",
+            f"Marked {count} source(s) as {decision} at the {stage_label} stage (by {rid}).",
             color="success",
         )
 
