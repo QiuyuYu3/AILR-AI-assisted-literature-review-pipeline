@@ -20,6 +20,7 @@
 - Sources: per-decision confidence slider in bulk actions (human decisions don't need it).
 
 ### Fixed
+- Resetting/undoing a screening decision now clears its reconciliation, so a new differing decision can re-enter Conflicts (a stale reconciliation used to hide it forever). Resets only remove the human's vote — the AI verdict is always kept.
 - Reports: compute the AI/human decision pairing once instead of twice when the page opens.
 
 ### Fixed

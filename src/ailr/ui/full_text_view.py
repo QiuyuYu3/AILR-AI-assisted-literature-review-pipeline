@@ -323,7 +323,8 @@ def register_callbacks(app: Any) -> None:
 
         if isinstance(triggered, dict) and triggered.get("type") == "ft-reset":
             source_id = int(triggered["source"])
-            db.delete_screening_decision(source_id, rid, stage="full_text")
+            db.delete_screening_decision(source_id, rid, stage="full_text", reviewer_type="human")
+            db.delete_reconciliations_for_source(source_id, "full_text_screening")
             db.insert_screening_action(source_id, rid, action="reset")
             return {"ts": _t.time()}, None
 
@@ -386,7 +387,8 @@ def register_callbacks(app: Any) -> None:
             return no_update, no_update
         import time as _t
         db = get_project().db
-        db.delete_screening_decision(int(sid), rid, stage="full_text")
+        db.delete_screening_decision(int(sid), rid, stage="full_text", reviewer_type="human")
+        db.delete_reconciliations_for_source(int(sid), "full_text_screening")
         db.insert_screening_action(int(sid), rid, action="reset")
         return {"ts": _t.time()}, None
 

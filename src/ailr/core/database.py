@@ -1216,13 +1216,18 @@ class Database:
         """
         return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
-    def delete_screening_decision(self, source_id: int, reviewer_id: str, stage: str = "abstract") -> int:
-        """Remove a reviewer's screening decisions on a source for the given stage."""
+    def delete_screening_decision(
+        self, source_id: int, reviewer_id: str, stage: str = "abstract", reviewer_type: Optional[str] = None
+    ) -> int:
+        """Remove a reviewer's screening decisions on a source for the given stage.
+        Pass reviewer_type='human' on undo/reset so an AI verdict can never be removed."""
+        sql = "DELETE FROM screening_decisions WHERE source_id = ? AND reviewer_id = ? AND stage = ?"
+        params: list = [source_id, reviewer_id, stage]
+        if reviewer_type is not None:
+            sql += " AND reviewer_type = ?"
+            params.append(reviewer_type)
         try:
-            cur = self._conn.execute(
-                "DELETE FROM screening_decisions WHERE source_id = ? AND reviewer_id = ? AND stage = ?",
-                (source_id, reviewer_id, stage),
-            )
+            cur = self._conn.execute(sql, params)
             self._conn.commit()
             return cur.rowcount
         except sqlite3.Error as e:
