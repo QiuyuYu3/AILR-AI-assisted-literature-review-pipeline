@@ -15,6 +15,7 @@
 - Sources: bulk include/exclude/uncertain can target the abstract or full-text stage.
 - Settings: removed project create/open/switch (handled on the Projects page); Settings now only holds the current project's config.
 - Low-text PDFs (tiny markdown → likely scanned/failed) are reported right after PDF→markdown conversion, and badged on full-text cards.
+- Full-text review: "To extract" now means not-yet-extracted; added an "Extracted by me" filter; cards show "Extracted by <who>".
 
 ### Removed
 - Sources: per-decision confidence slider in bulk actions (human decisions don't need it).

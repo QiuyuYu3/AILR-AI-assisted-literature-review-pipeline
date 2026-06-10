@@ -28,6 +28,7 @@ _STATUS_FILTERS = [
     {"label": "To review", "value": "to_review"},
     {"label": "Reviewed by me", "value": "reviewed"},
     {"label": "To extract", "value": "to_extract"},
+    {"label": "Extracted by me", "value": "extracted_mine"},
     {"label": "All", "value": "all"},
 ]
 
@@ -618,7 +619,7 @@ def register_callbacks(app: Any) -> None:
         team_size = 2 if workflow == "independent" else 1
         human_counts = db.count_human_decisions_per_source(pid, stage="full_text")
         extract_ids = {s.id for s in db.list_full_text_final_includes_with_markdown(pid)}
-        extracted_ids = db.sources_with_extraction(list(extract_ids), "human")
+        extracted_by = db.human_extractors_for_sources(list(extract_ids))  # {sid: extractor_id}
 
         if status == "to_review":
             sources = [
@@ -628,7 +629,9 @@ def register_callbacks(app: Any) -> None:
         elif status == "reviewed":
             sources = [s for s in all_candidates if s.id in my_decisions]
         elif status == "to_extract":
-            sources = [s for s in all_candidates if s.id in extract_ids]
+            sources = [s for s in all_candidates if s.id in extract_ids and s.id not in extracted_by]
+        elif status == "extracted_mine":
+            sources = [s for s in all_candidates if extracted_by.get(s.id) == rid]
         else:
             sources = list(all_candidates)
 
@@ -671,7 +674,8 @@ def register_callbacks(app: Any) -> None:
             _ft_card(
                 s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), db, rid,
                 can_extract=s.id in extract_ids, expand_abstract=bool(expand_all),
-                extracted=s.id in extracted_ids,
+                extracted_by=extracted_by.get(s.id),
+                extract_verify=project.config.extraction.workflow == "verify",
                 low_text=_low_text_md(project.root, s.id),
             )
             for s in page_sources
@@ -707,7 +711,8 @@ def _ft_card(
     reviewer_id: str,
     can_extract: bool = False,
     expand_abstract: bool = False,
-    extracted: bool = False,
+    extracted_by: Optional[str] = None,
+    extract_verify: bool = False,
     low_text: bool = False,
 ) -> Any:
     sid = src.id
@@ -821,21 +826,24 @@ def _ft_card(
 
     extract_row: Any = None
     if can_extract:
-        extract_row = html.Div(
-            [
+        locked = extracted_by is not None and extracted_by != reviewer_id and extract_verify
+        if extracted_by is None:
+            status_badge = dbc.Badge("To extract", color="secondary", className="align-middle")
+        elif extracted_by == reviewer_id:
+            status_badge = dbc.Badge("Extracted by you", color="success", className="align-middle")
+        else:
+            status_badge = dbc.Badge(f"Extracted by {extracted_by}", color="success", className="align-middle")
+        children: list[Any] = []
+        if not locked:
+            children.append(
                 dbc.Button(
                     "Open extraction →",
                     id={"type": "ft-open-extract", "source": sid},
                     size="sm", color="primary", outline=True, className="me-2",
-                ),
-                dbc.Badge(
-                    "Extracted" if extracted else "To extract",
-                    color="success" if extracted else "secondary",
-                    className="align-middle",
-                ),
-            ],
-            className="mt-2",
-        )
+                )
+            )
+        children.append(status_badge)
+        extract_row = html.Div(children, className="mt-2")
 
     abstract_block: Any = None
     if expand_abstract and src.abstract:

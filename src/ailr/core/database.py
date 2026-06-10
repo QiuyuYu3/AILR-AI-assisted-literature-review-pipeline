@@ -1858,6 +1858,24 @@ class Database:
         ).fetchall()
         return {r["source_id"] for r in rows}
 
+    def human_extractors_for_sources(self, source_ids: list[int]) -> dict[int, str]:
+        """Latest human extractor_id per source (excluding _flag_check), for sources that have one."""
+        if not source_ids:
+            return {}
+        placeholders = ",".join("?" for _ in source_ids)
+        rows = self._conn.execute(
+            f"""
+            SELECT source_id, extractor_id FROM extractions e
+            WHERE source_id IN ({placeholders}) AND extractor_type = 'human' AND field_name != '_flag_check'
+              AND id = (
+                  SELECT MAX(id) FROM extractions
+                  WHERE source_id = e.source_id AND extractor_type = 'human' AND field_name != '_flag_check'
+              )
+            """,
+            (*source_ids,),
+        ).fetchall()
+        return {r["source_id"]: r["extractor_id"] for r in rows}
+
     def list_abstract_includes(self, project_id: int) -> list[Source]:
         """Sources flagged include at the abstract stage (by any reviewer). For RIS export to Zotero."""
         sql = """
