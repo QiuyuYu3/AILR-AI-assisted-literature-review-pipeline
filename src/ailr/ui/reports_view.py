@@ -117,23 +117,31 @@ def _stage_row(main: Any, side: Any) -> Any:
     )
 
 
+def _identification_box(c: dict) -> Any:
+    children: list[Any] = [
+        html.Div([html.Strong(f"{c['records_identified']} ", className="me-1"), "records identified"]),
+    ]
+    if c["by_source_database"]:
+        children.append(
+            html.Ul(
+                [html.Li(f"{d['source_database']}: {d['n']}", className="small") for d in c["by_source_database"]],
+                className="mb-0 mt-1",
+            )
+        )
+    return html.Div(children, style=_MAIN_BOX)
+
+
 def _prisma_diagram(db: Any, pid: int) -> Any:
-    abstract = db.results_by_stage(pid, "abstract")
-    fulltext = db.results_by_stage(pid, "full_text")
+    from ailr.exports.prisma import prisma_counts
 
-    total = db.count_sources(pid)
-    dups = db.count_duplicates(pid)
-    screened = len(abstract)
-    abs_excluded = sum(1 for r in abstract if r["decision"] == "exclude")
-    ft_assessed = len(fulltext)
-    ft_included = sum(1 for r in fulltext if r["decision"] == "include")
+    c = prisma_counts(get_project())
     ft_excl_counts = db.full_text_exclusion_counts(pid)
-    ft_excluded = sum(1 for r in fulltext if r["decision"] == "exclude")
 
-    dup_side = _box(f"{dups}", "duplicates removed before screening", _SIDE_BOX) if dups else None
-    abs_side = _box(f"{abs_excluded}", "studies excluded at title/abstract", _SIDE_BOX)
+    dup_side = _box(f"{c['duplicates_removed']}", "duplicates removed before screening", _SIDE_BOX) if c["duplicates_removed"] else None
+    abs_side = _box(f"{c['abstract_excluded']}", "studies excluded at title/abstract", _SIDE_BOX)
+    retrieval_side = _box(f"{c['reports_not_retrieved']}", "reports not retrieved (no full text)", _SIDE_BOX) if c["reports_not_retrieved"] else None
 
-    ft_side_children: list[Any] = [html.Div([html.Strong(f"{ft_excluded} "), "studies excluded, with reasons:"])]
+    ft_side_children: list[Any] = [html.Div([html.Strong(f"{c['full_text_excluded']} "), "studies excluded, with reasons:"])]
     if ft_excl_counts:
         ft_side_children.append(
             html.Ul([html.Li(f"{r['reason']}: {r['n']}", className="small") for r in ft_excl_counts], className="mb-0 mt-1")
@@ -142,13 +150,15 @@ def _prisma_diagram(db: Any, pid: int) -> Any:
 
     return html.Div(
         [
-            _stage_row(_box(f"{total}", "records imported for screening", _MAIN_BOX), dup_side),
+            _stage_row(_identification_box(c), dup_side),
             dbc.Row(dbc.Col(_down_arrow(), width=6)),
-            _stage_row(_box(f"{screened}", "studies screened (title/abstract)", _MAIN_BOX), abs_side),
+            _stage_row(_box(f"{c['records_after_dedup']}", "records after duplicates removed", _MAIN_BOX), abs_side),
             dbc.Row(dbc.Col(_down_arrow(), width=6)),
-            _stage_row(_box(f"{ft_assessed}", "full-text studies assessed for eligibility", _MAIN_BOX), ft_side),
+            _stage_row(_box(f"{c['reports_sought']}", "reports sought for retrieval", _MAIN_BOX), retrieval_side),
             dbc.Row(dbc.Col(_down_arrow(), width=6)),
-            _stage_row(_box(f"{ft_included}", "studies included", _MAIN_BOX), None),
+            _stage_row(_box(f"{c['full_text_assessed']}", "full-text studies assessed for eligibility", _MAIN_BOX), ft_side),
+            dbc.Row(dbc.Col(_down_arrow(), width=6)),
+            _stage_row(_box(f"{c['studies_included']}", "studies included", _MAIN_BOX), None),
         ]
     )
 
@@ -169,7 +179,12 @@ def layout() -> Any:
             html.P("Auto-generated from your decisions. AI and human reviewers are reported separately.", className="text-muted small"),
             _prisma_diagram(db, pid),
             html.Div(
-                dbc.Button("Download PRISMA (MD)", id="report-dl-prisma", color="primary", outline=True, size="sm"),
+                dbc.ButtonGroup(
+                    [
+                        dbc.Button("Download PRISMA (MD)", id="report-dl-prisma", color="primary", outline=True, size="sm"),
+                        dbc.Button("Download PRISMA (SVG)", id="report-dl-svg", color="primary", outline=True, size="sm"),
+                    ]
+                ),
                 className="mt-3",
             ),
             html.Hr(className="my-4"),
@@ -215,6 +230,7 @@ def register_callbacks(app: Any) -> None:
         Output("report-dl-feedback", "children"),
         Input("report-dl-csv", "n_clicks"),
         Input("report-dl-prisma", "n_clicks"),
+        Input("report-dl-svg", "n_clicks"),
         Input("report-dl-methods", "n_clicks"),
         Input("report-dl-ris", "n_clicks"),
         Input("report-dl-csv-human", "n_clicks"),
@@ -222,13 +238,13 @@ def register_callbacks(app: Any) -> None:
         Input("report-dl-metrics", "n_clicks"),
         prevent_initial_call=True,
     )
-    def _download(_c, _p, _m, _r, _ch, _j, _mx):
+    def _download(_c, _p, _s, _m, _r, _ch, _j, _mx):
         trig = ctx.triggered_id
         if not any(t.get("value") for t in (ctx.triggered or [])):
             return no_update, no_update
 
         from ailr.exports.methods import build_methods_skeleton
-        from ailr.exports.prisma import build_prisma_report
+        from ailr.exports.prisma import build_prisma_report, build_prisma_svg
         from ailr.exports.ris import export_includes_ris
         from ailr.exports.tables import extraction_table_csv, extraction_table_json
 
@@ -240,6 +256,7 @@ def register_callbacks(app: Any) -> None:
             "report-dl-csv-human": (lambda: extraction_table_csv(proj, extractor_type="human", only_includes=True), f"{name}_extraction_final.csv"),
             "report-dl-json": (lambda: extraction_table_json(proj, extractor_type="ai", only_includes=True), f"{name}_extraction_ai.json"),
             "report-dl-prisma": (lambda: build_prisma_report(proj), f"{name}_prisma.md"),
+            "report-dl-svg": (lambda: build_prisma_svg(proj), f"{name}_prisma.svg"),
             "report-dl-methods": (lambda: build_methods_skeleton(proj), f"{name}_methods.md"),
             "report-dl-ris": (lambda: export_includes_ris(proj), f"{name}_includes.ris"),
             "report-dl-metrics": (lambda: _metrics_json(proj), f"{name}_metrics.json"),

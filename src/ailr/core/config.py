@@ -91,6 +91,7 @@ class PreprocessConfig(BaseModel):
     pdf_backend: Literal["pymupdf", "marker", "grobid"] = "pymupdf"
     strip_references: bool = True
     keep_sections: list[str] = Field(default_factory=list)
+    low_text_threshold: int = 2000  # converted markdown shorter than this ~ likely scanned/failed PDF
 
 
 class StorageConfig(BaseModel):
@@ -269,6 +270,26 @@ def save_stage_workflow(project_dir: Path, stage: Literal["screening", "extracti
         raise ConfigError(f"Expected dict at {stage}: in {config_path}, got {type(stage_block).__name__}")
     stage_block.pop("blinding", None)
     stage_block["workflow"] = workflow
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+
+
+def save_preprocess_threshold(project_dir: Path, low_text_threshold: int) -> None:
+    config_path = project_dir / "lit_review.yaml"
+    if not config_path.exists():
+        raise ProjectNotFoundError(f"lit_review.yaml not found in {project_dir}")
+
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        raise ConfigError(f"Failed to parse {config_path}: {e}") from e
+
+    block = data.setdefault("preprocess", {})
+    if not isinstance(block, dict):
+        raise ConfigError(f"Expected dict at preprocess: in {config_path}, got {type(block).__name__}")
+    block["low_text_threshold"] = low_text_threshold
 
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)

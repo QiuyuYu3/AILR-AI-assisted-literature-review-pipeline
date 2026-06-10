@@ -650,7 +650,7 @@ def show_stats(
 @app.command()
 def export(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
-    format: Annotated[str, typer.Option("--format", help="table | prisma | methods | table-json | ris")] = "table",
+    format: Annotated[str, typer.Option("--format", help="table | prisma | prisma-svg | methods | table-json | ris")] = "table",
     out: Annotated[Optional[Path], typer.Option("--out", "-o", help="Output file. Defaults to stdout.")] = None,
     all_sources: Annotated[bool, typer.Option("--all", help="For table formats: include all extracted sources, not just include'd.")] = False,
     extractor: Annotated[str, typer.Option("--extractor", help="Which extractor's data to export: ai | human.")] = "ai",
@@ -660,7 +660,7 @@ def export(
         proj = Project.load(project)
 
         from ailr.exports.methods import build_methods_skeleton
-        from ailr.exports.prisma import build_prisma_report
+        from ailr.exports.prisma import build_prisma_report, build_prisma_svg
         from ailr.exports.ris import export_includes_ris
         from ailr.exports.tables import extraction_table_csv, extraction_table_json
 
@@ -670,12 +670,14 @@ def export(
             content = extraction_table_json(proj, extractor_type=extractor, only_includes=not all_sources)
         elif format == "prisma":
             content = build_prisma_report(proj)
+        elif format == "prisma-svg":
+            content = build_prisma_svg(proj)
         elif format == "methods":
             content = build_methods_skeleton(proj)
         elif format == "ris":
             content = export_includes_ris(proj)
         else:
-            typer.echo(f"Unknown format: {format!r}. Options: table | table-json | prisma | methods | ris.", err=True)
+            typer.echo(f"Unknown format: {format!r}. Options: table | table-json | prisma | prisma-svg | methods | ris.", err=True)
             raise typer.Exit(1)
 
         if out is not None:

@@ -13,22 +13,16 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     pid = project.project_id
 
     total_sources = db.count_sources(pid)
-    ai_summary = db.screening_summary(pid, "ai")
-    human_summary = db.screening_summary(pid, "human")
+    duplicates_removed = db.count_duplicates(pid)
 
-    ai_decided = sum(ai_summary.values())
-    human_decided = sum(human_summary.values())
-    ai_included = ai_summary["include"]
-    ai_excluded = ai_summary["exclude"]
-    ai_uncertain = ai_summary["uncertain"]
-    human_included = human_summary["include"]
-    human_excluded = human_summary["exclude"]
-    human_uncertain = human_summary["uncertain"]
+    abstract = db.screening_summary(pid, "human", stage="abstract")
+    full_text = db.screening_summary(pid, "human", stage="full_text")
+    ai_abstract = db.screening_summary(pid, "ai", stage="abstract")
 
-    by_db = db.stats(pid)["by_source_database"]
-
-    sources_with_markdown = len(db.list_sources_with_markdown(pid))
-    includes_with_markdown = len(db.list_includes_with_markdown(pid))
+    abstract_screened = sum(abstract.values())
+    reports_sought = abstract["include"]
+    reports_retrieved = db.count_screening_includes_with_markdown(pid, stage="abstract")
+    full_text_assessed = sum(full_text.values())
 
     sources_extracted = sum(
         1 for s in db.list_sources(pid) if db.has_extraction(s.id, "ai")
@@ -37,20 +31,24 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     return {
         "project_name": project.config.project.name,
         "project_type": project.config.project.type,
-        "by_source_database": by_db,
-        "total_records_identified": total_sources,
-        "records_after_dedup": total_sources,  # dedup happens at ingest, so total == post-dedup
-        "ai_screened": ai_decided,
-        "ai_included": ai_included,
-        "ai_excluded": ai_excluded,
-        "ai_uncertain": ai_uncertain,
-        "human_screened": human_decided,
-        "human_included": human_included,
-        "human_excluded": human_excluded,
-        "human_uncertain": human_uncertain,
-        "reports_assessed_for_eligibility": sources_with_markdown,
-        "reports_assessed_includes": includes_with_markdown,
-        "studies_included": sources_extracted,
+        "by_source_database": db.stats(pid)["by_source_database"],
+        "records_identified": total_sources + duplicates_removed,
+        "duplicates_removed": duplicates_removed,
+        "records_after_dedup": total_sources,
+        "abstract_screened": abstract_screened,
+        "abstract_excluded": abstract["exclude"],
+        "abstract_uncertain": abstract["uncertain"],
+        "ai_abstract_screened": sum(ai_abstract.values()),
+        "ai_abstract_included": ai_abstract["include"],
+        "ai_abstract_excluded": ai_abstract["exclude"],
+        "ai_abstract_uncertain": ai_abstract["uncertain"],
+        "reports_sought": reports_sought,
+        "reports_retrieved": reports_retrieved,
+        "reports_not_retrieved": max(reports_sought - reports_retrieved, 0),
+        "full_text_assessed": full_text_assessed,
+        "full_text_excluded": full_text["exclude"],
+        "studies_included": full_text["include"],
+        "studies_extracted": sources_extracted,
     }
 
 
@@ -69,29 +67,31 @@ def build_prisma_report(project: Project) -> str:
         lines.append("Records identified by database:")
         for d in c["by_source_database"]:
             lines.append(f"- {d['source_database']}: {d['n']}")
+        lines.append("")
+    lines.append(f"**Total records identified:** {c['records_identified']}")
     lines.append("")
-    lines.append(f"**Total records identified:** {c['total_records_identified']}")
+    lines.append(f"**Duplicates removed:** {c['duplicates_removed']} (at ingest, by DOI + fuzzy title)")
     lines.append("")
-    lines.append(f"**Records after deduplication:** {c['records_after_dedup']} (dedup performed at ingest by DOI + fuzzy title)")
+    lines.append(f"**Records after deduplication:** {c['records_after_dedup']}")
     lines.append("")
 
     lines.append("## Screening (Title + Abstract)")
     lines.append("")
-    lines.append(f"**AI-screened:** {c['ai_screened']}")
-    lines.append(f"- include: {c['ai_included']}")
-    lines.append(f"- exclude: {c['ai_excluded']}")
-    lines.append(f"- uncertain: {c['ai_uncertain']}")
+    lines.append(f"**Records screened:** {c['abstract_screened']}")
+    lines.append(f"- excluded: {c['abstract_excluded']}")
+    lines.append(f"- uncertain: {c['abstract_uncertain']}")
     lines.append("")
-    lines.append(f"**Human-screened:** {c['human_screened']}")
-    lines.append(f"- include: {c['human_included']}")
-    lines.append(f"- exclude: {c['human_excluded']}")
-    lines.append(f"- uncertain: {c['human_uncertain']}")
+    lines.append(
+        f"_AI reference (separate from the human flow): {c['ai_abstract_screened']} screened "
+        f"— include {c['ai_abstract_included']}, exclude {c['ai_abstract_excluded']}, uncertain {c['ai_abstract_uncertain']}._"
+    )
     lines.append("")
 
     lines.append("## Eligibility (Full Text)")
     lines.append("")
-    lines.append(f"**Full-text reports assessed:** {c['reports_assessed_for_eligibility']}")
-    lines.append(f"- of which marked include at screening: {c['reports_assessed_includes']}")
+    lines.append(f"**Reports sought for retrieval:** {c['reports_sought']}")
+    lines.append(f"**Reports not retrieved:** {c['reports_not_retrieved']}")
+    lines.append(f"**Reports assessed for eligibility:** {c['full_text_assessed']}")
     lines.append("")
 
     exclusion_counts = project.db.full_text_exclusion_counts(project.project_id)
@@ -104,7 +104,8 @@ def build_prisma_report(project: Project) -> str:
 
     lines.append("## Included")
     lines.append("")
-    lines.append(f"**Studies with completed extraction:** {c['studies_included']}")
+    lines.append(f"**Studies included:** {c['studies_included']}")
+    lines.append(f"- with completed AI extraction: {c['studies_extracted']}")
     lines.append("")
 
     lines.append("---")
@@ -112,3 +113,75 @@ def build_prisma_report(project: Project) -> str:
     lines.append("_Generated by `ailr export --format prisma`. PRISMA 2020 / PRISMA-trAIce reporting._")
 
     return "\n".join(lines)
+
+
+_MAIN_X, _MAIN_W = 40, 360
+_SIDE_X, _SIDE_W = 440, 250
+_PAD, _LINE_H, _GAP = 12, 20, 34
+
+
+def _svg_escape(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _svg_box(x: float, y: float, w: float, text_lines: list[tuple[str, bool]], dashed: bool = False) -> tuple[str, float]:
+    h = 2 * _PAD + len(text_lines) * _LINE_H
+    stroke, fill = ("#bcbcbc", "#fafafa") if dashed else ("#c8c8c8", "#ffffff")
+    dash = ' stroke-dasharray="4 3"' if dashed else ""
+    rect = f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="6" fill="{fill}" stroke="{stroke}"{dash}/>'
+    tspans = []
+    for i, (text, bold) in enumerate(text_lines):
+        weight = ' font-weight="bold"' if bold else ""
+        dy = 0 if i == 0 else _LINE_H
+        tspans.append(f'<tspan x="{x + _PAD}" dy="{dy}"{weight}>{_svg_escape(text)}</tspan>')
+    text_el = f'<text x="{x + _PAD}" y="{y + _PAD + 12}" fill="#222">{"".join(tspans)}</text>'
+    return rect + text_el, h
+
+
+def build_prisma_svg(project: Project) -> str:
+    c = prisma_counts(project)
+    ft_excl = project.db.full_text_exclusion_counts(project.project_id)
+
+    ident_lines: list[tuple[str, bool]] = [(f"{c['records_identified']} records identified", True)]
+    ident_lines += [(f"{d['source_database']}: {d['n']}", False) for d in c["by_source_database"]]
+
+    dup_side = [(f"{c['duplicates_removed']} duplicates removed", False)] if c["duplicates_removed"] else None
+    abs_side = [(f"{c['abstract_excluded']} excluded at title/abstract", False)]
+    notret_side = [(f"{c['reports_not_retrieved']} reports not retrieved", False)] if c["reports_not_retrieved"] else None
+    ftx_side = [(f"{c['full_text_excluded']} excluded, with reasons:", False)] + [(f"  {r['reason']}: {r['n']}", False) for r in ft_excl]
+
+    stages: list[tuple[list[tuple[str, bool]], Any]] = [
+        (ident_lines, dup_side),
+        ([(f"{c['records_after_dedup']} records after duplicates removed", True)], abs_side),
+        ([(f"{c['reports_sought']} reports sought for retrieval", True)], notret_side),
+        ([(f"{c['full_text_assessed']} full-text studies assessed", True)], ftx_side),
+        ([(f"{c['studies_included']} studies included", True), (f"of which extracted: {c['studies_extracted']}", False)], None),
+    ]
+
+    body: list[str] = []
+    y = 20.0
+    main_cx = _MAIN_X + _MAIN_W / 2
+    for i, (main_lines, side_lines) in enumerate(stages):
+        main_svg, mh = _svg_box(_MAIN_X, y, _MAIN_W, main_lines)
+        body.append(main_svg)
+        main_cy = y + mh / 2
+        if side_lines:
+            side_h = 2 * _PAD + len(side_lines) * _LINE_H
+            side_svg, _ = _svg_box(_SIDE_X, main_cy - side_h / 2, _SIDE_W, side_lines, dashed=True)
+            body.append(side_svg)
+            body.append(f'<line x1="{_MAIN_X + _MAIN_W}" y1="{main_cy}" x2="{_SIDE_X}" y2="{main_cy}" stroke="#888" marker-end="url(#ah)"/>')
+        next_y = y + mh + _GAP
+        if i < len(stages) - 1:
+            body.append(f'<line x1="{main_cx}" y1="{y + mh}" x2="{main_cx}" y2="{next_y}" stroke="#888" marker-end="url(#ah)"/>')
+        y = next_y
+
+    width = _SIDE_X + _SIDE_W + 20
+    height = y - _GAP + 20
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height:.0f}" '
+        f'viewBox="0 0 {width} {height:.0f}" font-family="Helvetica,Arial,sans-serif" font-size="12">'
+        f'<defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">'
+        f'<path d="M0,0 L6,3 L0,6 Z" fill="#888"/></marker></defs>'
+        f'<rect width="{width}" height="{height:.0f}" fill="#ffffff"/>'
+        f'{"".join(body)}</svg>'
+    )

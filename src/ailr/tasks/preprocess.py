@@ -11,8 +11,6 @@ from ailr.preprocess import PDFConverter, make_converter, strip_references
 
 ProgressCallback = Callable[[int, int, Optional[Source], Optional[Exception]], None]
 
-_LOW_TEXT_CHARS = 2000  # converted markdown shorter than this ~ likely a scanned/failed PDF
-
 
 def import_markdown_from_folder(project: Project, folder: Path) -> dict[str, Any]:
     """Import already-converted .md files and link them to sources via their pdf_path.
@@ -106,6 +104,7 @@ class PreprocessTask:
         summary.total_pdfs = len(pdf_by_source)
 
         strip_refs = self.project.config.preprocess.strip_references
+        low_text_threshold = self.project.config.preprocess.low_text_threshold
         items = sorted(pdf_by_source.items())
 
         for idx, (sid, pdf_file) in enumerate(items, 1):
@@ -132,7 +131,7 @@ class PreprocessTask:
                 self.project.db.update_markdown_path(sid, md_path)
                 self.project.db.update_pdf_path(sid, pdf_file)
                 summary.converted += 1
-                if len(md_text.strip()) < _LOW_TEXT_CHARS:
+                if len(md_text.strip()) < low_text_threshold:
                     summary.low_quality.append(
                         {"source_id": sid, "title": source.title, "chars": len(md_text.strip())}
                     )

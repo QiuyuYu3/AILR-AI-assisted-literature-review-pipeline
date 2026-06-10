@@ -13,7 +13,7 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
 from ailr.ui import ai_runner
-from ailr.ui._common import get_project
+from ailr.ui._common import get_project, reload_project
 from ailr.ui.screen_view import (
     _SORT_OPTIONS,
     _WITHIN_OPTIONS,
@@ -46,6 +46,15 @@ def pdf_tools_panel() -> list[Any]:
         # ── Step 2 — Convert PDFs to markdown ────────────────────────────────
         html.Hr(className="my-3"),
         dbc.Label("Step 2 — Convert PDFs to markdown", className="fw-bold"),
+        dbc.InputGroup(
+            [
+                dbc.InputGroupText("Low-text warning threshold (chars)"),
+                dbc.Input(id="ft-low-text-threshold", type="number", min=0, step=100, value=get_project().config.preprocess.low_text_threshold, size="sm", style={"maxWidth": "120px"}),
+            ],
+            size="sm",
+            className="mb-2",
+        ),
+        html.P("Converted markdown shorter than this is flagged as likely scanned/failed (saved when you convert).", className="text-muted small mb-1"),
         dbc.Button("Convert PDFs to markdown", id="ft-preprocess-run", color="secondary", outline=True, size="sm"),
         html.Div(id="ft-preprocess-status", className="small mt-2"),
         dcc.Interval(id="ft-preprocess-poll", interval=1500, disabled=True),
@@ -195,12 +204,18 @@ def register_callbacks(app: Any) -> None:
         Output("ft-preprocess-poll", "disabled"),
         Output("ft-preprocess-status", "children"),
         Input("ft-preprocess-run", "n_clicks"),
+        State("ft-low-text-threshold", "value"),
         prevent_initial_call=True,
     )
-    def _preprocess_run(n):
+    def _preprocess_run(n, threshold):
         if not n:
             return no_update, no_update
-        started = ai_runner.start_preprocess(get_project())
+        project = get_project()
+        if threshold is not None and int(threshold) != project.config.preprocess.low_text_threshold:
+            from ailr.core.config import save_preprocess_threshold
+            save_preprocess_threshold(project.root, int(threshold))
+            project = reload_project()
+        started = ai_runner.start_preprocess(project)
         msg = "Converting…" if started else "Already running…"
         return False, dbc.Alert(msg, color="info", className="py-1 mb-0")
 
@@ -676,7 +691,7 @@ def register_callbacks(app: Any) -> None:
                 can_extract=s.id in extract_ids, expand_abstract=bool(expand_all),
                 extracted_by=extracted_by.get(s.id),
                 extract_verify=project.config.extraction.workflow == "verify",
-                low_text=_low_text_md(project.root, s.id),
+                low_text=_low_text_md(project.root, s.id, project.config.preprocess.low_text_threshold),
             )
             for s in page_sources
         ]
@@ -691,13 +706,10 @@ def register_callbacks(app: Any) -> None:
         return cards, counts, prev_disabled, next_disabled, page_info
 
 
-_LOW_TEXT_BYTES = 2000  # markdown smaller than this ~ likely a scanned/failed PDF extraction
-
-
-def _low_text_md(root: Any, sid: Any) -> bool:
+def _low_text_md(root: Any, sid: Any, threshold: int) -> bool:
     p = root / "data" / "markdown" / f"{sid}.md"
     try:
-        return p.is_file() and p.stat().st_size < _LOW_TEXT_BYTES
+        return p.is_file() and p.stat().st_size < threshold
     except OSError:
         return False
 

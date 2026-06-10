@@ -36,7 +36,7 @@ def build_methods_skeleton(project: Project) -> str:
     lines.append("")
     lines.append("## Search and ingestion")
     lines.append(
-        f"Records were identified through searches of {db_str} (N = {counts['total_records_identified']} retrieved). "
+        f"Records were identified through searches of {db_str} (N = {counts['records_identified']} retrieved). "
         f"Deduplication was performed at ingestion using exact DOI matching followed by rapidfuzz token-set ratio "
         f"on titles (threshold = 90)."
     )
@@ -46,23 +46,23 @@ def build_methods_skeleton(project: Project) -> str:
         lines.append(
             "Titles and abstracts were screened independently by two human reviewers (Cochrane dual-blind design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score and "
-            f"supporting quotes from the abstract. {counts['human_screened']} human screening decisions were recorded."
+            f"supporting quotes from the abstract. {counts['abstract_screened']} human screening decisions were recorded."
         )
-        if counts["ai_screened"] > 0:
+        if counts["ai_abstract_screened"] > 0:
             lines.append("")
             lines.append(
                 f"{screen_model} was additionally run as a reference reviewer (not counted as one of the two required reviewers); "
-                f"{counts['ai_screened']} AI-screened records "
-                f"({counts['ai_included']} include / {counts['ai_excluded']} exclude / {counts['ai_uncertain']} uncertain)."
+                f"{counts['ai_abstract_screened']} AI-screened records "
+                f"({counts['ai_abstract_included']} include / {counts['ai_abstract_excluded']} exclude / {counts['ai_abstract_uncertain']} uncertain)."
             )
     else:
         lines.append(
             f"Titles and abstracts were screened by {screen_model} (temperature {cfg.llm.temperature}, seed {cfg.llm.seed}) "
             f"and one human reviewer, both blinded to each other (PRISMA-trAIce assisted-screening design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score "
-            f"and supporting quotes from the abstract. {counts['ai_screened']} records were AI-screened "
-            f"({counts['ai_included']} include / {counts['ai_excluded']} exclude / {counts['ai_uncertain']} uncertain); "
-            f"{counts['human_screened']} were human-screened."
+            f"and supporting quotes from the abstract. {counts['ai_abstract_screened']} records were AI-screened "
+            f"({counts['ai_abstract_included']} include / {counts['ai_abstract_excluded']} exclude / {counts['ai_abstract_uncertain']} uncertain); "
+            f"{counts['abstract_screened']} were human-screened."
         )
     if pairs:
         kappa_str = "undefined" if kappa != kappa else f"{kappa:.2f}"

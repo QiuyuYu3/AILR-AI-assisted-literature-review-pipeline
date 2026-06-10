@@ -1,6 +1,19 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Added
+- Import: required source-database selector (common databases + custom field; "Auto-detect" still available).
+- PRISMA flow: identification box lists records per source database; added "reports not retrieved" step.
+- PRISMA flow diagram exports as SVG (vector, no dependency) — UI button + `export --format prisma-svg`.
+- Full-text convert step: editable low-text warning threshold (persisted to `preprocess.low_text_threshold`), replacing the hardcoded 2000.
+
+### Fixed
+- Summary decision counts no longer include superseded re-votes; each card also reports unique sources screened.
+- PRISMA visual diagram and Markdown report now share one set of counts (previously disagreed on "included" and "assessed").
+
+---
 ## [0.16.1] – 2026-06-08
 
 ### Changed
