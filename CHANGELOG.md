@@ -1,13 +1,16 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.17.0] – 2026-06-10
 
 ### Added
 - Import: required source-database selector (common databases + custom field; "Auto-detect" still available).
 - PRISMA flow: identification box lists records per source database; added "reports not retrieved" step.
 - PRISMA flow diagram exports as SVG (vector, no dependency) — UI button + `export --format prisma-svg`.
 - Full-text convert step: editable low-text warning threshold (persisted to `preprocess.low_text_threshold`), replacing the hardcoded 2000.
+
+### Changed
+- Extraction page now surfaces the AI's evidence: the AI extraction card shows each field's verbatim quote (+ confidence/section), and verify-mode fields show the AI's quote inline.
 
 ### Fixed
 - Summary decision counts no longer include superseded re-votes; each card also reports unique sources screened.

@@ -399,7 +399,12 @@ def register_callbacks(app: Any) -> None:
         workflow = project.config.extraction.workflow
         ai_data: dict[str, Any] | None = None
         if workflow == "verify":
-            ai_data = {r["field_name"]: r["value"] for r in db.list_extractions(src.id, extractor_type="ai")}
+            # Scalar fields keep their quote in the separate source_quote column; wrap them as
+            # {value, quote} so the form can show it. Object/list values stay raw (quotes are nested).
+            ai_data = {}
+            for r in db.list_extractions(src.id, extractor_type="ai"):
+                v = r["value"]
+                ai_data[r["field_name"]] = v if isinstance(v, (dict, list)) else {"value": v, "quote": r.get("source_quote")}
         # Editable fields prefill from THIS reviewer's saved values (overriding AI); the AI
         # value stays visible as the "AI proposed" reference. Latest row wins (ORDER BY id).
         human_data = {
@@ -407,7 +412,8 @@ def register_callbacks(app: Any) -> None:
             for r in db.list_extractions(src.id, extractor_type="human")
             if r.get("extractor_id") == rid
         }
-        prefill_data = {**(ai_data or {}), **human_data}
+        ai_values = {k: (v["value"] if isinstance(v, dict) and "value" in v else v) for k, v in (ai_data or {}).items()}
+        prefill_data = {**ai_values, **human_data}
 
         return (
             _source_card(project.root, src),
@@ -588,7 +594,7 @@ def _flatten_list_item(item: Any, item_fields: list[FieldSpec]) -> dict:
 
 def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cell: Any = None) -> Any:
     label = html.Strong(field.name + (" *" if field.required else ""))
-    ai_value, _ai_quote = _unwrap_cell(ai_cell)
+    ai_value, ai_quote = _unwrap_cell(ai_cell)
     # Editable widget shows the effective value (the human's saved value if any, else AI).
     pre_value, pre_quote = _unwrap_cell(prefill_cell)
 
@@ -635,9 +641,13 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
                     dbc.Badge("changed from AI", color="warning", className="me-2") if differs else None,
                     f"AI proposed: {ai_value}",
                 ],
-                className="text-muted",
+                className="text-muted d-block",
                 style={"fontStyle": "italic"},
             )
+        )
+    if ai_quote:
+        children.append(
+            html.Small(f"AI quote: “{ai_quote}”", className="text-muted d-block", style={"fontStyle": "italic"})
         )
     children.append(
         dbc.Textarea(
@@ -671,12 +681,19 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
 
     items: list[Any] = [html.H6("AI extraction")]
     for row in ai_rows:
-        items.append(
-            html.P(
-                [html.Strong(f"{row['field_name']}: "), html.Code(json.dumps(row["value"], ensure_ascii=False)[:200])],
-                className="small mb-1",
-            )
-        )
+        block: list[Any] = [
+            html.Div([html.Strong(f"{row['field_name']}: "), html.Code(json.dumps(row["value"], ensure_ascii=False)[:300])]),
+        ]
+        if row.get("source_quote"):
+            block.append(html.Div(f"“{row['source_quote']}”", className="text-muted fst-italic ms-3"))
+        meta = []
+        if row.get("confidence") is not None:
+            meta.append(f"confidence: {row['confidence']}")
+        if row.get("page_or_section"):
+            meta.append(f"@ {row['page_or_section']}")
+        if meta:
+            block.append(html.Div(" • ".join(meta), className="text-muted ms-3", style={"fontSize": "0.75rem"}))
+        items.append(html.Div(block, className="small mb-2"))
     if flag_check:
         items.append(html.H6("flag_check", className="mt-2"))
         for fc in flag_check:
