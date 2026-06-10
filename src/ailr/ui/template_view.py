@@ -43,6 +43,32 @@ def _extraction_run_prompt() -> str:
         "=== PAPER TEXT (begins with source_id) ===\n<paste markdown/text here>"
     )
 
+
+def _field_list_text() -> str:
+    """The schema field list, for pasting to an external AI when crafting the prompt."""
+    project = get_project()
+    try:
+        return schema_to_markdown(compose_schema(project.root / project.config.extraction.schema_path))
+    except Exception:
+        return "(save the template first)"
+
+
+_AGENT_WRITE_PROMPT_MSG = """Help me write an extraction prompt for a literature review (it will be used by another AI).
+
+Review topic: [one sentence]
+
+Fields to extract (fixed — do not rename, add, or remove):
+[paste your field list — use Copy field list above]
+
+Please write a high-quality extraction instruction that:
+- keeps the markers {{criteria}} and {{schema_md}} exactly as-is (ailr fills them in)
+- does NOT re-list the fields (they are injected automatically) — only describe how to extract well
+- says: use only what the paper states, leave unknown fields null, never infer
+- gives clear rules for fields that are easy to confuse
+- says to record one entry per occurrence for repeating items
+Return just the prompt text, no explanation."""
+
+
 _TYPES = [
     {"label": "Text", "value": "string"},
     {"label": "Integer", "value": "integer"},
@@ -330,24 +356,77 @@ def layout() -> Any:
 
     external_section = [
         html.Hr(className="my-4"),
-        html.H5("4 · Run externally (optional)", className="mt-2"),
-        html.P("To run the AI outside ailr (ChatGPT/Claude) and import results back. Both are built from the fields above — Save the template first so they're current.", className="text-muted small mb-2"),
-        html.Div(
-            [
-                dbc.Button("Download JSON template (per paper)", id="tmpl-template-dl-btn", color="secondary", outline=True, size="sm"),
-                html.Span(" — empty skeleton (source_id + your fields) to fill in, then import on the AI extraction tab.", className="text-muted small ms-2"),
-            ],
-            className="mb-2",
+        html.H5("4 · Run with your own AI (optional)", className="mt-2"),
+        html.P(
+            "Two ways to involve your own ChatGPT/Claude. Prefer the first — ailr still runs the extraction, so the "
+            "output structure stays guaranteed. Save the template first so both reflect your current fields.",
+            className="text-muted small mb-2",
         ),
-        dcc.Download(id="tmpl-template-dl"),
-        html.Div(
+        html.Details(
             [
-                dbc.Label("Copy-paste prompt", className="small fw-bold mb-0 me-2"),
-                dcc.Clipboard(target_id="tmpl-runprompt", title="Copy prompt", style={"display": "inline-block", "cursor": "pointer"}),
+                html.Summary("A · Let your AI write the prompt (recommended)"),
+                html.Div(
+                    [
+                        html.P(
+                            "ailr guarantees the structure, so only the prompt wording is worth crafting. Copy your field "
+                            "list, paste the message below into your AI, then paste its reply into the Prompt box above.",
+                            className="text-muted small mb-2 mt-2",
+                        ),
+                        html.Div(
+                            [
+                                dbc.Label("Copy field list", className="small fw-bold mb-0 me-2"),
+                                dcc.Clipboard(target_id="tmpl-fieldlist", title="Copy field list", style={"display": "inline-block", "cursor": "pointer"}),
+                            ],
+                            className="d-flex align-items-center",
+                        ),
+                        dbc.Textarea(id="tmpl-fieldlist", value=_field_list_text(), style={"height": "90px", "fontFamily": "monospace", "fontSize": "0.68rem"}, className="mb-2"),
+                        html.Div(
+                            [
+                                dbc.Label("Message to your AI", className="small fw-bold mb-0 me-2"),
+                                dcc.Clipboard(target_id="tmpl-write-msg", title="Copy message", style={"display": "inline-block", "cursor": "pointer"}),
+                            ],
+                            className="d-flex align-items-center",
+                        ),
+                        dbc.Textarea(id="tmpl-write-msg", value=_AGENT_WRITE_PROMPT_MSG, style={"height": "200px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
+                        html.Span("Full guide in the handbook (coming soon).", className="text-muted small d-block mt-1"),
+                    ],
+                    className="ps-2",
+                ),
             ],
-            className="d-flex align-items-center",
+            open=True,
         ),
-        dbc.Textarea(id="tmpl-runprompt", value=_extraction_run_prompt(), style={"height": "150px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
+        html.Details(
+            [
+                html.Summary("B · Run the model entirely outside ailr"),
+                html.Div(
+                    [
+                        html.P(
+                            "Run the model elsewhere and import the JSON back. There is no structure guarantee here, so keep "
+                            "the field names exactly and check them on import.",
+                            className="text-muted small mb-2 mt-2",
+                        ),
+                        html.Div(
+                            [
+                                dbc.Button("Download JSON template (per paper)", id="tmpl-template-dl-btn", color="secondary", outline=True, size="sm"),
+                                html.Span(" — empty skeleton (source_id + your fields) to fill in, then import on the AI extraction tab.", className="text-muted small ms-2"),
+                            ],
+                            className="mb-2",
+                        ),
+                        dcc.Download(id="tmpl-template-dl"),
+                        html.Div(
+                            [
+                                dbc.Label("Copy-paste prompt", className="small fw-bold mb-0 me-2"),
+                                dcc.Clipboard(target_id="tmpl-runprompt", title="Copy prompt", style={"display": "inline-block", "cursor": "pointer"}),
+                            ],
+                            className="d-flex align-items-center",
+                        ),
+                        dbc.Textarea(id="tmpl-runprompt", value=_extraction_run_prompt(), style={"height": "150px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
+                        html.Span("Full guide in the handbook (coming soon).", className="text-muted small d-block mt-1"),
+                    ],
+                    className="ps-2",
+                ),
+            ],
+        ),
     ]
 
     tail = [

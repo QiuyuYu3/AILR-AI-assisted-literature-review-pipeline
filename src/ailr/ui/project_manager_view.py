@@ -83,7 +83,7 @@ def layout():
                                                 className="mb-1",
                                             ),
                                             html.Div(
-                                                "Tip: a free Neon/Supabase database gives you this URL. Requires the 'postgres' extra (pip install ailr[postgres]).",
+                                                "Tip: a free Neon/Supabase database gives you this URL.",
                                                 className="text-muted small mb-2",
                                             ),
                                         ],

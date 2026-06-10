@@ -17,6 +17,30 @@ from ailr.ui._common import get_project
 
 _SUPPORTED = (".ris", ".bib", ".csv", ".tsv", ".txt")
 
+_DB_OPTIONS = [
+    {"label": "Auto-detect (from file)", "value": "__auto__"},
+    {"label": "Web of Science (WoS)", "value": "WoS"},
+    {"label": "Scopus", "value": "Scopus"},
+    {"label": "PubMed", "value": "PubMed"},
+    {"label": "Embase", "value": "Embase"},
+    {"label": "PsycINFO", "value": "PsycINFO"},
+    {"label": "Other (type below)", "value": "__other__"},
+]
+
+
+_UNSET = object()
+
+
+def _resolve_source_db(db_choice: Any, db_custom: Any) -> Any:
+    custom = (db_custom or "").strip()
+    if db_choice == "__other__":
+        return custom or _UNSET
+    if db_choice == "__auto__":
+        return None  # fall back to detect_source_database
+    if db_choice:
+        return db_choice
+    return custom or _UNSET
+
 
 def layout() -> Any:
     return html.Div(
@@ -27,6 +51,9 @@ def layout() -> Any:
                 "Duplicates are detected automatically by DOI and fuzzy title.",
                 className="text-muted small",
             ),
+            dbc.Label("Source database", className="fw-bold small"),
+            dcc.Dropdown(id="import-ref-db", options=_DB_OPTIONS, placeholder="Required — select before importing", className="mb-2"),
+            dbc.Input(id="import-ref-db-custom", placeholder="Custom database name", className="mb-3", style={"maxWidth": "320px"}),
             dcc.Upload(
                 id="import-ref-upload",
                 children=html.Div(["Drag and drop, or ", html.A("select a file")]),
@@ -50,11 +77,16 @@ def register_callbacks(app: Any) -> None:
         Output("import-ref-feedback", "children"),
         Input("import-ref-upload", "contents"),
         State("import-ref-upload", "filename"),
+        State("import-ref-db", "value"),
+        State("import-ref-db-custom", "value"),
         prevent_initial_call=True,
     )
-    def _import_refs(contents, filename):
+    def _import_refs(contents, filename, db_choice, db_custom):
         if not contents or not filename:
             return no_update
+        source_db = _resolve_source_db(db_choice, db_custom)
+        if source_db is _UNSET:
+            return dbc.Alert("Select a source database before importing.", color="warning")
         ext = Path(filename).suffix.lower()
         if ext not in _SUPPORTED:
             return dbc.Alert(f"Unsupported file type: {ext or '(none)'}. Use RIS / BibTeX / CSV.", color="warning")
@@ -67,7 +99,7 @@ def register_callbacks(app: Any) -> None:
             tmp.write(decoded)
             tmp_path = Path(tmp.name)
         try:
-            r = get_project().ingest(tmp_path)
+            r = get_project().ingest(tmp_path, source_database=source_db)
         except AILRError as e:
             return dbc.Alert(f"Import failed: {e}", color="danger")
         finally:

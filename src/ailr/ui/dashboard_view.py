@@ -37,7 +37,9 @@ def _build_content(reviewer: Optional[str]) -> Any:
     total_in = sum((row.get("input_tokens") or 0) for row in api_summary)
     total_out = sum((row.get("output_tokens") or 0) for row in api_summary)
 
+    abstract_sources_screened = db.count_sources_screened(pid, "human", stage="abstract")
     ft_human = db.screening_summary(pid, "human", stage="full_text")
+    ft_sources_screened = db.count_sources_screened(pid, "human", stage="full_text")
     with_md = sum(1 for s in db.list_sources(pid) if s.markdown_path)
     ai_extracted = sum(1 for s in db.list_sources(pid) if db.has_extraction(s.id, "ai"))
     human_extracted = sum(1 for s in db.list_sources(pid) if db.has_extraction(s.id, "human"))
@@ -64,6 +66,7 @@ def _build_content(reviewer: Optional[str]) -> Any:
                 ("uncertain", human_counts["uncertain"], "warning"),
             ],
             extra=html.Small(
+                f"across {abstract_sources_screened} unique source(s)  •  "
                 f"AI: {sum(ai_counts.values())} decisions  •  "
                 f"You: {my_done} / {total_sources} reviewed",
                 className="text-muted",
@@ -90,7 +93,11 @@ def _build_content(reviewer: Optional[str]) -> Any:
                 ("exclude", ft_human["exclude"], "danger"),
                 ("uncertain", ft_human["uncertain"], "warning"),
             ],
-            extra=html.Small(f"{with_md} source(s) have markdown ready", className="text-muted"),
+            extra=html.Small(
+                f"across {ft_sources_screened} unique source(s)  •  "
+                f"{with_md} source(s) have markdown ready",
+                className="text-muted",
+            ),
         ),
         _stage_card(
             title="Full-text extraction",

@@ -1104,12 +1104,20 @@ class Database:
         return self._conn.execute(sql, params).fetchone()["n"]
 
     def screening_summary(self, project_id: int, reviewer_type: str = "ai", stage: str = "abstract") -> dict[str, int]:
+        # Count only the latest decision per (source, reviewer); superseded re-votes are excluded.
         rows = self._conn.execute(
             """
             SELECT d.decision AS decision, COUNT(*) AS n
             FROM screening_decisions d
             JOIN sources s ON d.source_id = s.id
             WHERE s.project_id = ? AND d.reviewer_type = ? AND d.stage = ?
+              AND d.id = (
+                  SELECT MAX(id) FROM screening_decisions
+                  WHERE source_id = d.source_id
+                    AND reviewer_id = d.reviewer_id
+                    AND reviewer_type = d.reviewer_type
+                    AND stage = d.stage
+              )
             GROUP BY d.decision
             """,
             (project_id, reviewer_type, stage),
@@ -1118,6 +1126,17 @@ class Database:
         for r in rows:
             out[r["decision"]] = r["n"]
         return out
+
+    def count_sources_screened(self, project_id: int, reviewer_type: str = "human", stage: str = "abstract") -> int:
+        return self._conn.execute(
+            """
+            SELECT COUNT(DISTINCT d.source_id) AS n
+            FROM screening_decisions d
+            JOIN sources s ON d.source_id = s.id
+            WHERE s.project_id = ? AND d.reviewer_type = ? AND d.stage = ?
+            """,
+            (project_id, reviewer_type, stage),
+        ).fetchone()["n"]
 
     def list_sources_unreviewed_by(
         self,
