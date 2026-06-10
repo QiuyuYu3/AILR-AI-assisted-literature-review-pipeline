@@ -4,6 +4,10 @@ A desktop app for running systematic / scoping / methodological literature revie
 
 Everything is doable from the **web UI** — you don't need the command line.
 
+<p align="center">
+  <img src="docs/figures/ailr.png" alt="ailr pipeline — import to export" width="720">
+</p>
+
 ## Install
 
 ```bash
@@ -19,6 +23,8 @@ ailr ui <project-folder>
 ```
 
 Opens the app at http://localhost:8050. Or run `ailr ui` to open the **project manager** — create a new project (local SQLite, or a shared PostgreSQL URL) or open a recent one. CLI alternative: `ailr init my-review`.
+
+![The project manager — create a new project or open a recent one](docs/figures/projects.png)
 
 ### API key
 
@@ -42,6 +48,23 @@ The key lives only in that shell session (gone when you close it) — nothing is
 7. **Full text → FT Conflicts** — reconcile full-text disagreements.
 8. **Reports** — PRISMA flow, methods skeleton, inter-rater reliability + confusion matrix, API usage, and CSV/JSON/RIS exports.
 9. **Sources / Tags / Duplicates / Database** — browse/manage records (with bulk actions on Sources), tag, review duplicates, and browse the raw tables.
+
+### A look at the app
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/figures/abstract_workflow_calibration.png" alt="Calibration"><br><sub><b>Calibrate</b> the AI against human judgement (Cohen's κ) before screening.</sub></td>
+    <td width="50%"><img src="docs/figures/abstract_screening1.png" alt="Abstract screening"><br><sub><b>Screen</b> titles/abstracts — the AI stays blinded until you decide.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/figures/ft_template1.png" alt="Template editor"><br><sub><b>Define</b> the fields to extract in the Template editor.</sub></td>
+    <td><img src="docs/figures/ft_extraction1.png" alt="Extraction verify"><br><sub><b>Verify</b> the AI's values, each backed by a source quote.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/figures/ft_conflicts.png" alt="Full-text conflicts"><br><sub><b>Reconcile</b> full-text disagreements.</sub></td>
+    <td><img src="docs/figures/summary.png" alt="Summary dashboard"><br><sub><b>Track</b> progress at every stage on the dashboard.</sub></td>
+  </tr>
+</table>
 
 ## Workflow modes
 

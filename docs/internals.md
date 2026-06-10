@@ -59,7 +59,7 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 
 ## The audit trail
 
-There is no separate log file — the trail **is** the database, by design:
+The primary audit trail is the **database itself**:
 
 - `screening_decisions` and `extractions` are **append-only** and stamped with `reviewer_type` / `reviewer_id` (or `extractor_*`), `timestamp`, `llm_params`, and `prompt_version`. Nothing is overwritten in place — a changed verdict is a new row.
 - `reconciliations` records *who* adjudicated a conflict and *why*.
@@ -67,6 +67,8 @@ There is no separate log file — the trail **is** the database, by design:
 - `api_calls` accounts for every token spent.
 
 Together these let the **exports** module derive a PRISMA flow, a methods skeleton, and inter-rater reliability entirely from stored rows.
+
+**JSONL backup.** Alongside the database, every decision and extraction is also appended to a plaintext log at `data/audit.jsonl` (path from `logging.audit_log`). This is a deliberate *second* copy — the database stays the primary store, and the JSONL write is **best-effort**: `core/audit.py`'s `log_event` swallows I/O errors so a failed log line can never break the primary DB write. It means the trail survives even if the database is lost, and `read_events()` can replay it.
 
 ## Exports & metrics
 
