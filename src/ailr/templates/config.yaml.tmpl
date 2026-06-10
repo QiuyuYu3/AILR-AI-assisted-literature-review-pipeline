@@ -46,7 +46,10 @@ preprocess:
   keep_sections: []
 
 storage:
-  database: data/review.sqlite
+  database: data/review.sqlite   # local SQLite, used when database_url is blank
+  # database_url: ""             # set to a Postgres URL to share with a team, e.g.
+  #   "postgresql+psycopg://user:pw@host/db?sslmode=require"
+  # Holds the DB password -> do not commit this file to a public git repo (see .gitignore).
 
 logging:
   level: INFO

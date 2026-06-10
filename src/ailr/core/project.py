@@ -1,7 +1,6 @@
 """Project: the top-level handle on a review project directory."""
 
 import json
-import os
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Optional
@@ -29,6 +28,7 @@ TEMPLATE_FILES = [
     ("extraction_prompt.txt.tmpl", "prompts/extraction.txt"),
     ("schema.yaml.tmpl", "schema.yaml"),
     ("inclusion_criteria.md.tmpl", "inclusion_criteria.md"),
+    ("gitignore.tmpl", ".gitignore"),
 ]
 
 
@@ -62,9 +62,10 @@ class Project:
         if not (self._root / "lit_review.yaml").exists():
             raise ProjectNotFoundError(f"No lit_review.yaml in {self._root}")
         self._config = load_config(self._root)
-        # DB precedence: AILR_DATABASE_URL env var (keeps the password OUT of the shared
-        # lit_review.yaml, like the API key) > storage.database_url in yaml > local SQLite file.
-        db_url = os.environ.get("AILR_DATABASE_URL") or self._config.storage.database_url
+        # DB precedence: storage.database_url in yaml (Postgres, shared with the team via the
+        # project folder) > local SQLite file. The yaml holds the DB password, so keep it out of
+        # public git (the project template gitignores lit_review.yaml).
+        db_url = self._config.storage.database_url
         if db_url:
             self._db = Database(db_url)
         else:

@@ -167,6 +167,6 @@ On a shared (PostgreSQL) project, the reviewer ID is how the app tells teammates
 A project is a **folder** plus a **database**:
 
 - The **folder** holds your configuration — `lit_review.yaml`, prompts, criteria, and the extraction schema.
-- The **database** holds your data — references, decisions, extractions, and the audit trail. By default this is a local SQLite file inside the folder; point `AILR_DATABASE_URL` at a PostgreSQL database to share it with a team.
+- The **database** holds your data — references, decisions, extractions, and the audit trail. By default this is a local SQLite file inside the folder; set `storage.database_url` in `lit_review.yaml` to a PostgreSQL database to share it with a team.
 
 See [Core concepts](concepts.md) for the details, then start [importing references](workflow/import.md).

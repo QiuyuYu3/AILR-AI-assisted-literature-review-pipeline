@@ -44,7 +44,7 @@ def layout() -> Any:
     ex_eff = resolve_stage_llm(llm, ex)
     providers_used = sorted({sc_eff.provider, ex_eff.provider})
     key_badges = [(p, _API_KEY_ENV.get(p, "ANTHROPIC_API_KEY")) for p in providers_used]
-    db_url_set = bool(os.environ.get("AILR_DATABASE_URL"))
+    db_url_set = bool(project.config.storage.database_url)
 
     return html.Div(
         [
@@ -60,14 +60,15 @@ def layout() -> Any:
             html.Div(
                 [
                     dbc.Badge(
-                        f"AILR_DATABASE_URL: {'set' if db_url_set else 'NOT set'}",
+                        "Shared Postgres" if db_url_set else "Local SQLite",
                         color="success" if db_url_set else "secondary",
                         className="me-2",
                     ),
                     html.Small(
-                        "Set this to a PostgreSQL URL to share the project's data with a team. Unset = the local "
-                        "SQLite file above. Like the API key, it lives in the environment (not in lit_review.yaml) "
-                        "so the DB password is never written to / shared with the project files.",
+                        "The database comes from storage.database_url in this project's lit_review.yaml. "
+                        "Set it to a PostgreSQL URL to share the data with a team; leave it blank to use the "
+                        "local SQLite file above. The yaml holds the DB password, so do not commit it to a "
+                        "public git repo (the project template gitignores lit_review.yaml).",
                         className="text-muted",
                     ),
                 ],
@@ -78,17 +79,18 @@ def layout() -> Any:
                     html.Summary("How to use a shared database (Postgres / Neon)", className="small"),
                     html.P(
                         "Create a free Neon database, copy its connection URL, change the prefix to "
-                        "postgresql+psycopg://, then export it and launch the app from that same terminal:",
+                        "postgresql+psycopg://, then add it to this project's lit_review.yaml:",
                         className="small text-muted mb-1",
                     ),
                     html.Pre(
-                        'export AILR_DATABASE_URL="postgresql+psycopg://user:pw@host/db?sslmode=require"\nailr ui <project-folder>',
+                        'storage:\n  database_url: "postgresql+psycopg://user:pw@host/db?sslmode=require"',
                         style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"},
                         className="mb-1",
                     ),
                     html.Small(
-                        "Everyone on the team exports the SAME URL → you all share one database. "
-                        "Add the export line to ~/.bashrc to avoid re-typing it each session.",
+                        "Everyone who opens this project folder (e.g. shared via Box) connects to the same "
+                        "database automatically. Each project's yaml can point to its own database. "
+                        "Keep lit_review.yaml out of public git — it contains the DB password.",
                         className="text-muted",
                     ),
                 ],

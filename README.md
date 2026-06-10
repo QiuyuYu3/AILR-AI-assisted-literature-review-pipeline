@@ -59,16 +59,16 @@ Each stage has its own model in **Settings** (provider / model / temperature) �
 Give everyone a shared **PostgreSQL** database so you co-edit one project in real time. Use any managed Postgres host (several have free tiers) or self-host one.
 
 1. Create a PostgreSQL database, copy its connection URL, and change the prefix to `postgresql+psycopg://`.
-2. Each teammate exports it and launches from that terminal:
-   ```bash
-   export AILR_DATABASE_URL="postgresql+psycopg://user:pw@host/db?sslmode=require"
-   ailr ui <project-folder>
+2. Add it to the project's `lit_review.yaml`:
+   ```yaml
+   storage:
+     database_url: "postgresql+psycopg://user:pw@host/db?sslmode=require"
    ```
-   The URL lives in the environment (like the API key) — the DB password is never written to the project. Settings shows `AILR_DATABASE_URL: set` and the active database.
+   Everyone who opens the same project folder connects to that database automatically. Each project's yaml can point to its own database. Settings shows `Shared Postgres` and the active database. **`lit_review.yaml` holds the DB password — keep it out of a public git repo** (the generated `.gitignore` already excludes it).
 3. Everyone needs the same project **folder** (the config: `lit_review.yaml`, prompts, criteria, schema) with the same project name — the data lives in the shared DB, not the folder. One DB can hold many projects (namespaced by project name).
 
 Each person enters their own **reviewer ID** at the top. In `assisted` mode each paper is screened by one human (the queue divides the work; a second vote on an already-screened paper is rejected). In `independent` mode both humans review every paper (Cochrane dual screening), then reconcile in **Conflicts**.
 
-Without `AILR_DATABASE_URL`, a project uses a local SQLite file (single-user). To move an existing SQLite project onto Postgres: `ailr db-migrate <project> --to "<url>"` (target must be empty).
+With `storage.database_url` blank, a project uses a local SQLite file (single-user). To move an existing SQLite project onto Postgres: `ailr db-migrate <project> --to "<url>"` (target must be empty), then set `database_url` in the yaml.
 
 If PDFs live in a synced folder (Box/OneDrive) where each person's path differs, set your local PDF folder in **Settings**.

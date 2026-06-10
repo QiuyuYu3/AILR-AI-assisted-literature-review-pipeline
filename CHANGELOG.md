@@ -1,6 +1,12 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Changed
+- Shared database is now configured via `storage.database_url` in `lit_review.yaml` (removed the `AILR_DATABASE_URL` env var); new projects ship a `.gitignore` that excludes `lit_review.yaml` since it holds the DB password.
+
+---
 ## [0.17.0] – 2026-06-10
 
 ### Added

@@ -39,7 +39,7 @@ Per-stage LLM overrides are resolved separately: `resolve_stage_llm()` layers a 
 
 ## Database
 
-The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema runs on **SQLite** (default, a file in the project) and **PostgreSQL** (shared, via `AILR_DATABASE_URL`). The tables:
+The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema runs on **SQLite** (default, a file in the project) and **PostgreSQL** (shared, via `storage.database_url` in `lit_review.yaml`). The tables:
 
 | Table | Holds |
 |-------|-------|
