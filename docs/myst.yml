@@ -1,0 +1,25 @@
+version: 1
+project:
+  title: ailr handbook
+  description: User handbook for ailr — AI-assisted literature review.
+  toc:
+    - file: index.md
+    - title: Getting started
+      children:
+        - file: getting-started.md
+        - file: concepts.md
+    - title: Running a review
+      children:
+        - file: workflow/import.md
+        - file: workflow/abstract-screening.md
+        - file: workflow/full-text.md
+        - file: workflow/extraction.md
+        - file: workflow/reports.md
+    - file: ai-extraction.md
+    - file: team.md
+    - title: Internals
+      children:
+        - file: internals.md
+        - file: extraction-engine.md
+site:
+  template: book-theme

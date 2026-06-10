@@ -1,0 +1,65 @@
+# Data extraction
+
+Pull structured data out of the included full texts — the step that turns a pile of papers into a dataset you can analyse. The setup lives in tabs on the **Full text → Workflow** page — **Template** (define what to extract), **AI extraction** (run it), and **Calibration** — while the **Extraction** sidebar page is the per-paper verify queue.
+
+## 1. Define the template
+
+On the **Template** tab you set up *what* gets extracted:
+
+- the **variables** to extract (the schema, `schema.yaml`)
+- the **extraction prompt**
+- which fields a **human must verify**
+- optional value definitions (`codebook.yaml`)
+
+The schema sets the *structure* (which fields exist and their types) and the prompt sets the *quality* (how to read the paper) — these are independent, and understanding why is worth a few minutes: see [How AI extraction works](../ai-extraction.md). You can let your own AI draft the prompt ([Use your own AI to write the prompt](../ai-extraction.md#use-your-own-ai-to-write-the-extraction-prompt)), or **download a JSON template** / **copy the extraction prompt** to run the model entirely outside the app ([Run the AI externally](../ai-extraction.md#run-the-ai-externally-and-import)).
+
+![template editor](../figures/ft_template1.png)
+
+![template editor — fields](../figures/ft_template2.png)
+
+:::{tip}
+The single highest-leverage thing you can do for extraction quality is to write a **clear description for each field**. The model reads those descriptions as the label for where content goes, so a precise field description beats a long prompt. Use an **enum** wherever the answer should be one of a fixed set.
+:::
+
+## 2. Choose the extraction workflow
+
+Set the workflow on the full-text **Workflow** page:
+
+- `verify` — the AI extracts and the **human verifies/edits** each value (the AI value is shown). Fastest path; the human is a checker.
+- `independent` — the **human extracts blind** and the AI's values stay hidden until submit. Use when you need a true second independent pass.
+
+See [workflow modes](../concepts.md#workflow-modes).
+
+### Calibrate extraction
+
+Like screening, extraction has a **Calibration** tab — run the AI on a small sample and compare against a human pass before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them.
+
+![extraction calibration](../figures/ft_ca.png)
+
+## 3. Run AI extraction
+
+On the **AI extraction** tab, run AI extraction on the included papers, or **import results you ran yourself**. **Mock** mode fabricates schema-shaped values so you can test the extraction UI with no API call; a **Force re-extract** toggle re-runs papers that already have extractions (e.g. after you revise the schema).
+
+```bash
+ailr extract <project-folder>           # included papers
+ailr extract <project-folder> --mock    # no API call
+ailr extract <project-folder> --force   # re-extract existing
+```
+
+![AI extraction](../figures/ft_ai.png)
+
+## 4. Verify and edit
+
+The **Extraction** page is the verify queue: it shows each paper whose final full-text decision is **include**, with the extracted fields and the verbatim quote the AI attached to each value (so you can check the value against the source without reopening the PDF). Verify or edit the values per paper.
+
+Where your value differs from the AI's, the field is **highlighted** and shows what the *AI proposed* with a **"changed from AI"** badge — so your edits are easy to spot at a glance, and so a reviewer can see exactly where human judgement overrode the model.
+
+:::{note}
+After you submit, the form prefills **your saved values**, not the AI's — so re-opening a paper shows what you decided, not what the AI guessed. In `verify` mode a second human submission for the same paper is rejected (one verifier per paper).
+:::
+
+![verify queue](../figures/ft_extraction1.png)
+
+![verify form](../figures/ft_extraction2.png)
+
+When extraction is verified, generate your [reports and exports](reports.md).
