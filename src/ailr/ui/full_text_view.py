@@ -670,6 +670,7 @@ def register_callbacks(app: Any) -> None:
                 s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), db, rid,
                 can_extract=s.id in extract_ids, expand_abstract=bool(expand_all),
                 extracted=s.id in extracted_ids,
+                low_text=_low_text_md(project.root, s.id),
             )
             for s in page_sources
         ]
@@ -684,6 +685,17 @@ def register_callbacks(app: Any) -> None:
         return cards, counts, prev_disabled, next_disabled, page_info
 
 
+_LOW_TEXT_BYTES = 2000  # markdown smaller than this ~ likely a scanned/failed PDF extraction
+
+
+def _low_text_md(root: Any, sid: Any) -> bool:
+    p = root / "data" / "markdown" / f"{sid}.md"
+    try:
+        return p.is_file() and p.stat().st_size < _LOW_TEXT_BYTES
+    except OSError:
+        return False
+
+
 def _ft_card(
     src: Source,
     my_decision: Optional[str],
@@ -694,6 +706,7 @@ def _ft_card(
     can_extract: bool = False,
     expand_abstract: bool = False,
     extracted: bool = False,
+    low_text: bool = False,
 ) -> Any:
     sid = src.id
     decision_color = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -826,6 +839,13 @@ def _ft_card(
     if expand_abstract and src.abstract:
         abstract_block = html.P(src.abstract, className="text-muted small mt-1 mb-1")
 
+    low_text_badge: Any = None
+    if low_text:
+        low_text_badge = html.Div(
+            dbc.Badge("low-text PDF — may be scanned; check or re-convert (e.g. marker)", color="warning"),
+            className="mt-1",
+        )
+
     left = html.Div(
         [
             html.Strong(f"#{sid}  ", className="text-muted"),
@@ -846,7 +866,7 @@ def _ft_card(
                 dbc.Row(
                     [
                         dbc.Col(
-                            [left, title_el, meta_el, abstract_block, tag_chips_el, doi_el, read_btn, ai_panel, actions_row, extract_row],
+                            [left, title_el, meta_el, low_text_badge, abstract_block, tag_chips_el, doi_el, read_btn, ai_panel, actions_row, extract_row],
                             width=9,
                         ),
                         dbc.Col(

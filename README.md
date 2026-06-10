@@ -34,16 +34,14 @@ The key lives only in that shell session (gone when you close it) — nothing is
 ## How a review flows (left sidebar)
 
 1. **Import** — drop a RIS / BibTeX / CSV of search results; duplicates are flagged automatically.
-2. **Abstract → Workflow** — choose the screening workflow, run AI screening, edit the screening prompt, and **calibrate** (test the prompt on a sample, with Cohen's κ vs human).
+2. **Abstract → Workflow** — choose the screening workflow, run AI screening, edit the prompt, and **calibrate** (test on a sample, Cohen's κ vs human).
 3. **Abstract → Screening** — a card list with Include / Exclude / Uncertain. AI is blinded until you decide.
 4. **Abstract → Conflicts** — reconcile where AI and human (or two humans) disagree.
-5. **Full text & extraction → Workflow** — link PDFs (from Zotero RIS) and convert them to markdown; set the extraction workflow.
-6. **Full-text review** — read the full text and include/exclude (with reasons for PRISMA).
-7. **Template** — define the variables to extract, the extraction prompt, which fields a human must verify, and download a JSON template / copy a prompt to run the AI externally.
-8. **AI extraction** — run AI extraction on included papers, or import results you ran yourself.
-9. **Extraction** — verify/edit the AI's values per paper.
-10. **Reports** — PRISMA flow, methods skeleton, inter-rater reliability + confusion matrix, API usage, and CSV/JSON/RIS exports.
-11. **Sources / Tags / Duplicates / Database** — manage records, tag, review duplicates, and browse the raw tables.
+5. **Full text → Workflow** — link PDFs (Zotero RIS) and convert to markdown (scanned / low-text PDFs are flagged); set the extraction workflow; define the extraction fields/prompt (**Template** tab) and run AI extraction (**AI extraction** tab).
+6. **Full-text review** — read the full text and include/exclude (with PRISMA reasons); abstracts can expand inline. For an included paper, the **To extract** filter shows an **Open extraction** button → verify/edit the AI's values per field (changes from the AI are highlighted).
+7. **Full text → FT Conflicts** — reconcile full-text disagreements.
+8. **Reports** — PRISMA flow, methods skeleton, inter-rater reliability + confusion matrix, API usage, and CSV/JSON/RIS exports.
+9. **Sources / Tags / Duplicates / Database** — browse/manage records (with bulk actions on Sources), tag, review duplicates, and browse the raw tables.
 
 ## Workflow modes
 
@@ -54,7 +52,7 @@ Bibliographic metadata (title, authors, year, journal, DOI) comes from the impor
 
 ## Models & cost
 
-Set one model in **Settings**, or override per stage (e.g. a cheaper model for abstract screening, a stronger one for full-text extraction). Token usage is logged per call (see Summary / Reports).
+Each stage has its own model in **Settings** (provider / model / temperature) — e.g. a cheaper model for abstract screening, a stronger one for full-text extraction. The provider's API key must be in your environment (see above). Token usage is logged per call (see Summary / Reports).
 
 ## Working as a team
 

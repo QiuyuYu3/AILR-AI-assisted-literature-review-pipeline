@@ -9,13 +9,10 @@ from dash import Input, Output, State, html, no_update
 
 from ailr.core.config import resolve_stage_llm, save_stage_llm_config
 from ailr.ui._common import (
-    create_project,
     get_pdf_root,
     get_project,
-    list_recent_projects,
     reload_project,
     set_pdf_root,
-    switch_project,
 )
 from ailr.ui.screen_view import criteria_editor_block, register_criteria_callbacks
 
@@ -25,18 +22,9 @@ _PROVIDERS = [
     {"label": "Gemini", "value": "gemini"},
 ]
 
-_STAGE_PROVIDERS = [{"label": "(inherit)", "value": ""}] + _PROVIDERS
-
 _COMMON_MODELS = "Common: claude-opus-4-8 · claude-sonnet-4-6 · claude-haiku-4-5-20251001"
 
 _API_KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
-
-
-def _recent_options() -> list:
-    opts = [{"label": "(select a recent project)", "value": ""}]
-    for p in list_recent_projects():
-        opts.append({"label": f"{Path(p).name}  —  {p}", "value": p})
-    return opts
 
 
 def _read_file(project_root: Path, rel: str) -> str:
@@ -107,35 +95,7 @@ def layout() -> Any:
                 open=False,
                 className="mt-1",
             ),
-            dbc.Label("Recent projects", className="small fw-bold mt-3"),
-            dbc.InputGroup(
-                [
-                    dbc.Select(id="settings-recent-select", options=_recent_options(), value=""),
-                    dbc.Button("Open", id="settings-recent-open", color="secondary", outline=True, size="sm"),
-                ]
-            ),
-            dbc.Label("…or open by path", className="small fw-bold mt-3"),
-            dbc.InputGroup(
-                [
-                    dbc.Input(id="settings-switch-path", placeholder="Path to another ailr project folder", size="sm"),
-                    dbc.Button("Open project", id="settings-switch-open", color="secondary", outline=True, size="sm"),
-                ]
-            ),
-            html.Div(id="settings-switch-feedback", className="small mt-1"),
-
-            dbc.Label("Create a new project", className="small fw-bold mt-3"),
-            dbc.Row(
-                [
-                    dbc.Col([dbc.Label("Name", className="small"),
-                             dbc.Input(id="settings-new-name", placeholder="my-review", size="sm")], width=5),
-                    dbc.Col([dbc.Label("Parent folder", className="small"),
-                             dbc.Input(id="settings-new-parent", value=str(project.root.parent), size="sm")], width=7),
-                ],
-                className="g-2",
-            ),
-            html.Small("Starts in assisted mode (AI + 1 human). Change the screening workflow on the Workflow page if you want 2 independent humans.", className="text-muted"),
-            html.Div(dbc.Button("Create + open", id="settings-new-create", color="primary", outline=True, size="sm", className="mt-2")),
-            html.Div(id="settings-new-feedback", className="small mt-1"),
+            html.Small("Create, open, or switch projects on the Projects page (in the sidebar).", className="text-muted d-block mt-3"),
 
             dbc.Label("PDF folder on THIS machine", className="small fw-bold mt-3"),
             html.Small(
@@ -233,62 +193,6 @@ def layout() -> Any:
 
 def register_callbacks(app: Any) -> None:
     register_criteria_callbacks(app, "settings")
-
-    @app.callback(
-        Output("settings-switch-feedback", "children"),
-        Output("tabs", "data", allow_duplicate=True),
-        Input("settings-switch-open", "n_clicks"),
-        State("settings-switch-path", "value"),
-        prevent_initial_call=True,
-    )
-    def _switch(n, path):
-        if not n:
-            return no_update, no_update
-        p = Path((path or "").strip())
-        if not path or not (p / "lit_review.yaml").exists():
-            return dbc.Alert("Not an ailr project folder (no lit_review.yaml).", color="warning", className="mb-0 py-1"), no_update
-        try:
-            proj = switch_project(p)
-        except Exception as e:
-            return dbc.Alert(f"Failed: {e}", color="danger", className="mb-0 py-1"), no_update
-        return dbc.Alert(f"Opened '{proj.config.project.name}'. The app now uses this project.", color="success", className="mb-0 py-1"), "dashboard"
-
-    @app.callback(
-        Output("settings-switch-feedback", "children", allow_duplicate=True),
-        Output("tabs", "data", allow_duplicate=True),
-        Input("settings-recent-open", "n_clicks"),
-        State("settings-recent-select", "value"),
-        prevent_initial_call=True,
-    )
-    def _open_recent(n, path):
-        if not n or not path:
-            return no_update, no_update
-        try:
-            proj = switch_project(Path(path))
-        except Exception as e:
-            return dbc.Alert(f"Failed: {e}", color="danger", className="mb-0 py-1"), no_update
-        return dbc.Alert(f"Opened '{proj.config.project.name}'.", color="success", className="mb-0 py-1"), "dashboard"
-
-    @app.callback(
-        Output("settings-new-feedback", "children"),
-        Output("tabs", "data", allow_duplicate=True),
-        Input("settings-new-create", "n_clicks"),
-        State("settings-new-name", "value"),
-        State("settings-new-parent", "value"),
-        prevent_initial_call=True,
-    )
-    def _create_new(n, name, parent):
-        if not n:
-            return no_update, no_update
-        name = (name or "").strip()
-        parent = (parent or "").strip()
-        if not name or not parent:
-            return dbc.Alert("Enter a project name and parent folder.", color="warning", className="mb-0 py-1"), no_update
-        try:
-            proj = create_project(Path(parent), name, "assisted")
-        except Exception as e:
-            return dbc.Alert(f"Create failed: {e}", color="danger", className="mb-0 py-1"), no_update
-        return dbc.Alert(f"Created + opened '{proj.config.project.name}' at {proj.root}.", color="success", className="mb-0 py-1"), "dashboard"
 
     @app.callback(
         Output("settings-pdfroot-feedback", "children"),

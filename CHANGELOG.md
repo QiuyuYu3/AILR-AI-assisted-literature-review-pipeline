@@ -13,6 +13,11 @@
 - Settings: model config is now per-stage (each has its own provider/model/temperature); removed the redundant top-level Model section.
 - Sources: bulk "Mark as duplicate / Move to abstract screening / Move back to full-text" on selected rows.
 - Sources: bulk include/exclude/uncertain can target the abstract or full-text stage.
+- Settings: removed project create/open/switch (handled on the Projects page); Settings now only holds the current project's config.
+- Low-text PDFs (tiny markdown → likely scanned/failed) are reported right after PDF→markdown conversion, and badged on full-text cards.
+
+### Removed
+- Sources: per-decision confidence slider in bulk actions (human decisions don't need it).
 
 ### Fixed
 - Reports: compute the AI/human decision pairing once instead of twice when the page opens.

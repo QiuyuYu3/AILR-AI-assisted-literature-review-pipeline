@@ -215,16 +215,6 @@ def layout() -> Any:
                         placeholder="e.g. wrong population, not dyadic, ...",
                         style={"height": "80px"},
                     ),
-                    dbc.Label("Confidence", className="mt-2"),
-                    dcc.Slider(
-                        id="bulk-confidence",
-                        min=1,
-                        max=10,
-                        step=1,
-                        value=8,
-                        marks={1: "1", 5: "5", 10: "10"},
-                        tooltip={"placement": "bottom", "always_visible": False},
-                    ),
                     dbc.Button(
                         "Apply to selected",
                         id="bulk-apply",
@@ -436,11 +426,10 @@ def register_callbacks(app: Any) -> None:
         State("bulk-stage", "value"),
         State("bulk-decision", "value"),
         State("bulk-reasoning", "value"),
-        State("bulk-confidence", "value"),
         State("shared-reviewer", "value"),
         prevent_initial_call=True,
     )
-    def _bulk_apply(_clicks, selected, stage, decision, reasoning, confidence, reviewer):
+    def _bulk_apply(_clicks, selected, stage, decision, reasoning, reviewer):
         rid = (reviewer or "").strip()
         if not rid:
             return dbc.Alert("Set your reviewer ID at the top first.", color="warning")
@@ -451,7 +440,6 @@ def register_callbacks(app: Any) -> None:
         db = project.db
         stage = stage if stage in ("abstract", "full_text") else "abstract"
         reason_text = (reasoning or "").strip() or "(bulk action)"
-        conf = float(confidence) if confidence else None
 
         count = 0
         for row in selected:
@@ -466,7 +454,6 @@ def register_callbacks(app: Any) -> None:
                     reviewer_id=rid,
                     source_id=int(sid),
                     stage=stage,
-                    confidence=conf,
                 )
             )
             count += 1

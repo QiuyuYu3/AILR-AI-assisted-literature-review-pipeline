@@ -101,6 +101,12 @@ def _run_preprocess(key: str, project: Any, _mock: bool) -> None:
             f"Converted {summary.converted}, already done {summary.skipped_already_done}, "
             f"failed {summary.failed}, no PDF for {len(summary.missing_pdfs)} source(s)."
         )
+        if summary.low_quality:
+            ids = ", ".join(f"#{q['source_id']}" for q in summary.low_quality)
+            text += (
+                f" Low-text (likely scanned/failed): {len(summary.low_quality)} — {ids}. "
+                "Consider re-converting these with the marker backend."
+            )
         with _lock:
             _jobs[key].update({"running": False, "summary": text})
     except Exception as e:
