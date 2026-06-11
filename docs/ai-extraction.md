@@ -70,6 +70,17 @@ When the app runs the model, the "fill in the form" rule is automatic, so the st
 
 For the full step-by-step a single extraction takes — and a troubleshooting table — see [The extraction engine](extraction-engine.md).
 
+## Define your variables with your own AI
+
+Instead of building the extraction fields one by one, let your own ChatGPT/Claude draft them and import the result.
+
+1. On the **Template** page, open **Import variable definitions from your AI** and **copy the message** there.
+2. Paste it into your AI, describe what you want to capture from each paper, and it returns a JSON list of fields.
+3. Paste that JSON back into the box, click **Validate** (it checks the structure and flags problems), then **Load into editor**.
+4. Review the fields in the editor — fix names, tighten descriptions, set options — and click **Save template**.
+
+Nothing is written until you Save, so the import is just a starting point you adjust. The descriptions matter most: the AI reads each one as the label for what to put in that field (explained above).
+
 ## Use your own AI to write the extraction prompt
 
 The app guarantees the *structure* of every extraction (explained above), so the only thing worth crafting is the prompt's *wording* — and you can let your own ChatGPT/Claude draft it.

@@ -1,6 +1,15 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Added
+- Template: import variable definitions drafted by your own AI — paste JSON, validate (structure + warnings), and load into the editor to review before saving.
+
+### Docs
+- New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
+
+---
 ## [0.18.0] – 2026-06-10
 
 ### Added

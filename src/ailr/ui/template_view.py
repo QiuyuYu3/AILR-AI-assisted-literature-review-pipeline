@@ -14,6 +14,7 @@ from ailr.extraction import (
     save_user_schema,
     schema_to_markdown,
 )
+from ailr.ingest.schema_import import parse_schema_import
 from ailr.ui._common import get_project
 
 
@@ -67,6 +68,48 @@ Please write a high-quality extraction instruction that:
 - gives clear rules for fields that are easy to confuse
 - says to record one entry per occurrence for repeating items
 Return just the prompt text, no explanation."""
+
+
+_AGENT_SCHEMA_MSG = """Help me define the extraction variables for a literature review, as JSON I can import into my tool.
+
+Review topic: [one sentence]
+What to capture from each paper: [list your variables, or paste your draft codebook]
+
+Return ONLY a JSON object in this exact shape (valid JSON, no comments):
+{
+  "fields": [
+    {"name": "snake_case_name", "type": "string", "description": "one clear line", "required": false},
+    {"name": "country", "type": "string", "enum": ["USA", "UK", "China"], "description": "Country of data collection"},
+    {"name": "tasks", "type": "list", "item_type": "object",
+     "item_fields": [
+       {"name": "task_name", "type": "string", "description": "Name of the interaction task"},
+       {"name": "duration_min", "type": "number", "description": "Duration in minutes"}
+     ], "description": "One entry per interaction task"}
+  ]
+}
+Rules:
+- types: string, integer, number, boolean, list, object
+- use snake_case names and give every field a clear one-line description
+- for things a paper can have many of, use type "list" + item_type "object" + item_fields (one entry each)
+- add "enum" only when the answer must be one of a fixed set of options"""
+
+
+def _render_validation_report(report: Any) -> list:
+    n_err, n_warn = len(report.errors), len(report.warnings)
+    if report.has_errors:
+        head = dbc.Alert(f"{n_err} error(s) to fix before loading · {report.ok_count} field(s) OK", color="danger", className="mb-1 py-1")
+    elif n_warn:
+        head = dbc.Alert(f"{report.ok_count} field(s) OK · {n_warn} warning(s) — you can load and review", color="warning", className="mb-1 py-1")
+    else:
+        head = dbc.Alert(f"{report.ok_count} field(s) OK", color="success", className="mb-1 py-1")
+    rows = [
+        html.Div(
+            f"{'✕' if it.level == 'error' else '!'} {(it.field + ': ') if it.field else ''}{it.message}",
+            className="small " + ("text-danger" if it.level == "error" else "text-secondary"),
+        )
+        for it in report.items
+    ]
+    return [head, *rows]
 
 
 _TYPES = [
@@ -246,6 +289,41 @@ def layout() -> Any:
             ],
         ),
         html.Div(id="tmpl-preset-feedback", className="small mt-1 mb-2"),
+        html.Details(
+            [
+                html.Summary("Import variable definitions from your AI"),
+                html.Div(
+                    [
+                        html.P(
+                            "Have your own ChatGPT/Claude draft the variables as JSON, paste them here, then validate and "
+                            "load them into the editor to review. Nothing is saved until you click Save template.",
+                            className="text-muted small mb-2 mt-2",
+                        ),
+                        html.Div(
+                            [
+                                dbc.Label("Message to your AI", className="small fw-bold mb-0 me-2"),
+                                dcc.Clipboard(target_id="tmpl-schema-msg", title="Copy message", style={"display": "inline-block", "cursor": "pointer"}),
+                            ],
+                            className="d-flex align-items-center",
+                        ),
+                        dbc.Textarea(id="tmpl-schema-msg", value=_AGENT_SCHEMA_MSG, style={"height": "150px", "fontFamily": "monospace", "fontSize": "0.68rem"}, className="mb-2"),
+                        dbc.Label("Paste the JSON your AI returned", className="small fw-bold mb-0"),
+                        dbc.Textarea(id="tmpl-import-json", placeholder='{ "fields": [ ... ] }', style={"height": "120px", "fontFamily": "monospace", "fontSize": "0.7rem"}, className="mb-2"),
+                        html.Div(
+                            [
+                                dbc.Button("Validate", id="tmpl-import-validate", color="secondary", outline=True, size="sm", className="me-2"),
+                                dbc.Button("Load into editor", id="tmpl-import-load", color="primary", size="sm", disabled=True),
+                            ],
+                            className="mb-1",
+                        ),
+                        html.Div(id="tmpl-import-report"),
+                        dcc.Store(id="tmpl-import-parsed"),
+                    ],
+                    className="ps-2",
+                ),
+            ],
+            className="mt-2 mb-2",
+        ),
         dbc.Row(
             [
                 dbc.Col(
@@ -352,19 +430,9 @@ def layout() -> Any:
             [html.Summary("Preview the actual prompt sent to the AI"), html.Div(id="tmpl-prompt-composed")],
             className="mt-2",
         ),
-    ]
-
-    external_section = [
-        html.Hr(className="my-4"),
-        html.H5("4 · Run with your own AI (optional)", className="mt-2"),
-        html.P(
-            "Two ways to involve your own ChatGPT/Claude. Prefer the first — ailr still runs the extraction, so the "
-            "output structure stays guaranteed. Save the template first so both reflect your current fields.",
-            className="text-muted small mb-2",
-        ),
         html.Details(
             [
-                html.Summary("A · Let your AI write the prompt (recommended)"),
+                html.Summary("Draft this prompt with your own AI"),
                 html.Div(
                     [
                         html.P(
@@ -393,40 +461,36 @@ def layout() -> Any:
                     className="ps-2",
                 ),
             ],
-            open=True,
+            className="mt-2",
         ),
-        html.Details(
+    ]
+
+    external_section = [
+        html.Hr(className="my-4"),
+        html.H5("4 · Run externally (optional)", className="mt-2"),
+        html.P(
+            "Run the model entirely outside ailr (cost, a batch job, a specific model) and import the JSON back. There is "
+            "no structure guarantee here, so keep the field names exactly and check them on import. Save the template "
+            "first so the prompt and JSON reflect your current fields.",
+            className="text-muted small mb-2",
+        ),
+        html.Div(
             [
-                html.Summary("B · Run the model entirely outside ailr"),
-                html.Div(
-                    [
-                        html.P(
-                            "Run the model elsewhere and import the JSON back. There is no structure guarantee here, so keep "
-                            "the field names exactly and check them on import.",
-                            className="text-muted small mb-2 mt-2",
-                        ),
-                        html.Div(
-                            [
-                                dbc.Button("Download JSON template (per paper)", id="tmpl-template-dl-btn", color="secondary", outline=True, size="sm"),
-                                html.Span(" — empty skeleton (source_id + your fields) to fill in, then import on the AI extraction tab.", className="text-muted small ms-2"),
-                            ],
-                            className="mb-2",
-                        ),
-                        dcc.Download(id="tmpl-template-dl"),
-                        html.Div(
-                            [
-                                dbc.Label("Copy-paste prompt", className="small fw-bold mb-0 me-2"),
-                                dcc.Clipboard(target_id="tmpl-runprompt", title="Copy prompt", style={"display": "inline-block", "cursor": "pointer"}),
-                            ],
-                            className="d-flex align-items-center",
-                        ),
-                        dbc.Textarea(id="tmpl-runprompt", value=_extraction_run_prompt(), style={"height": "150px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
-                        html.Span("Full guide in the handbook (coming soon).", className="text-muted small d-block mt-1"),
-                    ],
-                    className="ps-2",
-                ),
+                dbc.Button("Download JSON template (per paper)", id="tmpl-template-dl-btn", color="secondary", outline=True, size="sm"),
+                html.Span(" — empty skeleton (source_id + your fields) to fill in, then import on the AI extraction tab.", className="text-muted small ms-2"),
             ],
+            className="mb-2",
         ),
+        dcc.Download(id="tmpl-template-dl"),
+        html.Div(
+            [
+                dbc.Label("Copy-paste prompt", className="small fw-bold mb-0 me-2"),
+                dcc.Clipboard(target_id="tmpl-runprompt", title="Copy prompt", style={"display": "inline-block", "cursor": "pointer"}),
+            ],
+            className="d-flex align-items-center",
+        ),
+        dbc.Textarea(id="tmpl-runprompt", value=_extraction_run_prompt(), style={"height": "150px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
+        html.Span("Full guide in the handbook (coming soon).", className="text-muted small d-block mt-1"),
     ]
 
     tail = [
@@ -503,6 +567,42 @@ def register_callbacks(app: Any) -> None:
             color="success",
             className="mb-0 py-1",
         )
+
+    @app.callback(
+        Output("tmpl-import-report", "children"),
+        Output("tmpl-import-parsed", "data"),
+        Output("tmpl-import-load", "disabled"),
+        Input("tmpl-import-validate", "n_clicks"),
+        State("tmpl-import-json", "value"),
+        prevent_initial_call=True,
+    )
+    def _validate_import(n, raw):
+        if not n:
+            return no_update, no_update, no_update
+        fields, report = parse_schema_import(raw or "")
+        children = _render_validation_report(report)
+        if report.has_errors or not fields:
+            return children, None, True
+        return children, fields, False
+
+    @app.callback(
+        Output("tmpl-store", "data", allow_duplicate=True),
+        Output("tmpl-suggested", "value"),
+        Output("tmpl-import-report", "children", allow_duplicate=True),
+        Output("tmpl-import-load", "disabled", allow_duplicate=True),
+        Input("tmpl-import-load", "n_clicks"),
+        State("tmpl-import-parsed", "data"),
+        prevent_initial_call=True,
+    )
+    def _load_import(n, parsed):
+        if not n or not parsed:
+            return no_update, no_update, no_update, no_update
+        store = {"include_core": False, "include_suggested": [], "fields": parsed}
+        msg = dbc.Alert(
+            f"Loaded {len(parsed)} field(s) into the editor below — review, then Save template.",
+            color="success", className="mb-0 py-1",
+        )
+        return store, [], msg, True
 
     @app.callback(
         Output("tmpl-prompt-feedback", "children"),

@@ -11,7 +11,7 @@ On the **Template** tab you set up *what* gets extracted:
 - which fields a **human must verify**
 - optional value definitions (`codebook.yaml`)
 
-The schema sets the *structure* (which fields exist and their types) and the prompt sets the *quality* (how to read the paper) — these are independent, and understanding why is worth a few minutes: see [How AI extraction works](../ai-extraction.md). You can let your own AI draft the prompt ([Use your own AI to write the prompt](../ai-extraction.md#use-your-own-ai-to-write-the-extraction-prompt)), or **download a JSON template** / **copy the extraction prompt** to run the model entirely outside the app ([Run the AI externally](../ai-extraction.md#run-the-ai-externally-and-import)).
+The schema sets the *structure* (which fields exist and their types) and the prompt sets the *quality* (how to read the paper) — these are independent, and understanding why is worth a few minutes: see [How AI extraction works](../ai-extraction.md). You can let your own AI draft the **variables** ([Define your variables with your own AI](../ai-extraction.md#define-your-variables-with-your-own-ai)) or the **prompt** ([Use your own AI to write the prompt](../ai-extraction.md#use-your-own-ai-to-write-the-extraction-prompt)), or **download a JSON template** / **copy the extraction prompt** to run the model entirely outside the app ([Run the AI externally](../ai-extraction.md#run-the-ai-externally-and-import)).
 
 ![template editor](../figures/ft_template1.png)
 
