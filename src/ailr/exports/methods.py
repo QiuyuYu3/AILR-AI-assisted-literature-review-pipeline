@@ -40,6 +40,25 @@ def build_methods_skeleton(project: Project) -> str:
         f"Deduplication was performed at ingestion using exact DOI matching followed by rapidfuzz token-set ratio "
         f"on titles (threshold = 90)."
     )
+    strategies = db.list_search_strategies(pid)
+    if strategies:
+        lines.append("")
+        lines.append("### Search strategy")
+        lines.append("")
+        lines.append("| Database | Date | Records found | Records imported | Query |")
+        lines.append("|---|---|---|---|---|")
+        for s in strategies:
+            q = (s.get("search_query") or "").replace("\n", " ").replace("|", "\\|")
+            found = s.get("records_found")
+            imported = s.get("records_imported")
+            lines.append(
+                f"| {s.get('source_database') or ''} | {s.get('date_searched') or ''} | "
+                f"{found if found is not None else ''} | {imported if imported is not None else ''} | {q} |"
+            )
+        for s in strategies:
+            if s.get("filters"):
+                lines.append("")
+                lines.append(f"- {s.get('source_database')} limits: {s.get('filters')}")
     lines.append("")
     lines.append("## Screening")
     if cfg.screening.workflow == "independent":

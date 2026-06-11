@@ -541,6 +541,21 @@ Table(
     Index("idx_test_extractions_run", "run_id"),
 )
 
+Table(
+    "search_strategies",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("project_id", Integer, ForeignKey("projects.id"), nullable=False),
+    Column("source_database", Text, nullable=False),
+    Column("search_query", Text),
+    Column("date_searched", Text),
+    Column("filters", Text),
+    Column("records_found", Integer),
+    Column("records_imported", Integer),
+    Column("created_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
+    Index("idx_search_strategies_project", "project_id"),
+)
+
 
 # ── Connection facade ───────────────────────────────────────────────────────
 _QMARK = re.compile(r"\?")
@@ -1643,6 +1658,44 @@ class Database:
             return cur.rowcount
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete note: {e}") from e
+
+    def add_search_strategy(
+        self,
+        project_id: int,
+        source_database: str,
+        search_query: Optional[str],
+        date_searched: Optional[str],
+        filters: Optional[str],
+        records_found: Optional[int],
+        records_imported: Optional[int],
+    ) -> int:
+        try:
+            cur = self._conn.execute(
+                "INSERT INTO search_strategies "
+                "(project_id, source_database, search_query, date_searched, filters, records_found, records_imported) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (project_id, source_database, search_query, date_searched, filters, records_found, records_imported),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to add search strategy: {e}") from e
+
+    def list_search_strategies(self, project_id: int) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT id, source_database, search_query, date_searched, filters, records_found, records_imported, created_at "
+            "FROM search_strategies WHERE project_id = ? ORDER BY id",
+            (project_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_search_strategy(self, strategy_id: int) -> int:
+        try:
+            cur = self._conn.execute("DELETE FROM search_strategies WHERE id = ?", (strategy_id,))
+            self._conn.commit()
+            return cur.rowcount
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to delete search strategy: {e}") from e
 
     def insert_duplicate(
         self,

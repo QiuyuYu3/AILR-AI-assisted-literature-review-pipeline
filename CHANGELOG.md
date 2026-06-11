@@ -5,6 +5,7 @@
 
 ### Added
 - Template: import variable definitions drafted by your own AI — paste JSON, validate (structure + warnings), and load into the editor to review before saving.
+- Search strategy archiving: record each database's search query / date / limits at import (with record counts), listed on the Import page and emitted in the methods export.
 
 ### Docs
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
