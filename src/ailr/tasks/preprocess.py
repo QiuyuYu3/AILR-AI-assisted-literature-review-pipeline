@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from ailr.core.local_paths import resolve_pdf_path
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.preprocess import PDFConverter, make_converter, strip_references
@@ -166,11 +167,9 @@ class PreprocessTask:
         for sid, source in sources_by_id.items():
             if source.pdf_path is None:
                 continue
-            p = Path(source.pdf_path)
-            if not p.is_absolute():
-                p = self.project.root / p
-            if p.exists():
-                pdf_by_source[sid] = p
+            resolved = resolve_pdf_path(source, self.project.root)
+            if resolved is not None:
+                pdf_by_source[sid] = resolved
 
         # Manually-dropped data/pdfs/<id>.pdf, matched by integer filename. pdf_path wins.
         for pdf_file in sorted(pdfs_dir.glob("*.pdf")) if pdfs_dir.exists() else []:
