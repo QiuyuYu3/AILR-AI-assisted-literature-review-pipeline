@@ -91,7 +91,14 @@ def layout() -> Any:
             dbc.Row(
                 [
                     dbc.Col(dbc.Button("← Back to full-text review", id="extract-back", color="link", size="sm", className="p-0"), width="auto"),
-                    dbc.Col(html.Div(id="extract-title", className="fw-bold text-truncate"), className="text-truncate"),
+                    dbc.Col(
+                        dbc.RadioItems(
+                            id="extract-reader-mode",
+                            options=[{"label": "PDF", "value": "pdf"}, {"label": "Markdown", "value": "md"}],
+                            value="pdf", inline=True,
+                        ),
+                        width="auto",
+                    ),
                     dbc.Col(
                         [
                             dbc.Button("Save draft", id="extract-save", color="secondary", outline=True, size="sm", className="me-2"),
@@ -111,14 +118,7 @@ def layout() -> Any:
                 [
                     # Left: reader (PDF/Markdown) fills its column
                     html.Div(
-                        [
-                            dbc.RadioItems(
-                                id="extract-reader-mode",
-                                options=[{"label": "PDF", "value": "pdf"}, {"label": "Markdown", "value": "md"}],
-                                value="pdf", inline=True, className="mb-1",
-                            ),
-                            html.Div(id="extract-reader", style={"flex": "1 1 0", "minHeight": 0}),
-                        ],
+                        html.Div(id="extract-reader", style={"flex": "1 1 0", "minHeight": 0, "display": "flex", "flexDirection": "column"}),
                         style={"flex": "1 1 0", "minWidth": 0, "display": "flex", "flexDirection": "column", "paddingRight": "8px"},
                     ),
                     # Right: source card + AI panel + the editable form, scrolling on its own
@@ -294,7 +294,6 @@ def register_callbacks(app: Any) -> None:
         Output("extract-source-card", "children"),
         Output("extract-form-container", "children"),
         Output("extract-ai-panel", "children"),
-        Output("extract-title", "children"),
         Output("extract-submit", "disabled"),
         Output("extract-save", "disabled"),
         Output("extract-feedback", "children"),
@@ -310,16 +309,15 @@ def register_callbacks(app: Any) -> None:
 
         if not sid:
             hint = html.Div("Open a paper from the Full-text review page to extract it.", className="text-muted")
-            return "", hint, "", "No paper open", True, True, ""
+            return "", hint, "", True, True, ""
         src = db.get_source(int(sid))
         if src is None:
-            return "", html.Div("That paper is no longer available.", className="text-muted"), "", "—", True, True, ""
+            return "", html.Div("That paper is no longer available.", className="text-muted"), "", True, True, ""
 
-        title = f"#{src.id}  {src.title}"
         if not rid:
             return (_source_card(project.root, src),
                     dbc.Alert("Enter your reviewer ID above to begin.", color="info"),
-                    "", title, True, True, "")
+                    "", True, True, "")
 
         fields = compose_schema(project.root / project.config.extraction.schema_path)
         workflow = project.config.extraction.workflow
@@ -331,7 +329,7 @@ def register_callbacks(app: Any) -> None:
             return (_source_card(project.root, src),
                     _readonly_tables(db, src, display_ids, [f for f in fields if f.verify]),
                     _ai_panel(db, src, workflow, rid),
-                    title, True, True, "")
+                    True, True, "")
 
         ai_data: dict[str, Any] | None = None
         if workflow == "verify":
@@ -354,7 +352,7 @@ def register_callbacks(app: Any) -> None:
         return (_source_card(project.root, src),
                 _build_form([f for f in fields if f.verify], prefill_data=prefill_data, ai_data=ai_data),
                 _ai_panel(db, src, workflow, rid),
-                title, False, False, "")
+                False, False, "")
 
     # Buttons that act on the open paper. Submit / move / duplicate finish the paper and return to the
     # full-text list; Save persists a draft and stays put. Each is gated on its own n_clicks so a
@@ -503,7 +501,7 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
 
     if field.type == "list" and field.item_type == "object":
         item_fields = field.item_fields or []
-        column_defs = [{"field": s.name, "editable": True} for s in item_fields]
+        column_defs = [{"field": s.name, "editable": True, "tooltipField": s.name} for s in item_fields]
         prefill_rows: list[dict] = []
         src_list = prefill_data.get(field.name) if prefill_data else None
         if isinstance(src_list, list):
@@ -517,7 +515,9 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
                         id={"type": "ex-grid", "field": field.name},
                         columnDefs=column_defs,
                         rowData=prefill_rows,
-                        defaultColDef={"editable": True, "resizable": True, "sortable": True},
+                        # wrapText + autoHeight so long values show in full (rows grow); minWidth keeps
+                        # each column readable, so many-column fields scroll sideways instead of cramming.
+                        defaultColDef={"editable": True, "resizable": True, "sortable": True, "wrapText": True, "autoHeight": True, "minWidth": 150},
                         dashGridOptions={"rowSelection": {"mode": "multiRow"}, "domLayout": "autoHeight"},
                         columnSize="sizeToFit",
                         style={"height": None},
@@ -530,6 +530,7 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
                         outline=True,
                         className="mt-2",
                     ),
+                    _ai_grid_reference(ai_data.get(field.name) if ai_data else None, item_fields),
                 ]
             ),
             className="mb-2",
@@ -551,6 +552,7 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
                         style={"height": "80px"},
                         value=prefill_text,
                     ),
+                    _ai_list_reference(ai_data.get(field.name) if ai_data else None),
                 ]
             ),
             className="mb-2",
@@ -599,6 +601,39 @@ def _flatten_list_item(item: Any, item_fields: list[FieldSpec]) -> dict:
         v, _q = _unwrap_cell(cell)
         out[f.name] = v
     return out
+
+
+def _ai_list_reference(ai_val: Any) -> Any:
+    """Read-only 'AI proposed' line for a list-of-string field (matches the leaf widget's reference)."""
+    if not isinstance(ai_val, list) or not ai_val:
+        return None
+    items = [str(_unwrap_cell(v)[0]) for v in ai_val if _unwrap_cell(v)[0] not in (None, "")]
+    if not items:
+        return None
+    return html.Small("AI proposed: " + "; ".join(items), className="text-muted d-block fst-italic mt-1")
+
+
+def _ai_grid_reference(ai_val: Any, item_fields: list[FieldSpec]) -> Any:
+    """Collapsible read-only 'AI proposed' table for a list-of-object field, so you can compare your
+    edits against AI's original rows (the editable grid above is pre-filled but loses the reference)."""
+    if not isinstance(ai_val, list) or not ai_val:
+        return None
+    rows = [_flatten_list_item(it, item_fields) for it in ai_val]
+    head = html.Thead(html.Tr([html.Th(s.name) for s in item_fields]))
+    body = html.Tbody([
+        html.Tr([
+            html.Td("" if r.get(s.name) is None else str(r.get(s.name)), style={"whiteSpace": "pre-wrap", "fontSize": "0.75rem"})
+            for s in item_fields
+        ])
+        for r in rows
+    ])
+    return html.Details(
+        [
+            html.Summary(html.Small("AI proposed (reference)", className="text-muted")),
+            dbc.Table([head, body], bordered=True, size="sm", className="mt-1", style={"fontSize": "0.75rem"}),
+        ],
+        className="mt-1",
+    )
 
 
 def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cell: Any = None) -> Any:
