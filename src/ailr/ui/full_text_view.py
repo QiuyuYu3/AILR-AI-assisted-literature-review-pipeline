@@ -192,11 +192,9 @@ def register_callbacks(app: Any) -> None:
         trig = ctx.triggered_id
         if not isinstance(trig, dict) or not any(c.get("value") for c in (ctx.triggered or [])):
             return no_update, no_update
-        sid = trig.get("source")
-        project = get_project()
-        eligible = project.db.list_full_text_final_includes_with_markdown(project.project_id)
-        idx = next((i for i, s in enumerate(eligible) if s.id == sid), 0)
-        return "extract", {"idx": idx, "sid": sid}
+        # The extraction view is driven purely by this source id (no positional index), so opening a
+        # card always lands on exactly that paper regardless of list order or page re-mounts.
+        return "extract", {"sid": trig.get("source")}
 
     @app.callback(
         Output("ft-preprocess-poll", "disabled"),

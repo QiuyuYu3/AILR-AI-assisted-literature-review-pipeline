@@ -15,17 +15,14 @@ from ailr.extraction import FieldSpec, compose_schema
 from ailr.reviewers import ExtractionResult
 from ailr.ui._common import format_authors, get_project, reload_project
 
-_FILTERS = [
-    {"label": "Full-text includes (with markdown)", "value": "includes"},
-    {"label": "All with markdown", "value": "all"},
-]
-
 _WORKFLOW_OPTIONS = [
     {"label": "verify (AI extracts, you verify)", "value": "verify"},
     {"label": "independent (you extract blind)", "value": "independent"},
 ]
 
 _INDEP_TEAM_SIZE = 2  # independent extraction: reveal/compare once this many humans have submitted
+
+_APP_CHROME_PX = 115  # height of the app header + tab bar above this view; the panes flex-fill the rest
 
 
 def extraction_workflow_block() -> list[Any]:
@@ -82,38 +79,50 @@ def ai_extraction_panel() -> list[Any]:
 
 
 def layout() -> Any:
+    # Full-height two-pane (Covidence-style): flexbox makes the panes grow to fill the window, so the
+    # reader and form each scroll independently and resize with the window — no per-element vh guesses.
+    # The only fixed bit is the app chrome ABOVE this view (header + tabs ≈ 115px); tweak _APP_CHROME_PX
+    # below if the bottom shows a gap or an extra page scrollbar.
+    scroll_pane = {"flex": "1 1 0", "minWidth": 0, "minHeight": 0, "overflowY": "auto", "paddingRight": "6px"}
     return html.Div(
         [
-            dbc.Button("← Back to full-text review", id="extract-back", color="link", size="sm", className="p-0 mb-2"),
+            # ── Top bar: Back · current paper title · Save/Submit. One paper at a time, opened from
+            #    the full-text list — no positional Prev/Next, so re-mounts can never mis-navigate. ──
             dbc.Row(
                 [
-                    dbc.Col([dbc.Label("Source set", className="small mb-0"),
-                             dbc.RadioItems(id="extract-filter", options=_FILTERS, value="includes", inline=True)], width=6),
-                    dbc.Col([html.Div(id="extract-progress", className="small fw-bold"),
-                             dbc.ButtonGroup([
-                                 dbc.Button("← Prev", id="extract-prev", color="secondary", outline=True, size="sm"),
-                                 dbc.Button("Next →", id="extract-next", color="secondary", outline=True, size="sm"),
-                             ])], width=6),
-                ],
-                className="mb-1 align-items-end",
-            ),
-            html.Small("Configure fields/prompt, run AI extraction, and import results on the Full text & extraction → Workflow page (Template / AI extraction tabs).", className="text-muted"),
-            html.Hr(className="my-2"),
-
-            dbc.Row(
-                [
+                    dbc.Col(dbc.Button("← Back to full-text review", id="extract-back", color="link", size="sm", className="p-0"), width="auto"),
+                    dbc.Col(html.Div(id="extract-title", className="fw-bold text-truncate"), className="text-truncate"),
                     dbc.Col(
+                        [
+                            dbc.Button("Save draft", id="extract-save", color="secondary", outline=True, size="sm", className="me-2"),
+                            dbc.Button("Submit extraction", id="extract-submit", color="primary", size="sm"),
+                        ],
+                        width="auto",
+                        className="ms-auto",
+                    ),
+                ],
+                className="align-items-center g-2 mb-1",
+            ),
+            html.Div(id="extract-feedback", className="small text-success mb-1"),
+            html.Hr(className="my-1"),
+
+            # ── Two independently-scrolling panes that flex-fill the remaining height ──
+            html.Div(
+                [
+                    # Left: reader (PDF/Markdown) fills its column
+                    html.Div(
                         [
                             dbc.RadioItems(
                                 id="extract-reader-mode",
                                 options=[{"label": "PDF", "value": "pdf"}, {"label": "Markdown", "value": "md"}],
                                 value="pdf", inline=True, className="mb-1",
                             ),
-                            dcc.Loading(html.Div(id="extract-reader")),
+                            html.Div(id="extract-reader", style={"flex": "1 1 0", "minHeight": 0}),
                         ],
-                        width=6,
+                        style={"flex": "1 1 0", "minWidth": 0, "display": "flex", "flexDirection": "column", "paddingRight": "8px"},
                     ),
-                    dbc.Col(
+                    # Right: source card + AI panel + the editable form, scrolling on its own
+                    html.Div(
                         [
                             html.Div(id="extract-source-card"),
                             # Source-level actions live in the static layout (not inside the
@@ -132,21 +141,15 @@ def layout() -> Any:
                             html.H6("Your extraction", className="d-inline me-2"),
                             html.Small("(edit AI's values; AI original shown under each field)", className="text-muted"),
                             html.Div(id="extract-form-container", className="mt-2"),
-                            html.Div(
-                                [
-                                    dbc.Button("Save draft", id="extract-save", color="secondary", outline=True, className="mt-3 me-2"),
-                                    dbc.Button("Submit extraction", id="extract-submit", color="primary", className="mt-3"),
-                                ]
-                            ),
-                            html.Small("Save draft keeps your edits without finalizing — click it before leaving, edits aren't kept otherwise. Submit marks the paper done.", className="text-muted d-block mt-1"),
-                            html.Div(id="extract-feedback", className="mt-2 text-success"),
+                            html.Small("Save draft keeps your edits without finalizing — click it before leaving, edits aren't kept otherwise. Submit marks the paper done and returns you to the list.", className="text-muted d-block mt-3"),
                         ],
-                        width=6,
+                        style=scroll_pane,
                     ),
-                ]
+                ],
+                style={"display": "flex", "flex": "1 1 auto", "minHeight": 0, "gap": "8px"},
             ),
-            dcc.Store(id="extract-current-sid", data=None),
-        ]
+        ],
+        style={"display": "flex", "flexDirection": "column", "height": f"calc(100vh - {_APP_CHROME_PX}px)"},
     )
 
 
@@ -221,20 +224,22 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("extract-reader", "children"),
-        Input("extract-current-sid", "data"),
+        Input("extract-store", "data"),
         Input("extract-reader-mode", "value"),
     )
-    def _render_reader_pane(sid, mode):
+    def _render_reader_pane(store, mode):
+        sid = (store or {}).get("sid")
         if not sid:
-            return html.Small("Select a source.", className="text-muted")
+            return html.Small("Open a paper from the Full-text review page.", className="text-muted")
         proj = get_project()
         src = proj.db.get_source(int(sid))
         if src is None:
             return ""
+        # height:100% fills the flex pane the reader sits in (see layout()).
         if mode == "pdf":
             if not src.pdf_path:
                 return dbc.Alert("No PDF linked for this source.", color="warning")
-            return html.Iframe(src=f"/pdf/{sid}", style={"width": "100%", "height": "80vh", "border": "none"})
+            return html.Iframe(src=f"/pdf/{sid}", style={"width": "100%", "height": "100%", "border": "none"})
         md_text = None
         if src.markdown_path:
             p = Path(src.markdown_path)
@@ -244,7 +249,7 @@ def register_callbacks(app: Any) -> None:
                 md_text = p.read_text(encoding="utf-8")
         if not md_text:
             return dbc.Alert("No markdown yet for this source.", color="info")
-        return dcc.Markdown(md_text, style={"maxHeight": "80vh", "overflow": "auto"})
+        return dcc.Markdown(md_text, style={"height": "100%", "overflow": "auto"})
 
     @app.callback(
         Output("extract-ai-poll", "disabled"),
@@ -282,171 +287,51 @@ def register_callbacks(app: Any) -> None:
             return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": _t.time()}
         return no_update, True, no_update
 
+    # Render the currently-open paper. Driven purely by the stored source id (+ reviewer / AI-refresh)
+    # — there is no positional index and no "which button fired" logic, so a page re-mount can't
+    # mis-navigate. The action buttons live in a SEPARATE callback (_actions) below.
     @app.callback(
         Output("extract-source-card", "children"),
         Output("extract-form-container", "children"),
         Output("extract-ai-panel", "children"),
-        Output("extract-progress", "children"),
-        Output("extract-store", "data"),
-        Output("extract-feedback", "children"),
-        Output("extract-current-sid", "data"),
+        Output("extract-title", "children"),
         Output("extract-submit", "disabled"),
         Output("extract-save", "disabled"),
-        Input("extract-prev", "n_clicks"),
-        Input("extract-next", "n_clicks"),
-        Input("extract-submit", "n_clicks"),
-        Input("extract-save", "n_clicks"),
-        Input("extract-move-ft", "n_clicks"),
-        Input("extract-move-screen", "n_clicks"),
-        Input("extract-duplicate", "n_clicks"),
-        Input("extract-filter", "value"),
-        State("extract-refresh", "data"),
-        State("shared-reviewer", "value"),
-        State("extract-store", "data"),
-        State({"type": "ex-value", "field": ALL}, "value"),
-        State({"type": "ex-value", "field": ALL}, "id"),
-        State({"type": "ex-quote", "field": ALL}, "value"),
-        State({"type": "ex-quote", "field": ALL}, "id"),
-        State({"type": "ex-grid", "field": ALL}, "rowData"),
-        State({"type": "ex-grid", "field": ALL}, "id"),
+        Output("extract-feedback", "children"),
+        Input("extract-store", "data"),
+        Input("shared-reviewer", "value"),
+        Input("extract-refresh", "data"),
     )
-    def _update(prev, nxt, submit, save, move_ft, move_screen, dup, filt, _ai_refresh, reviewer, store,
-                val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids):
+    def _render(store, reviewer, _refresh):
         project = get_project()
         db = project.db
-        pid = project.project_id
         rid = (reviewer or "").strip()
-        trigger = ctx.triggered_id
-        feedback = ""
+        sid = (store or {}).get("sid")
 
+        if not sid:
+            hint = html.Div("Open a paper from the Full-text review page to extract it.", className="text-muted")
+            return "", hint, "", "No paper open", True, True, ""
+        src = db.get_source(int(sid))
+        if src is None:
+            return "", html.Div("That paper is no longer available.", className="text-muted"), "", "—", True, True, ""
+
+        title = f"#{src.id}  {src.title}"
         if not rid:
-            msg = dbc.Alert("Enter your reviewer ID above to begin.", color="info")
-            return msg, "", "", "", {"idx": 0}, "", None, True, True
+            return (_source_card(project.root, src),
+                    dbc.Alert("Enter your reviewer ID above to begin.", color="info"),
+                    "", title, True, True, "")
 
-        schema_path = project.root / project.config.extraction.schema_path
-        fields = compose_schema(schema_path)
-
-        submit_blocked = False
-        if trigger == "extract-submit":
-            sources = _filtered(db, pid, filt)
-            idx = (store or {}).get("idx", 0)
-            if 0 <= idx < len(sources):
-                src = sources[idx]
-                other = (
-                    db.other_human_extracted(src.id, rid)
-                    if project.config.extraction.workflow == "verify"
-                    else None
-                )
-                if other:
-                    submit_blocked = True
-                    feedback = dbc.Alert(
-                        [
-                            html.Span(f"#{src.id} was already extracted by ", className="me-1"),
-                            html.Strong(other),
-                            html.Span(" — your changes were not saved (verify mode: one human per paper).", className="ms-1"),
-                        ],
-                        color="warning",
-                        className="py-2 mb-0",
-                    )
-                else:
-                    ai_rows = {r["field_name"]: r for r in db.list_extractions(src.id, extractor_type="ai")}
-                    _save_extraction(
-                        db, src, rid, fields,
-                        val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids,
-                        ai_rows=ai_rows, include_autoaccept=True,
-                    )
-                    db.mark_extraction_submitted(src.id, rid)
-                    feedback = "Extraction submitted."
-
-        if trigger == "extract-save":
-            sources = _filtered(db, pid, filt)
-            idx = (store or {}).get("idx", 0)
-            if 0 <= idx < len(sources):
-                src = sources[idx]
-                locked, _ = _compute_locked(db, src, rid, project.config.extraction.workflow)
-                if not locked:  # never write a draft onto someone else's locked paper
-                    _save_extraction(
-                        db, src, rid, fields,
-                        val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids,
-                        include_autoaccept=False,
-                    )
-                    feedback = "Draft saved."
-
-        if trigger == "extract-move-ft":
-            sources = _filtered(db, pid, filt)
-            idx = (store or {}).get("idx", 0)
-            if 0 <= idx < len(sources):
-                src = sources[idx]
-                db.delete_stage_decisions(src.id, "full_text", reviewer_type="human")
-                db.delete_reconciliations_for_source(src.id, "full_text_screening")
-                db.insert_screening_action(src.id, rid, action="move_to_full_text")
-                feedback = f"Moved #{src.id} back to full-text review."
-
-        if trigger == "extract-move-screen":
-            sources = _filtered(db, pid, filt)
-            idx = (store or {}).get("idx", 0)
-            if 0 <= idx < len(sources):
-                src = sources[idx]
-                db.delete_all_screening_decisions(src.id, reviewer_type="human")
-                db.delete_reconciliations_for_source(src.id)
-                db.insert_screening_action(src.id, rid or "?", action="move_to_screening")
-                feedback = f"Moved #{src.id} back to abstract screening."
-
-        if trigger == "extract-duplicate":
-            sources = _filtered(db, pid, filt)
-            idx = (store or {}).get("idx", 0)
-            if 0 <= idx < len(sources):
-                src = sources[idx]
-                db.mark_source_duplicate(src.id, True)
-                feedback = f"Marked #{src.id} as duplicate (hidden)."
-
-        sources = _filtered(db, pid, filt)
-        idx = (store or {}).get("idx", 0)
-
-        if trigger == "extract-prev":
-            idx -= 1
-        elif trigger == "extract-next":
-            idx += 1
-        elif trigger in ("shared-reviewer", "extract-filter"):
-            idx = 0
-        elif trigger == "extract-submit" and not submit_blocked:
-            idx += 1
-
-        if not sources:
-            done = dbc.Alert(
-                "No sources qualify for extraction yet (need a full-text 'include' with markdown).", color="warning"
-            )
-            return done, "", "", "0 / 0", {"idx": 0}, feedback, None, True, True
-
-        # Honor an explicitly-requested paper (set when arriving via "Open/View extraction"),
-        # overriding the default idx so we land on the clicked paper. Consumed once (store drops sid).
-        target_sid = (store or {}).get("sid")
-        if target_sid is not None and trigger not in ("extract-prev", "extract-next", "extract-submit"):
-            found = next((i for i, s in enumerate(sources) if s.id == target_sid), None)
-            if found is not None:
-                idx = found
-
-        idx = max(0, min(idx, len(sources) - 1))
-        src = sources[idx]
-        progress = f"Source {idx + 1} / {len(sources)} — DB id {src.id}"
-
+        fields = compose_schema(project.root / project.config.extraction.schema_path)
         workflow = project.config.extraction.workflow
 
-        # Read-only view: another reviewer owns this paper (verify), or every required reviewer has
-        # submitted (independent). Show each submitter's extraction as a read-only table; buttons off.
+        # Read-only: another reviewer has claimed it (verify), or all required reviewers have
+        # submitted (independent). Show each relevant reviewer's table; Save/Submit off.
         locked, display_ids = _compute_locked(db, src, rid, workflow)
         if locked:
-            return (
-                _source_card(project.root, src),
-                _readonly_tables(db, src, display_ids, [f for f in fields if f.verify]),
-                _ai_panel(db, src, workflow, rid),
-                progress,
-                {"idx": idx},
-                feedback,
-                src.id,
-                True,
-                True,
-            )
+            return (_source_card(project.root, src),
+                    _readonly_tables(db, src, display_ids, [f for f in fields if f.verify]),
+                    _ai_panel(db, src, workflow, rid),
+                    title, True, True, "")
 
         ai_data: dict[str, Any] | None = None
         if workflow == "verify":
@@ -456,8 +341,8 @@ def register_callbacks(app: Any) -> None:
             for r in db.list_extractions(src.id, extractor_type="ai"):
                 v = r["value"]
                 ai_data[r["field_name"]] = v if isinstance(v, (dict, list)) else {"value": v, "quote": r.get("source_quote")}
-        # Editable fields prefill from THIS reviewer's saved values (overriding AI); the AI
-        # value stays visible as the "AI proposed" reference. Latest row wins (ORDER BY id).
+        # Editable fields prefill from THIS reviewer's saved values (overriding AI); the AI value
+        # stays visible as the "AI proposed" reference. Latest row wins (ORDER BY id).
         human_data = {
             r["field_name"]: r["value"]
             for r in db.list_extractions(src.id, extractor_type="human")
@@ -466,17 +351,81 @@ def register_callbacks(app: Any) -> None:
         ai_values = {k: (v["value"] if isinstance(v, dict) and "value" in v else v) for k, v in (ai_data or {}).items()}
         prefill_data = {**ai_values, **human_data}
 
-        return (
-            _source_card(project.root, src),
-            _build_form([f for f in fields if f.verify], prefill_data=prefill_data, ai_data=ai_data),
-            _ai_panel(db, src, workflow, rid),
-            progress,
-            {"idx": idx},
-            feedback,
-            src.id,
-            False,
-            False,
-        )
+        return (_source_card(project.root, src),
+                _build_form([f for f in fields if f.verify], prefill_data=prefill_data, ai_data=ai_data),
+                _ai_panel(db, src, workflow, rid),
+                title, False, False, "")
+
+    # Buttons that act on the open paper. Submit / move / duplicate finish the paper and return to the
+    # full-text list; Save persists a draft and stays put. Each is gated on its own n_clicks so a
+    # fresh-mount callback fire can't trigger an action.
+    @app.callback(
+        Output("extract-store", "data", allow_duplicate=True),
+        Output("extract-feedback", "children", allow_duplicate=True),
+        Output("tabs", "data", allow_duplicate=True),
+        Input("extract-submit", "n_clicks"),
+        Input("extract-save", "n_clicks"),
+        Input("extract-move-ft", "n_clicks"),
+        Input("extract-move-screen", "n_clicks"),
+        Input("extract-duplicate", "n_clicks"),
+        State("extract-store", "data"),
+        State("shared-reviewer", "value"),
+        State({"type": "ex-value", "field": ALL}, "value"),
+        State({"type": "ex-value", "field": ALL}, "id"),
+        State({"type": "ex-quote", "field": ALL}, "value"),
+        State({"type": "ex-quote", "field": ALL}, "id"),
+        State({"type": "ex-grid", "field": ALL}, "rowData"),
+        State({"type": "ex-grid", "field": ALL}, "id"),
+        prevent_initial_call=True,
+    )
+    def _actions(submit, save, move_ft, move_screen, dup, store, reviewer,
+                 val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids):
+        trigger = ctx.triggered_id
+        rid = (reviewer or "").strip()
+        sid = (store or {}).get("sid")
+        if not rid or not sid:
+            return no_update, no_update, no_update
+        project = get_project()
+        db = project.db
+        src = db.get_source(int(sid))
+        if src is None:
+            return no_update, no_update, no_update
+        fields = compose_schema(project.root / project.config.extraction.schema_path)
+        workflow = project.config.extraction.workflow
+
+        if trigger == "extract-save" and save:
+            locked, _ = _compute_locked(db, src, rid, workflow)
+            if locked:
+                return no_update, no_update, no_update
+            _save_extraction(db, src, rid, fields, val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids, include_autoaccept=False)
+            return no_update, "Draft saved.", no_update
+
+        if trigger == "extract-submit" and submit:
+            locked, _ = _compute_locked(db, src, rid, workflow)
+            if locked:
+                return no_update, no_update, no_update
+            ai_rows = {r["field_name"]: r for r in db.list_extractions(src.id, extractor_type="ai")}
+            _save_extraction(db, src, rid, fields, val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids, ai_rows=ai_rows, include_autoaccept=True)
+            db.mark_extraction_submitted(src.id, rid)
+            return no_update, no_update, "full_text"
+
+        if trigger == "extract-move-ft" and move_ft:
+            db.delete_stage_decisions(src.id, "full_text", reviewer_type="human")
+            db.delete_reconciliations_for_source(src.id, "full_text_screening")
+            db.insert_screening_action(src.id, rid, action="move_to_full_text")
+            return {"sid": None}, no_update, "full_text"
+
+        if trigger == "extract-move-screen" and move_screen:
+            db.delete_all_screening_decisions(src.id, reviewer_type="human")
+            db.delete_reconciliations_for_source(src.id)
+            db.insert_screening_action(src.id, rid or "?", action="move_to_screening")
+            return {"sid": None}, no_update, "full_text"
+
+        if trigger == "extract-duplicate" and dup:
+            db.mark_source_duplicate(src.id, True)
+            return {"sid": None}, no_update, "full_text"
+
+        return no_update, no_update, no_update
 
     @app.callback(
         Output({"type": "ex-grid", "field": ALL}, "rowData"),
@@ -494,12 +443,6 @@ def register_callbacks(app: Any) -> None:
                 rows.append({})
             out.append(rows)
         return out
-
-
-def _filtered(db: Any, pid: int, filt: str) -> list[Source]:
-    if filt == "all":
-        return db.list_sources_with_markdown(pid)
-    return db.list_full_text_final_includes_with_markdown(pid)
 
 
 def _source_card(root: Path, src: Source) -> Any:
@@ -575,7 +518,7 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
                         columnDefs=column_defs,
                         rowData=prefill_rows,
                         defaultColDef={"editable": True, "resizable": True, "sortable": True},
-                        dashGridOptions={"rowSelection": "multiple", "domLayout": "autoHeight"},
+                        dashGridOptions={"rowSelection": {"mode": "multiRow"}, "domLayout": "autoHeight"},
                         columnSize="sizeToFit",
                         style={"height": None},
                     ),
@@ -626,6 +569,19 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
     )
 
 
+def _number_like(v: Any) -> bool:
+    """Whether v can sit in a type='number' input (numbers, numeric strings, or empty)."""
+    if v is None or v == "":
+        return True
+    if isinstance(v, bool):
+        return False
+    try:
+        float(v)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def _unwrap_cell(cell: Any) -> tuple[Any, Any]:
     """Extract (value, quote) from an AI cell that may be wrapped as {value, quote} or raw."""
     if isinstance(cell, dict) and "value" in cell:
@@ -662,12 +618,17 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
             **common,
         )
     elif field.type in ("integer", "number"):
-        value_widget = dbc.Input(
-            id={"type": "ex-value", "field": dotted},
-            type="number",
-            step=1 if field.type == "integer" else "any",
-            **common,
-        )
+        # A number input can't hold a non-numeric value (e.g. AI wrote "NR"); the browser logs
+        # "value cannot be parsed". Fall back to a text box so the value still shows and stays editable.
+        if _number_like(pre_value):
+            value_widget = dbc.Input(
+                id={"type": "ex-value", "field": dotted},
+                type="number",
+                step=1 if field.type == "integer" else "any",
+                **common,
+            )
+        else:
+            value_widget = dbc.Input(id={"type": "ex-value", "field": dotted}, type="text", **common)
     elif field.type == "boolean":
         value_widget = dbc.Checkbox(
             id={"type": "ex-value", "field": dotted},

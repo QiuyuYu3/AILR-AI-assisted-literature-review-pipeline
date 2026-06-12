@@ -15,9 +15,8 @@ _TAG_ACTIONS = [
 ]
 
 _GRID_OPTIONS = {
-    "rowSelection": "multiple",
+    "rowSelection": {"mode": "multiRow", "checkboxes": True, "headerCheckbox": True, "enableClickSelection": False, "selectAll": "filtered"},
     "domLayout": "autoHeight",
-    "suppressRowClickSelection": True,
     "animateRows": True,
     "enableCellTextSelection": True,
 }
@@ -27,9 +26,6 @@ _COLUMN_DEFS = [
         "field": "id",
         "headerName": "ID",
         "width": 80,
-        "checkboxSelection": True,
-        "headerCheckboxSelection": True,
-        "headerCheckboxSelectionFilteredOnly": True,
         "pinned": "left",
     },
     {"field": "year", "headerName": "Year", "width": 90, "filter": "agNumberColumnFilter"},

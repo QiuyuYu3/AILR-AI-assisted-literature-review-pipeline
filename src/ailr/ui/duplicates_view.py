@@ -19,7 +19,7 @@ _INGEST_COLS = [
 ]
 
 _MANUAL_COLS = [
-    {"field": "id", "headerName": "ID", "width": 90, "checkboxSelection": True, "headerCheckboxSelection": True},
+    {"field": "id", "headerName": "ID", "width": 90},
     {"field": "title", "headerName": "Title", "flex": 3, "tooltipField": "title"},
     {"field": "authors", "headerName": "Authors", "flex": 2, "tooltipField": "authors"},
     {"field": "doi", "headerName": "DOI", "flex": 1, "cellRenderer": "markdown"},
@@ -68,7 +68,7 @@ def layout() -> Any:
                 rowData=_manual_rows(),
                 columnDefs=_MANUAL_COLS,
                 defaultColDef={"sortable": True, "filter": True, "resizable": True},
-                dashGridOptions={"rowSelection": "multiple", "suppressRowClickSelection": True, "domLayout": "autoHeight", "enableCellTextSelection": True},
+                dashGridOptions={"rowSelection": {"mode": "multiRow", "checkboxes": True, "headerCheckbox": True, "enableClickSelection": False}, "domLayout": "autoHeight", "enableCellTextSelection": True},
                 columnSize="sizeToFit",
             ),
             html.Hr(className="my-3"),
@@ -81,7 +81,7 @@ def layout() -> Any:
                 rowData=ingest_rows,
                 columnDefs=_INGEST_COLS,
                 defaultColDef={"sortable": True, "filter": True, "resizable": True},
-                dashGridOptions={"pagination": True, "paginationPageSize": 25, "enableCellTextSelection": True},
+                dashGridOptions={"pagination": True, "paginationPageSize": 25, "paginationPageSizeSelector": [25, 50, 100], "enableCellTextSelection": True},
                 style={"height": "45vh"},
             ),
         ]
