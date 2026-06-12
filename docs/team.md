@@ -110,9 +110,9 @@ So in `assisted` mode the queue naturally divides itself as people work through 
 
 ## Sharing PDFs
 
-`init` creates a `data/pdfs/` folder inside the project for the linked PDFs. If the project folder lives in a synced location (Box / OneDrive / Drive), the PDFs travel with it, so the whole team shares one copy instead of everyone re-downloading.
+`init` creates a `data/pdfs/` folder inside the project. Export your Zotero library (RIS + **Export Files**) **into that folder**, and ailr links the PDFs automatically when anyone opens the full-text pages (see [Link PDFs from Zotero](workflow/full-text.md#link-pdfs-from-zotero)).
 
-The catch is that each person's **absolute path** to that synced folder differs (`C:\Users\<A>\...` vs `/Users/<B>/...`). Because PDFs are referenced by path — not copied into the database — a teammate who wants to open them sets **their own** local PDF folder in **Settings**. The link is then resolved per-machine, so the paths do not have to match.
+Because each link is stored **relative to the project root**, it resolves on every teammate's machine with **nothing to configure**. Once the project folder is on the shared drive (Box / OneDrive / Drive), the PDFs travel with it and the whole team shares one copy — no per-person path setting.
 
 ## Moving a solo project to a team database
 
@@ -131,5 +131,5 @@ This copies all of the project's data into PostgreSQL. Afterwards, set `storage.
 | Settings shows a local SQLite file, not the shared DB | `database_url` is missing/misspelled in `lit_review.yaml`, or that teammate's copy of the file didn't sync | add `storage.database_url` to the yaml; make sure everyone has the same `lit_review.yaml` |
 | Teammates can't see each other's decisions | different **project names**, or one person isn't on the shared DB | use the identical project name everywhere; check Settings shows the same database for everyone |
 | App can't connect to the database | wrong prefix or a copy/paste error in the URL | confirm the prefix is `postgresql+psycopg://` and the rest of the URL is exactly what the host gave (including `?sslmode=require` if present) |
-| PDFs won't open for a teammate | their local path to the synced folder differs | set **their own** PDF folder in Settings (see [Sharing PDFs](#sharing-pdfs)) |
+| PDFs won't open for a teammate | the project folder (with `data/pdfs/`) hasn't finished syncing on their machine | let the shared drive finish syncing, then click **Re-scan data/pdfs** on the full-text Workflow page |
 | A second screening vote was rejected | `assisted` mode allows **one human per paper** | this is expected — that paper was already screened by someone; use **Conflicts** if you disagree with the recorded decision |

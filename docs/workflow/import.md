@@ -4,7 +4,7 @@ The first stage: bring your database search results in and flag duplicates, so t
 
 ## Import references
 
-On the **Import** page, drop a **RIS / BibTeX / CSV** export of your search results — one file per database export is fine, and you can import several in turn (a paper found in two databases is caught at the deduplicate step). Optionally tag the **source database** (WoS, PubMed, Scopus…) so each record remembers where it came from; this is what lets the PRISMA flow report "records identified per database".
+On the **Import** page, drop a **RIS / BibTeX / CSV** export of your search results — one file per database export is fine, and you can import several in turn (a paper found in two databases is caught at the deduplicate step). Pick the file's **source database** — a required selector with the common databases (WoS, PubMed, Scopus…), a custom field for anything else, and *Auto-detect* — so each record remembers where it came from; this is what lets the PRISMA flow report "records identified per database".
 
 ![import](../figures/import.png)
 
@@ -19,6 +19,12 @@ CLI equivalent:
 ```bash
 ailr ingest <project-folder> results.ris --source-db PubMed
 ```
+
+## Record your search strategy
+
+For a reproducible review, PRISMA expects you to report *what you searched and how*. On the **Import** page you can **archive each database's search** — the query string, the date, any limits (years, language…), and the number of records it returned. Recorded searches are listed on the page under **Recorded searches**, and are emitted in the **methods export**, so the search appendix writes itself instead of being reconstructed from memory.
+
+This is optional but worth doing at import, while the details are fresh.
 
 ## Deduplicate
 

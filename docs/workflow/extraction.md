@@ -11,6 +11,8 @@ On the **Template** tab you set up *what* gets extracted:
 - which fields a **human must verify**
 - optional value definitions (`codebook.yaml`)
 
+You can build the variables by hand, or **import** them — paste a JSON list of field definitions (e.g. one your own AI drafted), **validate** it (the app checks the structure and flags warnings), and load it into the editor to review before saving.
+
 The schema sets the *structure* (which fields exist and their types) and the prompt sets the *quality* (how to read the paper) — these are independent, and understanding why is worth a few minutes: see [How AI extraction works](../ai-extraction.md). You can let your own AI draft the **variables** ([Define your variables with your own AI](../ai-extraction.md#define-your-variables-with-your-own-ai)) or the **prompt** ([Use your own AI to write the prompt](../ai-extraction.md#use-your-own-ai-to-write-the-extraction-prompt)), or **download a JSON template** / **copy the extraction prompt** to run the model entirely outside the app ([Run the AI externally](../ai-extraction.md#run-the-ai-externally-and-import)).
 
 ![template editor](../figures/ft_template1.png)
@@ -53,6 +55,8 @@ ailr extract <project-folder> --force   # re-extract existing
 The **Extraction** page is the verify queue: it shows each paper whose final full-text decision is **include**, with the extracted fields and the verbatim quote the AI attached to each value (so you can check the value against the source without reopening the PDF). Verify or edit the values per paper.
 
 Where your value differs from the AI's, the field is **highlighted** and shows what the *AI proposed* with a **"changed from AI"** badge — so your edits are easy to spot at a glance, and so a reviewer can see exactly where human judgement overrode the model.
+
+While you verify, a **reader pane** beside the form shows the source — toggle it between the original **PDF** and the converted **Markdown**. Use **Save draft** to keep your edits without finalizing (if you leave the page without saving, your edits are not kept), and **Submit** to mark the paper done and return to the list.
 
 :::{note}
 After you submit, the form prefills **your saved values**, not the AI's — so re-opening a paper shows what you decided, not what the AI guessed. In `verify` mode a second human submission for the same paper is rejected (one verifier per paper).

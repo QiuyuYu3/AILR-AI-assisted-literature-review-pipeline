@@ -79,7 +79,7 @@ Instead of building the extraction fields one by one, let your own ChatGPT/Claud
 3. Paste that JSON back into the box, click **Validate** (it checks the structure and flags problems), then **Load into editor**.
 4. Review the fields in the editor — fix names, tighten descriptions, set options — and click **Save template**.
 
-Nothing is written until you Save, so the import is just a starting point you adjust. The descriptions matter most: the AI reads each one as the label for what to put in that field (explained above).
+Nothing is written until you Save, so the import is just a starting point you adjust. The descriptions matter most: the AI reads each one as the label for what to put in that field (explained above). The JSON it expects is an object `{"fields": [ ... ]}`, each field `{name, type, description, ...}` — but the in-app message already spells this out, so you don't have to.
 
 ## Use your own AI to write the extraction prompt
 

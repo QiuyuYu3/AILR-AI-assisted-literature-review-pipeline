@@ -121,7 +121,7 @@ Creating a project drops a few starter files into the folder. They are **yours t
 | `prompts/extraction.txt` | the instruction the AI follows when extracting data from full text | **Full text → Workflow → Template** |
 | `schema.yaml` | the **fields** to extract — the structure of your extraction | **Template** page (a visual editor) |
 | `data/raw/` | holds the reference files you import | — |
-| `data/pdfs/` | holds the linked PDFs | — |
+| `data/pdfs/` | export your Zotero PDFs here — they're auto-linked when you open the full-text pages | — |
 | `data/markdown/` | holds the full text converted from PDF to markdown | — |
 
 For a local (SQLite) project, your data also lands here as `data/review.sqlite`. On a PostgreSQL project that data lives in the shared database instead, not in the folder — see [Core concepts](concepts.md).

@@ -8,12 +8,12 @@ Before you can review full text, each included paper needs a PDF and a markdown 
 
 ### Link PDFs from Zotero
 
-ailr does not download PDFs — you gather them in Zotero, then hand ailr a Zotero export that records where each PDF is. The round trip:
+ailr does not download PDFs — you gather them in Zotero, then **drop the export into the project's `data/pdfs/` folder**, where ailr links them automatically. The round trip:
 
 1. **Export the included set as RIS.** On the **Reports** page, export the papers that passed abstract screening as **RIS**.
 2. **Import that RIS into Zotero.** Zotero now holds exactly the included references.
 3. **Get the full-text PDFs in Zotero** — use Zotero's *Find Full Text*, or attach them manually, so each reference has its PDF.
-4. **Export from Zotero, with files.** Select the collection → right-click → **Export**, choose format **RIS** and tick **Export Files**. Zotero writes a folder containing the `.ris` file plus subfolders holding the PDFs, and each record's `L1` line stores a **relative path** to its PDF.
+4. **Export from Zotero into `data/pdfs/`, with files.** Select the collection → right-click → **Export**, choose format **RIS**, tick **Export Files**, and save it **inside the project's `data/pdfs/` folder**. Zotero writes the `.ris` plus subfolders of PDFs there.
 
 :::::{grid} 2
 ::::{grid-item}
@@ -28,16 +28,14 @@ ailr does not download PDFs — you gather them in Zotero, then hand ailr a Zote
 ::::
 :::::
 
-5. **Point ailr at that RIS:**
-
-   ```bash
-   ailr import-pdfs <project-folder> path/to/zotero-export.ris
-   ```
-
-   ailr matches each PDF to its source **by DOI** and links it — the files are **referenced in place, not copied**, so your Zotero export stays the single source of truth and the project folder stays small.
+5. **Open the full-text pages.** ailr scans `data/pdfs/`, matches each PDF to its source **by DOI**, and links it **automatically** — there is no path to enter. (Added more later? Click **Re-scan data/pdfs** on the Workflow page.) Files are **referenced in place, not copied**, and each link is stored **relative to the project root**.
 
 :::{tip}
-Because the RIS stores **relative** paths to the PDFs, you can drop the whole exported folder (the `.ris` plus its PDF subfolders) into your shared / synced project location and the links still resolve for the team. Each teammate whose absolute path to that folder differs just sets **their own** PDF folder in **Settings** — see [Sharing PDFs](../team.md#sharing-pdfs).
+Because links are stored relative to the project root, they **resolve on every teammate's machine** as soon as the project folder is on the shared drive — there is nothing per-person to set up. See [Sharing PDFs](../team.md#sharing-pdfs).
+:::
+
+:::{note}
+Prefer the command line? `ailr import-pdfs <project-folder> <zotero.ris>` does the same linking from a RIS file anywhere on disk.
 :::
 
 ### Convert PDF → markdown
