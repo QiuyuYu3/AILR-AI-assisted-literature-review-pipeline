@@ -40,14 +40,14 @@ def _build_content(reviewer: Optional[str]) -> Any:
     abstract_sources_screened = db.count_sources_screened(pid, "human", stage="abstract")
     ft_human = db.screening_summary(pid, "human", stage="full_text")
     ft_sources_screened = db.count_sources_screened(pid, "human", stage="full_text")
-    with_md = sum(1 for s in db.list_sources(pid) if s.markdown_path)
-    ai_extracted = sum(1 for s in db.list_sources(pid) if db.has_extraction(s.id, "ai"))
-    human_extracted = sum(1 for s in db.list_sources(pid) if db.has_extraction(s.id, "human"))
 
-    my_done = 0
-    if rid:
-        sids = [s.id for s in db.list_sources(pid) if s.id is not None]
-        my_done = len(db.get_decisions_by_reviewer(sids, rid))
+    all_sources = db.list_sources(pid)
+    all_ids = [s.id for s in all_sources if s.id is not None]
+    with_md = sum(1 for s in all_sources if s.markdown_path)
+    ai_extracted = len(db.sources_with_extraction(all_ids, "ai"))
+    human_extracted = len(db.sources_with_extraction(all_ids, "human"))
+
+    my_done = len(db.get_decisions_by_reviewer(all_ids, rid)) if rid else 0
 
     cards = [
         _stage_card(

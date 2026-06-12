@@ -1239,6 +1239,22 @@ class Database:
             out["matched_criteria"] = json.loads(out["matched_criteria"])
         return out
 
+    def get_latest_ai_decisions(self, source_ids: list[int], stage: str = "abstract") -> dict[int, str]:
+        """Latest AI decision string per source (batch) for the review card lists."""
+        if not source_ids:
+            return {}
+        placeholders = ",".join("?" for _ in source_ids)
+        sql = f"""
+            SELECT source_id, decision FROM screening_decisions
+            WHERE id IN (
+                SELECT MAX(id) FROM screening_decisions
+                WHERE reviewer_type = 'ai' AND stage = ? AND source_id IN ({placeholders})
+                GROUP BY source_id
+            )
+        """
+        rows = self._conn.execute(sql, [stage, *source_ids]).fetchall()
+        return {r["source_id"]: r["decision"] for r in rows}
+
     def list_sources_overview(self, project_id: int) -> list[dict]:
         """Joined view used by the Sources overview UI: source row + latest AI/human decision + extraction count."""
         sql = """

@@ -7,8 +7,8 @@
 - Template: import variable definitions drafted by your own AI — paste JSON, validate (structure + warnings), and load into the editor to review before saving.
 - Search strategy archiving: record each database's search query / date / limits at import (with record counts), listed on the Import page and emitted in the methods export.
 
-### Fixed
-- Preprocessing now honors the Settings "PDF folder on THIS machine" override (was viewer-only), so teammates whose shared-drive paths differ can convert PDFs, not just preview them; resolution logic unified in `core/local_paths.py`.
+### Changed
+- PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.
 
 ### Docs
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.

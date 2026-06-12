@@ -9,10 +9,8 @@ from dash import Input, Output, State, html, no_update
 
 from ailr.core.config import resolve_stage_llm, save_stage_llm_config
 from ailr.ui._common import (
-    get_pdf_root,
     get_project,
     reload_project,
-    set_pdf_root,
 )
 from ailr.ui.screen_view import criteria_editor_block, register_criteria_callbacks
 
@@ -99,19 +97,6 @@ def layout() -> Any:
             ),
             html.Small("Create, open, or switch projects on the Projects page (in the sidebar).", className="text-muted d-block mt-3"),
 
-            dbc.Label("PDF folder on THIS machine", className="small fw-bold mt-3"),
-            html.Small(
-                "For shared drives (Box/OneDrive) where each person's path differs. If a PDF's stored path "
-                "doesn't resolve, PDFs are looked up by filename under this folder. Stored locally — not shared with the team.",
-                className="text-muted d-block mb-1",
-            ),
-            dbc.InputGroup(
-                [
-                    dbc.Input(id="settings-pdfroot", value=str(get_pdf_root() or ""), placeholder="e.g. C:/Users/you/Box/MyReview/pdfs", size="sm"),
-                    dbc.Button("Save", id="settings-pdfroot-save", color="secondary", outline=True, size="sm"),
-                ]
-            ),
-            html.Div(id="settings-pdfroot-feedback", className="small mt-1"),
             html.Hr(className="my-3"),
             html.H6("Models", className="mt-2"),
             html.P("Each stage has its own provider / model / temperature (used when Mock is off). seed is fixed for reproducibility.", className="text-muted small"),
@@ -195,22 +180,6 @@ def layout() -> Any:
 
 def register_callbacks(app: Any) -> None:
     register_criteria_callbacks(app, "settings")
-
-    @app.callback(
-        Output("settings-pdfroot-feedback", "children"),
-        Input("settings-pdfroot-save", "n_clicks"),
-        State("settings-pdfroot", "value"),
-        prevent_initial_call=True,
-    )
-    def _save_pdfroot(n, path):
-        if not n:
-            return no_update
-        path = (path or "").strip()
-        if path and not Path(path).is_dir():
-            return dbc.Alert("That folder doesn't exist on this machine.", color="warning", className="mb-0 py-1")
-        set_pdf_root(path or None)
-        msg = f"PDFs on this machine resolve under {path}." if path else "Cleared — PDFs use their stored paths."
-        return dbc.Alert(msg, color="success", className="mb-0 py-1")
 
     @app.callback(
         Output("settings-stage-feedback", "children"),

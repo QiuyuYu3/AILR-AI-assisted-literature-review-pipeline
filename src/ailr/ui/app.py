@@ -320,6 +320,13 @@ def build_app() -> Dash:
             return conflicts_view.layout()
         if tab == "tags":
             return tags_view.layout()
+        if tab in ("full_text", "workflow_fulltext", "ft_conflicts"):
+            try:
+                from ailr.ingest.pdf_link import auto_link_pdfs
+
+                auto_link_pdfs(get_project())
+            except Exception:
+                pass
         if tab == "full_text":
             return full_text_view.layout()
         if tab == "ft_conflicts":

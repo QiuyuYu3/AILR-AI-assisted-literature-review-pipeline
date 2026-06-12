@@ -817,12 +817,14 @@ def register_callbacks(app: Any) -> None:
 
         visible_ids = [s.id for s in page_sources if s.id is not None]
         tags_per_source = db.get_tags_for_sources(visible_ids)
+        note_counts = db.count_notes(visible_ids)
 
         cards = [
             _source_card(
                 s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0),
-                bool(expand_all), db, rid,
+                bool(expand_all), rid,
                 tags=tags_per_source.get(s.id, []),
+                note_count=note_counts.get(s.id, 0),
             )
             for s in page_sources
         ]
@@ -864,11 +866,6 @@ def _apply_sort(sources: list[Source], sort_by: str) -> list[Source]:
     return sorted(sources, key=lambda s: s.id or 0)
 
 
-def _note_label(db: Any, sid: int) -> str:
-    n = len(db.list_notes(sid)) if db is not None and sid is not None else 0
-    return f"Note ({n})" if n else "Note"
-
-
 def _short_author_year(src: Source) -> str:
     if not src.authors:
         return f"({src.year})" if src.year else ""
@@ -893,9 +890,9 @@ def _source_card(
     workflow: str,
     peer_count: int,
     abstract_open: bool = False,
-    db: Any = None,
     reviewer_id: str = "",
     tags: Optional[list[dict]] = None,
+    note_count: int = 0,
 ) -> Any:
     sid = src.id
     decision_color = {
@@ -998,7 +995,7 @@ def _source_card(
                 className="p-0 me-3",
             ),
             dbc.Button(
-                _note_label(db, sid),
+                f"Note ({note_count})" if note_count else "Note",
                 id={"type": "screen-note-btn", "source": sid},
                 size="sm",
                 color="link",

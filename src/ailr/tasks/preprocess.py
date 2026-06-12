@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from ailr.core.local_paths import resolve_pdf_path
+from ailr.core.pdf_paths import resolve_pdf_path
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.preprocess import PDFConverter, make_converter, strip_references
@@ -167,7 +167,7 @@ class PreprocessTask:
         for sid, source in sources_by_id.items():
             if source.pdf_path is None:
                 continue
-            resolved = resolve_pdf_path(source, self.project.root)
+            resolved = resolve_pdf_path(source.pdf_path, self.project.root)
             if resolved is not None:
                 pdf_by_source[sid] = resolved
 

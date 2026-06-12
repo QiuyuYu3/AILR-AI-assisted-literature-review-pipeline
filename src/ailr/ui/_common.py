@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from ailr.core import local_paths
+from ailr.core import pdf_paths
 from ailr.core.project import Project
 
 _project: Optional[Project] = None
@@ -118,19 +118,6 @@ def create_project(
     return _project
 
 
-# --- Machine-local PDF base-folder override (for shared-drive setups where each
-#     teammate's mount prefix differs, e.g. C:/Users/<name>/Box/...). The override
-#     itself lives in ailr.core.local_paths; these thin wrappers bind it to the
-#     currently-open project so the UI doesn't pass the root around. ---
-
-
-def get_pdf_root() -> Optional[Path]:
-    return local_paths.get_pdf_root(get_project().root)
-
-
-def set_pdf_root(path: Optional[str]) -> None:
-    local_paths.set_pdf_root(get_project().root, path)
-
-
 def resolve_pdf_path(src) -> Optional[Path]:
-    return local_paths.resolve_pdf_path(src, get_project().root)
+    """Resolve a source's stored PDF path (absolute, or relative to the project root)."""
+    return pdf_paths.resolve_pdf_path(getattr(src, "pdf_path", None), get_project().root)

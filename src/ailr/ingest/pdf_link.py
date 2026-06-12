@@ -4,6 +4,7 @@ Matches each RIS record to a source already in the project (DOI first, fuzzy tit
 and records the absolute PDF path on that source. `preprocess` reads it directly.
 """
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -41,6 +42,9 @@ def link_pdfs_from_ris(project: Project, ris_path: Path) -> PdfLinkSummary:
     base = ris_path.parent
     existing = project.db.list_sources(project.project_id)
     existing_norms = [(normalize_title(s.title), s) for s in existing]
+    existing_by_doi = {
+        s.doi.strip().lower(): s for s in existing if isinstance(s.doi, str) and s.doi.strip()
+    }
 
     summary = PdfLinkSummary(total_records=len(records))
 
@@ -50,7 +54,7 @@ def link_pdfs_from_ris(project: Project, ris_path: Path) -> PdfLinkSummary:
             summary.no_attachment += 1
             continue
 
-        src = _match_source(project, rec, existing_norms)
+        src = _match_source(rec, existing_norms, existing_by_doi)
         if src is None:
             summary.unmatched.append(
                 {"title": (rec.get("title") or rec.get("primary_title") or "")[:80], "doi": rec.get("doi")}
@@ -64,24 +68,80 @@ def link_pdfs_from_ris(project: Project, ris_path: Path) -> PdfLinkSummary:
             summary.missing_files.append({"source_id": src.id, "path": str(pdf_path)})
             continue
 
-        if src.pdf_path is not None and Path(src.pdf_path) == pdf_path:
+        store_path = _portable_path(pdf_path, project.root)
+        if src.pdf_path is not None and Path(src.pdf_path) == store_path:
             summary.already_linked += 1
             continue
 
-        project.db.update_pdf_path(src.id, pdf_path)
+        project.db.update_pdf_path(src.id, store_path)
         summary.linked += 1
 
     return summary
 
 
+def _portable_path(pdf_path: Path, project_root: Path) -> Path:
+    """Store PDF paths relative to the project root so they resolve on any teammate's machine
+    (the shared drive is mirrored). Falls back to absolute only across drives (Windows)."""
+    try:
+        return Path(os.path.relpath(pdf_path, project_root))
+    except ValueError:
+        return pdf_path
+
+
+# Per-session cache: skip the RIS parse + match entirely when nothing under data/pdfs changed.
+_auto_link_sig: dict[str, tuple] = {}
+
+
+def _ris_signature(ris_files: list[Path]) -> tuple:
+    out = []
+    for r in ris_files:
+        try:
+            st = r.stat()
+            out.append((str(r), st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append((str(r), 0, 0))
+    return tuple(out)
+
+
+def auto_link_pdfs(project: Project, force: bool = False) -> PdfLinkSummary:
+    """Idempotently link PDFs from any Zotero 'Export Files' RIS placed under data/pdfs.
+    Triggered on entering the full-text pages; cached per session so it only re-parses when the
+    Zotero export actually changes (the 'Re-scan' button passes force=True)."""
+    pdfs_dir = project.root / "data" / "pdfs"
+    agg = PdfLinkSummary()
+    if not pdfs_dir.exists():
+        return agg
+
+    ris_files = sorted(pdfs_dir.rglob("*.ris"))
+    sig = _ris_signature(ris_files)
+    key = str(project.root)
+    if not force and _auto_link_sig.get(key) == sig:
+        return agg
+
+    for ris in ris_files:
+        try:
+            s = link_pdfs_from_ris(project, ris)
+        except Exception:
+            continue
+        agg.total_records += s.total_records
+        agg.linked += s.linked
+        agg.already_linked += s.already_linked
+        agg.no_attachment += s.no_attachment
+        agg.unmatched.extend(s.unmatched)
+        agg.missing_files.extend(s.missing_files)
+
+    _auto_link_sig[key] = sig
+    return agg
+
+
 def _match_source(
-    project: Project,
     rec: dict,
     existing_norms: list[tuple[str, Source]],
+    existing_by_doi: dict[str, Source],
 ) -> Optional[Source]:
     doi = rec.get("doi")
     if isinstance(doi, str) and doi.strip():
-        hit = project.db.find_by_doi(project.project_id, doi.strip())
+        hit = existing_by_doi.get(doi.strip().lower())
         if hit is not None:
             return hit
 

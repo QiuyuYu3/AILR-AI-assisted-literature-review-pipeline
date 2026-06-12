@@ -20,7 +20,6 @@ from ailr.ui.screen_view import (
     _apply_sort,
     _history_block,
     _kw_match,
-    _note_label,
     _short_author_year,
 )
 
@@ -37,11 +36,10 @@ def pdf_tools_panel() -> list[Any]:
     """Full-text data-prep as clear steps: 1) link PDFs → 2) convert to markdown (or 3) import).
     Rendered on the full-text Workflow tab."""
     return [
-        # ── Step 1 — Link PDFs ───────────────────────────────────────────────
-        dbc.Label("Step 1 — Link PDFs (Zotero RIS)", className="fw-bold"),
-        html.P("Point to the Zotero .ris file (Zotero → Export → Format: RIS, with 'Export Files' checked) — not a folder of PDFs.", className="text-muted small mb-1"),
-        dbc.Input(id="ft-linkpdf-path", placeholder="e.g. C:/.../test_includes/test_includes.ris", size="sm", className="mb-1"),
-        dbc.Button("Link PDFs", id="ft-linkpdf-run", color="secondary", outline=True, size="sm"),
+        # ── Step 1 — PDFs (auto-linked from data/pdfs) ───────────────────────
+        dbc.Label("Step 1 — PDFs", className="fw-bold"),
+        html.P("Export your Zotero library (Export → Format: RIS, with 'Export Files' checked) into this project's data/pdfs folder. PDFs are linked automatically when you open the full-text pages — no path to enter, and the link travels with the shared project.", className="text-muted small mb-1"),
+        dbc.Button("Re-scan data/pdfs", id="ft-linkpdf-run", color="secondary", outline=True, size="sm"),
         html.Div(id="ft-linkpdf-status", className="small mt-2"),
         # ── Step 2 — Convert PDFs to markdown ────────────────────────────────
         html.Hr(className="my-3"),
@@ -223,26 +221,19 @@ def register_callbacks(app: Any) -> None:
         Output("ft-linkpdf-status", "children"),
         Output("ft-refresh", "data", allow_duplicate=True),
         Input("ft-linkpdf-run", "n_clicks"),
-        State("ft-linkpdf-path", "value"),
         prevent_initial_call=True,
     )
-    def _link_pdfs(n, path):
+    def _link_pdfs(n):
         if not n:
             return no_update, no_update
-        from pathlib import Path as _P
-        p = _P((path or "").strip())
-        if not path or not p.is_file():
-            if path and p.is_dir():
-                msg = "That's a folder — point to the Zotero .ris file inside it, not a folder of PDFs."
-            else:
-                msg = "Enter the path to your Zotero .ris file (Zotero → Export → Format RIS, with 'Export Files' checked)."
-            return dbc.Alert(msg, color="warning", className="py-1 mb-0"), no_update
-        from ailr.ingest.pdf_link import link_pdfs_from_ris
+        from ailr.ingest.pdf_link import auto_link_pdfs
 
         try:
-            s = link_pdfs_from_ris(get_project(), p)
+            s = auto_link_pdfs(get_project(), force=True)
         except Exception as e:
             return dbc.Alert(f"Failed: {e}", color="danger", className="py-1 mb-0"), no_update
+        if s.total_records == 0:
+            return dbc.Alert("No Zotero .ris found in data/pdfs. Export your library there (with 'Export Files').", color="warning", className="py-1 mb-0"), no_update
         import time as _t
         msg = f"Newly linked {s.linked}, already linked {s.already_linked}, unmatched {len(s.unmatched)}, missing files {len(s.missing_files)}."
         return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": _t.time()}
@@ -685,13 +676,21 @@ def register_callbacks(app: Any) -> None:
             if workflow == "independent" else {}
         )
 
+        page_ids = [s.id for s in page_sources if s.id is not None]
+        tags_by_source = db.get_tags_for_sources(page_ids)
+        ai_by_source = db.get_latest_ai_decisions(page_ids, stage="full_text")
+        note_counts = db.count_notes(page_ids)
+
         cards = [
             _ft_card(
-                s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), db, rid,
+                s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), rid,
                 can_extract=s.id in extract_ids, expand_abstract=bool(expand_all),
                 extracted_by=extracted_by.get(s.id),
                 extract_verify=project.config.extraction.workflow == "verify",
                 low_text=_low_text_md(project.root, s.id, project.config.preprocess.low_text_threshold),
+                tags=tags_by_source.get(s.id, []),
+                ai_decision=ai_by_source.get(s.id),
+                note_count=note_counts.get(s.id, 0),
             )
             for s in page_sources
         ]
@@ -719,13 +718,15 @@ def _ft_card(
     my_decision: Optional[str],
     workflow: str,
     peer_count: int,
-    db: Any,
     reviewer_id: str,
     can_extract: bool = False,
     expand_abstract: bool = False,
     extracted_by: Optional[str] = None,
     extract_verify: bool = False,
     low_text: bool = False,
+    tags: Optional[list[dict]] = None,
+    ai_decision: Optional[str] = None,
+    note_count: int = 0,
 ) -> Any:
     sid = src.id
     decision_color = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -764,11 +765,10 @@ def _ft_card(
             className="text-muted d-block mt-1",
         )
 
-    # AI verdict (blinding-aware)
-    ai = db.get_latest_ai_decision(sid, stage="full_text")
+    # AI verdict (blinding-aware): hidden until this reviewer has submitted, when blinding is on.
     ai_panel: Any = None
-    if ai is not None:
-        if workflow != "off" and not db.has_human_decision(sid, reviewer_id, stage="full_text"):
+    if ai_decision is not None:
+        if workflow != "off" and not my_decision:
             ai_panel = dbc.Alert(
                 "AI already assessed — its verdict appears after you submit your decision.",
                 color="secondary",
@@ -783,8 +783,8 @@ def _ft_card(
                             [
                                 html.Span("Decision: ", className="text-muted"),
                                 dbc.Badge(
-                                    ai["decision"].upper(),
-                                    color=decision_color.get(ai["decision"], "secondary"),
+                                    ai_decision.upper(),
+                                    color=decision_color.get(ai_decision, "secondary"),
                                     className="me-2",
                                 ),
                             ]
@@ -814,7 +814,6 @@ def _ft_card(
         )
 
     # Tags (display only; per-card add via the shared tag modal isn't wired here yet)
-    tags = db.get_tags_for_source(sid)
     tag_chips_el: Any = html.Span()
     if tags:
         tag_chips_el = html.Div(
@@ -829,7 +828,7 @@ def _ft_card(
         [
             dbc.Button("History", id={"type": "ft-history-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
             dbc.Button("Tags", id={"type": "ft-tag-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
-            dbc.Button(_note_label(db, sid), id={"type": "ft-note-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
+            dbc.Button(f"Note ({note_count})" if note_count else "Note", id={"type": "ft-note-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
             dbc.Button("Duplicate", id={"type": "ft-duplicate", "source": sid}, size="sm", color="link", className="p-0 me-3 text-danger"),
             dbc.Button("↺ Move to screening", id={"type": "ft-move-screen", "source": sid}, size="sm", color="link", className="p-0 text-secondary"),
         ],
