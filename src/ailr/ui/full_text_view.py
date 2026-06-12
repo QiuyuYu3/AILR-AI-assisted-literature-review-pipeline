@@ -196,7 +196,7 @@ def register_callbacks(app: Any) -> None:
         project = get_project()
         eligible = project.db.list_full_text_final_includes_with_markdown(project.project_id)
         idx = next((i for i, s in enumerate(eligible) if s.id == sid), 0)
-        return "extract", {"idx": idx}
+        return "extract", {"idx": idx, "sid": sid}
 
     @app.callback(
         Output("ft-preprocess-poll", "disabled"),
@@ -844,16 +844,14 @@ def _ft_card(
             status_badge = dbc.Badge("Extracted by you", color="success", className="align-middle")
         else:
             status_badge = dbc.Badge(f"Extracted by {extracted_by}", color="success", className="align-middle")
-        children: list[Any] = []
-        if not locked:
-            children.append(
-                dbc.Button(
-                    "Open extraction →",
-                    id={"type": "ft-open-extract", "source": sid},
-                    size="sm", color="primary", outline=True, className="me-2",
-                )
-            )
-        children.append(status_badge)
+        children: list[Any] = [
+            dbc.Button(
+                "View extraction →" if locked else "Open extraction →",
+                id={"type": "ft-open-extract", "source": sid},
+                size="sm", color="primary", outline=True, className="me-2",
+            ),
+            status_badge,
+        ]
         extract_row = html.Div(children, className="mt-2")
 
     abstract_block: Any = None

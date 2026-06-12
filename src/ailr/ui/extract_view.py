@@ -25,6 +25,8 @@ _WORKFLOW_OPTIONS = [
     {"label": "independent (you extract blind)", "value": "independent"},
 ]
 
+_INDEP_TEAM_SIZE = 2  # independent extraction: reveal/compare once this many humans have submitted
+
 
 def extraction_workflow_block() -> list[Any]:
     """Extraction workflow setting. Rendered on the full-text Workflow tab."""
@@ -130,7 +132,13 @@ def layout() -> Any:
                             html.H6("Your extraction", className="d-inline me-2"),
                             html.Small("(edit AI's values; AI original shown under each field)", className="text-muted"),
                             html.Div(id="extract-form-container", className="mt-2"),
-                            html.Div(dbc.Button("Submit extraction", id="extract-submit", color="primary", className="mt-3")),
+                            html.Div(
+                                [
+                                    dbc.Button("Save draft", id="extract-save", color="secondary", outline=True, className="mt-3 me-2"),
+                                    dbc.Button("Submit extraction", id="extract-submit", color="primary", className="mt-3"),
+                                ]
+                            ),
+                            html.Small("Save draft keeps your edits without finalizing — click it before leaving, edits aren't kept otherwise. Submit marks the paper done.", className="text-muted d-block mt-1"),
                             html.Div(id="extract-feedback", className="mt-2 text-success"),
                         ],
                         width=6,
@@ -282,9 +290,12 @@ def register_callbacks(app: Any) -> None:
         Output("extract-store", "data"),
         Output("extract-feedback", "children"),
         Output("extract-current-sid", "data"),
+        Output("extract-submit", "disabled"),
+        Output("extract-save", "disabled"),
         Input("extract-prev", "n_clicks"),
         Input("extract-next", "n_clicks"),
         Input("extract-submit", "n_clicks"),
+        Input("extract-save", "n_clicks"),
         Input("extract-move-ft", "n_clicks"),
         Input("extract-move-screen", "n_clicks"),
         Input("extract-duplicate", "n_clicks"),
@@ -299,7 +310,7 @@ def register_callbacks(app: Any) -> None:
         State({"type": "ex-grid", "field": ALL}, "rowData"),
         State({"type": "ex-grid", "field": ALL}, "id"),
     )
-    def _update(prev, nxt, submit, move_ft, move_screen, dup, filt, _ai_refresh, reviewer, store,
+    def _update(prev, nxt, submit, save, move_ft, move_screen, dup, filt, _ai_refresh, reviewer, store,
                 val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids):
         project = get_project()
         db = project.db
@@ -310,7 +321,7 @@ def register_callbacks(app: Any) -> None:
 
         if not rid:
             msg = dbc.Alert("Enter your reviewer ID above to begin.", color="info")
-            return msg, "", "", "", {"idx": 0}, "", None
+            return msg, "", "", "", {"idx": 0}, "", None, True, True
 
         schema_path = project.root / project.config.extraction.schema_path
         fields = compose_schema(schema_path)
@@ -342,9 +353,24 @@ def register_callbacks(app: Any) -> None:
                     _save_extraction(
                         db, src, rid, fields,
                         val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids,
-                        ai_rows=ai_rows,
+                        ai_rows=ai_rows, include_autoaccept=True,
                     )
-                    feedback = "Extraction saved."
+                    db.mark_extraction_submitted(src.id, rid)
+                    feedback = "Extraction submitted."
+
+        if trigger == "extract-save":
+            sources = _filtered(db, pid, filt)
+            idx = (store or {}).get("idx", 0)
+            if 0 <= idx < len(sources):
+                src = sources[idx]
+                locked, _ = _compute_locked(db, src, rid, project.config.extraction.workflow)
+                if not locked:  # never write a draft onto someone else's locked paper
+                    _save_extraction(
+                        db, src, rid, fields,
+                        val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids,
+                        include_autoaccept=False,
+                    )
+                    feedback = "Draft saved."
 
         if trigger == "extract-move-ft":
             sources = _filtered(db, pid, filt)
@@ -390,13 +416,38 @@ def register_callbacks(app: Any) -> None:
             done = dbc.Alert(
                 "No sources qualify for extraction yet (need a full-text 'include' with markdown).", color="warning"
             )
-            return done, "", "", "0 / 0", {"idx": 0}, feedback, None
+            return done, "", "", "0 / 0", {"idx": 0}, feedback, None, True, True
+
+        # Honor an explicitly-requested paper (set when arriving via "Open/View extraction"),
+        # overriding the default idx so we land on the clicked paper. Consumed once (store drops sid).
+        target_sid = (store or {}).get("sid")
+        if target_sid is not None and trigger not in ("extract-prev", "extract-next", "extract-submit"):
+            found = next((i for i, s in enumerate(sources) if s.id == target_sid), None)
+            if found is not None:
+                idx = found
 
         idx = max(0, min(idx, len(sources) - 1))
         src = sources[idx]
         progress = f"Source {idx + 1} / {len(sources)} — DB id {src.id}"
 
         workflow = project.config.extraction.workflow
+
+        # Read-only view: another reviewer owns this paper (verify), or every required reviewer has
+        # submitted (independent). Show each submitter's extraction as a read-only table; buttons off.
+        locked, display_ids = _compute_locked(db, src, rid, workflow)
+        if locked:
+            return (
+                _source_card(project.root, src),
+                _readonly_tables(db, src, display_ids, [f for f in fields if f.verify]),
+                _ai_panel(db, src, workflow, rid),
+                progress,
+                {"idx": idx},
+                feedback,
+                src.id,
+                True,
+                True,
+            )
+
         ai_data: dict[str, Any] | None = None
         if workflow == "verify":
             # Scalar fields keep their quote in the separate source_quote column; wrap them as
@@ -423,6 +474,8 @@ def register_callbacks(app: Any) -> None:
             {"idx": idx},
             feedback,
             src.id,
+            False,
+            False,
         )
 
     @app.callback(
@@ -674,9 +727,9 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
     if not ai_rows and not flag_check:
         return html.P("No AI extraction yet.", className="text-muted small")
 
-    # In `independent` mode, AI is hidden until current human commits.
+    # In `independent` mode, AI is hidden until the current human submits.
     # In `verify` mode, AI is always shown (and Batch 2 will pre-fill the form from it).
-    if workflow == "independent" and not db.has_extraction(src.id, "human"):
+    if workflow == "independent" and not db.has_submitted(src.id, rid):
         return dbc.Alert("AI extraction hidden until you submit (workflow: independent).", color="secondary")
 
     items: list[Any] = [html.H6("AI extraction")]
@@ -716,18 +769,25 @@ def _save_extraction(
     grid_rows: list,
     grid_ids: list,
     ai_rows: dict[str, Any] | None = None,
+    include_autoaccept: bool = True,
 ) -> None:
+    """Persist this reviewer's extraction in ONE batched commit. include_autoaccept=False (Save
+    draft) writes only the human-verified fields; True (Submit) also takes AI's values for the
+    fields not flagged for verification."""
     values: dict[str, Any] = {vid["field"]: v for vid, v in zip(val_ids, val_values)}
     quotes: dict[str, Any] = {qid["field"]: q for qid, q in zip(quote_ids, quote_values)}
     grids: dict[str, Any] = {gid["field"]: r for gid, r in zip(grid_ids, grid_rows)}
     ai_rows = ai_rows or {}
 
+    results: list[ExtractionResult] = []
     for field in fields:
-        # Fields not flagged for human verification take the AI value as-is.
+        # Fields not flagged for human verification take the AI value as-is (Submit only).
         if not field.verify:
+            if not include_autoaccept:
+                continue
             row = ai_rows.get(field.name)
             if row is not None:
-                db.insert_extraction(
+                results.append(
                     ExtractionResult(
                         extractor_type="human", extractor_id=rid,
                         field_name=field.name, value=row.get("value"),
@@ -741,7 +801,7 @@ def _save_extraction(
             for sub in field.fields or []:
                 key = f"{field.name}.{sub.name}"
                 obj[sub.name] = {"value": values.get(key), "quote": quotes.get(key)}
-            db.insert_extraction(
+            results.append(
                 ExtractionResult(
                     extractor_type="human", extractor_id=rid,
                     field_name=field.name, value=obj, source_id=src.id,
@@ -749,7 +809,7 @@ def _save_extraction(
                 )
             )
         elif field.type == "list" and field.item_type == "object":
-            db.insert_extraction(
+            results.append(
                 ExtractionResult(
                     extractor_type="human", extractor_id=rid,
                     field_name=field.name, value=grids.get(field.name, []),
@@ -759,7 +819,7 @@ def _save_extraction(
         elif field.type == "list":
             raw = values.get(field.name) or ""
             items = [line.strip() for line in str(raw).splitlines() if line.strip()]
-            db.insert_extraction(
+            results.append(
                 ExtractionResult(
                     extractor_type="human", extractor_id=rid,
                     field_name=field.name, value=items, source_id=src.id,
@@ -767,7 +827,7 @@ def _save_extraction(
                 )
             )
         else:
-            db.insert_extraction(
+            results.append(
                 ExtractionResult(
                     extractor_type="human", extractor_id=rid,
                     field_name=field.name, value=values.get(field.name),
@@ -775,3 +835,54 @@ def _save_extraction(
                     prompt_version="manual",
                 )
             )
+
+    db.insert_extractions(results)
+
+
+def _compute_locked(db: Any, src: Source, rid: str, workflow: str) -> tuple[bool, list[str]]:
+    """Whether this paper is read-only for the current reviewer, and whose extraction(s) to show.
+    verify: another reviewer has claimed it (draft or submitted) → show that one reviewer.
+    independent: every required reviewer has submitted → show all submitters."""
+    if workflow == "verify":
+        other = db.other_human_extracted(src.id, rid)
+        return (other is not None), ([other] if other else [])
+    if workflow == "independent":
+        submitters = db.extraction_submitters(src.id)
+        return (len(submitters) >= _INDEP_TEAM_SIZE), submitters
+    return False, []
+
+
+def _readonly_tables(db: Any, src: Source, submitter_ids: list[str], fields: list[FieldSpec]) -> Any:
+    """Read-only view of each submitter's extraction (one table per reviewer). Used when the paper
+    is owned by another reviewer (verify) or all reviewers have submitted (independent)."""
+    if not submitter_ids:
+        return html.P("No submitted extraction to show yet.", className="text-muted small")
+    field_order = [f.name for f in fields]
+    human_rows = db.list_extractions(src.id, extractor_type="human")
+    blocks: list[Any] = []
+    for ext_id in submitter_ids:
+        latest: dict[str, Any] = {}
+        for r in human_rows:                      # ORDER BY id → later rows win
+            if r.get("extractor_id") == ext_id:
+                latest[r["field_name"]] = r["value"]
+        ordered = field_order + [k for k in latest if k not in field_order]
+        trs = []
+        for fname in ordered:
+            if fname not in latest:
+                continue
+            v = latest[fname]
+            disp = json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else ("" if v is None else str(v))
+            trs.append(html.Tr([html.Td(html.Strong(fname)), html.Td(disp, style={"whiteSpace": "pre-wrap"})]))
+        blocks.append(
+            html.Div(
+                [
+                    html.H6(["Extraction by ", html.Span(ext_id, className="text-primary")], className="mt-3"),
+                    dbc.Table([html.Tbody(trs)], bordered=True, hover=True, size="sm", striped=True)
+                    if trs else html.P("(no values)", className="text-muted small"),
+                ]
+            )
+        )
+    return html.Div(
+        [dbc.Alert("Read-only — you cannot edit another reviewer's extraction.", color="info", className="py-1 mb-2")]
+        + blocks
+    )

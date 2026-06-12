@@ -45,7 +45,7 @@ def _build_content(reviewer: Optional[str]) -> Any:
     all_ids = [s.id for s in all_sources if s.id is not None]
     with_md = sum(1 for s in all_sources if s.markdown_path)
     ai_extracted = len(db.sources_with_extraction(all_ids, "ai"))
-    human_extracted = len(db.sources_with_extraction(all_ids, "human"))
+    human_extracted = len(db.sources_with_submission(all_ids))
 
     my_done = len(db.get_decisions_by_reviewer(all_ids, rid)) if rid else 0
 

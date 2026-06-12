@@ -1485,12 +1485,14 @@ class Database:
         return row["reviewer_id"] if row else None
 
     def other_human_extracted(self, source_id: int, reviewer_id: str) -> Optional[str]:
-        """For verify-mode extraction: the extractor_id of ANOTHER human who already extracted
-        this source, else None. Used to stop a second human from verifying the same paper."""
+        """For verify-mode extraction: the extractor_id of ANOTHER human who has CLAIMED this source
+        (saved a draft or submitted), else None. A draft claims the paper so a second human can't
+        also edit it (one human per paper); 'done' is tracked separately by the _submitted marker."""
         row = self._conn.execute(
             """
             SELECT extractor_id FROM extractions
             WHERE source_id = ? AND extractor_type = 'human' AND extractor_id != ?
+              AND field_name != '_flag_check'
             ORDER BY id DESC LIMIT 1
             """,
             (source_id, reviewer_id),
@@ -1928,6 +1930,35 @@ class Database:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert extraction: {e}") from e
 
+    def insert_extractions(self, results: list["ExtractionResult"]) -> None:
+        """Insert many extraction rows in ONE transaction (single commit) so a multi-field
+        Save/Submit is ~one round trip instead of one commit per field."""
+        rows = [r for r in results if r.source_id is not None]
+        if not rows:
+            return
+        cols = (
+            "source_id", "extractor_type", "extractor_id", "field_name", "value",
+            "source_quote", "page_or_section", "confidence", "is_newly_discovered",
+            "llm_params", "prompt_version",
+        )
+        group = "(" + ",".join("?" for _ in cols) + ")"
+        params: list = []
+        for r in rows:
+            params.extend([
+                r.source_id, r.extractor_type, r.extractor_id, r.field_name,
+                json.dumps(r.value), r.source_quote, r.page_or_section, r.confidence,
+                1 if r.is_newly_discovered else 0,
+                json.dumps(r.llm_params) if r.llm_params else None, r.prompt_version,
+            ])
+        try:
+            self._conn.execute(
+                f"INSERT INTO extractions ({','.join(cols)}) VALUES {','.join(group for _ in rows)}",
+                params,
+            )
+            self._conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to insert extractions: {e}") from e
+
     def insert_flag_check(
         self,
         source_id: int,
@@ -1971,37 +2002,82 @@ class Database:
 
     def has_extraction(self, source_id: int, extractor_type: str = "ai") -> bool:
         row = self._conn.execute(
-            "SELECT 1 FROM extractions WHERE source_id = ? AND extractor_type = ? AND field_name != '_flag_check' LIMIT 1",
+            "SELECT 1 FROM extractions WHERE source_id = ? AND extractor_type = ? AND field_name NOT IN ('_flag_check', '_submitted') LIMIT 1",
             (source_id, extractor_type),
         ).fetchone()
         return row is not None
 
     def sources_with_extraction(self, source_ids: list[int], extractor_type: str = "human") -> set[int]:
-        """Subset of source_ids that have at least one extraction (excluding _flag_check) for this extractor."""
+        """Subset of source_ids that have at least one extraction field (excluding reserved markers) for this extractor."""
         if not source_ids:
             return set()
         placeholders = ",".join("?" for _ in source_ids)
         rows = self._conn.execute(
             f"""
             SELECT DISTINCT source_id FROM extractions
-            WHERE source_id IN ({placeholders}) AND extractor_type = ? AND field_name != '_flag_check'
+            WHERE source_id IN ({placeholders}) AND extractor_type = ? AND field_name NOT IN ('_flag_check', '_submitted')
             """,
             (*source_ids, extractor_type),
         ).fetchall()
         return {r["source_id"] for r in rows}
 
+    # ── Extraction "submitted" marker (reserved field_name '_submitted') ──────────────
+    # Save writes only field rows (draft); Submit additionally writes a '_submitted' marker.
+    # All "extracted / by whom / done" logic keys off the marker, not the presence of fields.
+
+    def mark_extraction_submitted(self, source_id: int, reviewer_id: str) -> None:
+        try:
+            self._conn.execute(
+                "INSERT INTO extractions (source_id, extractor_type, extractor_id, field_name, value, prompt_version) "
+                "VALUES (?, 'human', ?, '_submitted', ?, 'submit')",
+                (source_id, reviewer_id, json.dumps(True)),
+            )
+            self._conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to mark extraction submitted: {e}") from e
+
+    def has_submitted(self, source_id: int, reviewer_id: str) -> bool:
+        row = self._conn.execute(
+            "SELECT 1 FROM extractions WHERE source_id = ? AND extractor_type = 'human' AND extractor_id = ? AND field_name = '_submitted' LIMIT 1",
+            (source_id, reviewer_id),
+        ).fetchone()
+        return row is not None
+
+    def extraction_submitters(self, source_id: int) -> list[str]:
+        """Distinct human reviewer_ids who have SUBMITTED an extraction for this source, in submit order."""
+        rows = self._conn.execute(
+            "SELECT extractor_id, MIN(id) AS first_id FROM extractions "
+            "WHERE source_id = ? AND extractor_type = 'human' AND field_name = '_submitted' "
+            "GROUP BY extractor_id ORDER BY first_id",
+            (source_id,),
+        ).fetchall()
+        return [r["extractor_id"] for r in rows]
+
+    def sources_with_submission(self, source_ids: list[int]) -> set[int]:
+        """Subset of source_ids with at least one human '_submitted' marker. For the dashboard count."""
+        if not source_ids:
+            return set()
+        placeholders = ",".join("?" for _ in source_ids)
+        rows = self._conn.execute(
+            f"SELECT DISTINCT source_id FROM extractions "
+            f"WHERE source_id IN ({placeholders}) AND extractor_type = 'human' AND field_name = '_submitted'",
+            source_ids,
+        ).fetchall()
+        return {r["source_id"] for r in rows}
+
     def human_extractors_for_sources(self, source_ids: list[int]) -> dict[int, str]:
-        """Latest human extractor_id per source (excluding _flag_check), for sources that have one."""
+        """Latest human extractor_id who SUBMITTED, per source (drafts don't count). For the
+        full-text "Extracted by <who>" badge."""
         if not source_ids:
             return {}
         placeholders = ",".join("?" for _ in source_ids)
         rows = self._conn.execute(
             f"""
             SELECT source_id, extractor_id FROM extractions e
-            WHERE source_id IN ({placeholders}) AND extractor_type = 'human' AND field_name != '_flag_check'
+            WHERE source_id IN ({placeholders}) AND extractor_type = 'human' AND field_name = '_submitted'
               AND id = (
                   SELECT MAX(id) FROM extractions
-                  WHERE source_id = e.source_id AND extractor_type = 'human' AND field_name != '_flag_check'
+                  WHERE source_id = e.source_id AND extractor_type = 'human' AND field_name = '_submitted'
               )
             """,
             (*source_ids,),
