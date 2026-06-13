@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -121,3 +122,36 @@ def create_project(
 def resolve_pdf_path(src) -> Optional[Path]:
     """Resolve a source's stored PDF path (absolute, or relative to the project root)."""
     return pdf_paths.resolve_pdf_path(getattr(src, "pdf_path", None), get_project().root)
+
+
+def read_text_or(path: Path, fallback: str) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return fallback
+
+
+def read_criteria(fallback: str = "(criteria file not found)") -> str:
+    """Read the project's inclusion/exclusion criteria file."""
+    project = get_project()
+    return read_text_or(project.root / project.config.screening.criteria, fallback)
+
+
+def read_screening_prompt(fallback: str = "(screening prompt file not found)") -> str:
+    project = get_project()
+    return read_text_or(project.root / project.config.screening.prompt, fallback)
+
+
+def compose_prompt(text: str, **values: str) -> str:
+    """Fill {{key}} placeholders, then drop any leftover {{...}} so they don't leak into the prompt."""
+    composed = text or ""
+    for key, value in values.items():
+        composed = composed.replace("{{" + key + "}}", value)
+    return re.sub(r"\{\{[^}]+\}\}", "", composed)
+
+
+def _short_author_year(src) -> str:
+    if not src.authors:
+        return f"({src.year})" if src.year else ""
+    first = src.authors[0].split(",")[0].strip()
+    return f"{first} {src.year}" if src.year else first

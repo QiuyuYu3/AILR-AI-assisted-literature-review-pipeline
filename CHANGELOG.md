@@ -13,6 +13,9 @@
 ### Docs
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
 
+### Internal
+- Code cleanup / refactor (no behavior change).
+
 ---
 ## [0.18.0] – 2026-06-10
 

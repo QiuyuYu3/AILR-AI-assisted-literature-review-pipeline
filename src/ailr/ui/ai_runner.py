@@ -11,6 +11,7 @@ from ailr.llm.factory import make_llm_client
 from ailr.reviewers import LLMReviewer
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.screen import ScreeningTask
+from ailr.ui._common import read_screening_prompt
 
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -117,10 +118,7 @@ def _run_preprocess(key: str, project: Any, _mock: bool) -> None:
 def _screening_prompt_version(project: Any) -> str:
     db = project.db
     pid = project.project_id
-    try:
-        content = (project.root / project.config.screening.prompt).read_text(encoding="utf-8")
-    except OSError:
-        content = ""
+    content = read_screening_prompt("")
     latest = db.latest_prompt_version(pid, "screening")
     if latest is not None:
         prev = db.get_prompt_version(pid, "screening", latest)

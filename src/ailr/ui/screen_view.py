@@ -1,5 +1,8 @@
 """Screening review: card list with inline decision buttons."""
 
+import json
+import time
+from pathlib import Path
 from typing import Any, Optional
 
 import dash_bootstrap_components as dbc
@@ -8,34 +11,26 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
 from ailr.ui import ai_runner
-from ailr.ui._common import get_project
+from ailr.ui._common import (
+    _short_author_year,
+    compose_prompt,
+    get_project,
+    read_criteria,
+    read_screening_prompt,
+)
 
 
 def _screen_prompt_text() -> str:
-    project = get_project()
-    p = project.root / project.config.screening.prompt
-    try:
-        return p.read_text(encoding="utf-8")
-    except OSError:
-        return "(screening prompt file not found)"
+    return read_screening_prompt()
 
 
 def _screen_criteria_text() -> str:
-    project = get_project()
-    p = project.root / project.config.screening.criteria
-    try:
-        return p.read_text(encoding="utf-8")
-    except OSError:
-        return "(inclusion/exclusion criteria file not found)"
+    return read_criteria("(inclusion/exclusion criteria file not found)")
 
 
 def _screening_run_prompt() -> str:
     """A ready-to-paste prompt for running AI screening externally, with the exact output format."""
-    project = get_project()
-    try:
-        criteria = (project.root / project.config.screening.criteria).read_text(encoding="utf-8")
-    except OSError:
-        criteria = "(criteria file not found)"
+    criteria = read_criteria()
     return (
         "You are screening study abstracts for a literature review. For EACH abstract, decide "
         "include / exclude / uncertain against the criteria below.\n\n"
@@ -118,9 +113,7 @@ def register_criteria_callbacks(app: Any, prefix: str) -> None:
     def _import_criteria(n, path):
         if not n:
             return no_update, no_update
-        from pathlib import Path as _P
-
-        p = _P((path or "").strip())
+        p = Path((path or "").strip())
         if not path or not p.is_file():
             return no_update, dbc.Alert("Enter a valid file path.", color="warning", className="mb-0 py-1")
         try:
@@ -381,9 +374,8 @@ def register_callbacks(app: Any) -> None:
         if st.get("error"):
             return dbc.Alert(f"AI screening failed: {st['error']}", color="danger", className="py-1 mb-0"), True, no_update, no_update
         if st.get("started") and st.get("summary"):
-            import time as _t
             # A run may have just snapshotted a new prompt version — refresh the dropdown.
-            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": _t.time()}, _prompt_version_options()
+            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}, _prompt_version_options()
         return no_update, True, no_update, no_update
 
     @app.callback(
@@ -396,10 +388,7 @@ def register_callbacks(app: Any) -> None:
     def _import_ai_screening(n, path):
         if not n:
             return no_update, no_update
-        import json as _json
-        from pathlib import Path as _P
-
-        p = _P((path or "").strip())
+        p = Path((path or "").strip())
         if not path or not p.exists():
             return dbc.Alert("Enter a valid file or folder path.", color="warning", className="py-1 mb-0"), no_update
         files = [p] if p.is_file() else sorted(p.glob("*.json"))
@@ -410,7 +399,7 @@ def register_callbacks(app: Any) -> None:
         errors: list = []
         for f in files:
             try:
-                data = _json.loads(f.read_text(encoding="utf-8"))
+                data = json.loads(f.read_text(encoding="utf-8"))
             except Exception as e:
                 errors.append(f"{f.name}: {e}")
                 continue
@@ -426,9 +415,8 @@ def register_callbacks(app: Any) -> None:
         from ailr.ingest.results_import import import_ai_screening_results
 
         s = import_ai_screening_results(get_project(), records, stage="abstract")
-        import time as _t
         msg = f"Imported {s.imported}/{s.total_records}; {len(s.unmatched)} unmatched, {len(s.errors) + len(errors)} error(s)."
-        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": _t.time()}
+        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("screen-import-template-dl", "data"),
@@ -438,14 +426,13 @@ def register_callbacks(app: Any) -> None:
     def _download_screen_template(n):
         if not n:
             return no_update
-        import json as _json
         project = get_project()
         recs = [
             {"source_id": s.id, "_title": s.title, "decision": "", "reasoning": "",
              "confidence": None, "matched_criteria": [], "evidence_quotes": []}
             for s in project.db.list_sources(project.project_id)
         ]
-        return dict(content=_json.dumps(recs, indent=2, ensure_ascii=False), filename="screening_import_template.json")
+        return dict(content=json.dumps(recs, indent=2, ensure_ascii=False), filename="screening_import_template.json")
 
     @app.callback(
         Output("screen-prompt-feedback", "children"),
@@ -502,14 +489,7 @@ def register_callbacks(app: Any) -> None:
         Input("screen-prompt", "value"),
     )
     def _composed_screen_prompt(text):
-        import re as _re
-        project = get_project()
-        try:
-            criteria = (project.root / project.config.screening.criteria).read_text(encoding="utf-8")
-        except OSError:
-            criteria = "(criteria file not found)"
-        composed = (text or "").replace("{{criteria}}", criteria)
-        composed = _re.sub(r"\{\{[^}]+\}\}", "", composed)
+        composed = compose_prompt(text, criteria=read_criteria())
         return html.Pre(
             composed + "\n\n--- [THE ABSTRACT IS APPENDED HERE AUTOMATICALLY] ---",
             style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "maxHeight": "300px", "overflow": "auto"},
@@ -582,7 +562,6 @@ def register_callbacks(app: Any) -> None:
         if not any_click:
             return no_update, no_update
 
-        import time as _t
         db = get_project().db
 
         if isinstance(triggered, dict) and triggered.get("type") == "screen-decide":
@@ -593,7 +572,7 @@ def register_callbacks(app: Any) -> None:
             if get_project().config.screening.workflow == "assisted":
                 other = db.other_human_decided(source_id, "abstract", rid)
                 if other:
-                    return {"ts": _t.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": _t.time()}
+                    return {"ts": time.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": time.time()}
             db.insert_screening_decision(
                 ScreeningDecision(
                     decision=decision,
@@ -605,12 +584,12 @@ def register_callbacks(app: Any) -> None:
             )
             db.insert_screening_action(source_id, rid, action="vote", decision=decision)
             src = db.get_source(source_id)
-            return {"ts": _t.time()}, {
+            return {"ts": time.time()}, {
                 "sid": source_id,
                 "decision": decision,
                 "author_year": _short_author_year(src) if src else "",
                 "title": src.title if src else "",
-                "ts": _t.time(),
+                "ts": time.time(),
             }
 
         if isinstance(triggered, dict) and triggered.get("type") == "screen-reset":
@@ -618,9 +597,9 @@ def register_callbacks(app: Any) -> None:
             db.delete_screening_decision(source_id, rid, reviewer_type="human")
             db.delete_reconciliations_for_source(source_id, "abstract_screening")
             db.insert_screening_action(source_id, rid, action="reset")
-            return {"ts": _t.time()}, None  # clear banner
+            return {"ts": time.time()}, None  # clear banner
 
-        return {"ts": _t.time()}, no_update
+        return {"ts": time.time()}, no_update
 
     @app.callback(
         Output("screen-action-banner", "children"),
@@ -675,9 +654,8 @@ def register_callbacks(app: Any) -> None:
             return no_update
         if not any(c.get("value") for c in (ctx.triggered or [])):
             return no_update
-        import time as _t
         get_project().db.mark_source_duplicate(int(triggered["source"]), True)
-        return {"ts": _t.time()}
+        return {"ts": time.time()}
 
     @app.callback(
         Output("screen-refresh", "data", allow_duplicate=True),
@@ -698,12 +676,11 @@ def register_callbacks(app: Any) -> None:
         sid = last.get("sid")
         if sid is None:
             return no_update, no_update
-        import time as _t
         db = get_project().db
         db.delete_screening_decision(int(sid), rid, reviewer_type="human")
         db.delete_reconciliations_for_source(int(sid), "abstract_screening")
         db.insert_screening_action(int(sid), rid, action="reset")
-        return {"ts": _t.time()}, None
+        return {"ts": time.time()}, None
 
     @app.callback(
         Output({"type": "screen-abstract-body", "source": ALL}, "is_open"),
@@ -864,13 +841,6 @@ def _apply_sort(sources: list[Source], sort_by: str) -> list[Source]:
     if sort_by == "year_asc":
         return sorted(sources, key=lambda s: s.year or 9999)
     return sorted(sources, key=lambda s: s.id or 0)
-
-
-def _short_author_year(src: Source) -> str:
-    if not src.authors:
-        return f"({src.year})" if src.year else ""
-    first = src.authors[0].split(",")[0].strip()
-    return f"{first} {src.year}" if src.year else first
 
 
 def _meta_line(src: Source) -> str:

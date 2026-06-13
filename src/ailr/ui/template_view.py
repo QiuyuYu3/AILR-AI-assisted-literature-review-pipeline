@@ -1,5 +1,6 @@
 """Extraction template editor (GUI for schema.yaml): toggle modules, add custom fields, live preview, save."""
 
+import json
 from typing import Any
 
 import dash_bootstrap_components as dbc
@@ -15,16 +16,13 @@ from ailr.extraction import (
     schema_to_markdown,
 )
 from ailr.ingest.schema_import import parse_schema_import
-from ailr.ui._common import get_project
+from ailr.ui._common import compose_prompt, get_project, read_criteria
 
 
 def _extraction_run_prompt() -> str:
     """Ready-to-paste prompt for running AI extraction externally: criteria + field names + output format."""
     project = get_project()
-    try:
-        criteria = (project.root / project.config.screening.criteria).read_text(encoding="utf-8")
-    except OSError:
-        criteria = "(criteria file not found)"
+    criteria = read_criteria()
     try:
         fields_md = schema_to_markdown(compose_schema(project.root / project.config.extraction.schema_path))
     except Exception:
@@ -530,7 +528,6 @@ def register_callbacks(app: Any) -> None:
     def _download_template(n):
         if not n:
             return no_update
-        import json as _json
         project = get_project()
         fields = compose_schema(project.root / project.config.extraction.schema_path)
         skeleton = {f.name: {"value": None, "quote": None} for f in fields}
@@ -538,7 +535,7 @@ def register_callbacks(app: Any) -> None:
             {"source_id": s.id, "_title": s.title, "extraction": dict(skeleton), "flag_check": {"decision": ""}}
             for s in project.db.list_full_text_includes_with_markdown(project.project_id)
         ]
-        return dict(content=_json.dumps(recs, indent=2, ensure_ascii=False), filename="extraction_import_template.json")
+        return dict(content=json.dumps(recs, indent=2, ensure_ascii=False), filename="extraction_import_template.json")
 
     @app.callback(
         Output("tmpl-prompt", "value"),
@@ -628,22 +625,10 @@ def register_callbacks(app: Any) -> None:
         Input("tmpl-store", "data"),
     )
     def _composed_prompt(prompt, store):
-        import re
-
-        project = get_project()
         schema_md = schema_to_markdown(_compose(store or {}))
-        crit_path = project.root / project.config.screening.criteria
-        try:
-            criteria = crit_path.read_text(encoding="utf-8")
-        except OSError:
-            criteria = "(criteria file not found)"
-        composed = (
-            (prompt or "")
-            .replace("{{schema_md}}", schema_md)
-            .replace("{{schema_json}}", schema_md)
-            .replace("{{criteria}}", criteria)
+        composed = compose_prompt(
+            prompt, schema_md=schema_md, schema_json=schema_md, criteria=read_criteria()
         )
-        composed = re.sub(r"\{\{[^}]+\}\}", "", composed)
         return html.Pre(
             composed + "\n\n--- [THE PAPER'S FULL TEXT IS APPENDED HERE AUTOMATICALLY] ---",
             style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem", "maxHeight": "400px", "overflow": "auto"},

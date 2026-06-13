@@ -1,6 +1,7 @@
 """Extraction review tab: schema-driven form, ag-grid for list-of-objects."""
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -187,8 +188,6 @@ def register_callbacks(app: Any) -> None:
     def _import_ai_results(n, path):
         if not n:
             return no_update, no_update
-        import json as _json
-
         p = Path((path or "").strip())
         if not path or not p.exists():
             return dbc.Alert("Enter a valid file or folder path.", color="warning", className="py-1 mb-0"), no_update
@@ -200,7 +199,7 @@ def register_callbacks(app: Any) -> None:
         errors: list[str] = []
         for f in files:
             try:
-                data = _json.loads(f.read_text(encoding="utf-8"))
+                data = json.loads(f.read_text(encoding="utf-8"))
             except Exception as e:
                 errors.append(f"{f.name}: {e}")
                 continue
@@ -216,11 +215,10 @@ def register_callbacks(app: Any) -> None:
         from ailr.ingest.results_import import import_ai_results
 
         s = import_ai_results(get_project(), records)
-        import time as _t
         msg = f"Imported {s.imported}/{s.total_records} record(s); {s.fields_written} fields, {s.flags_written} flags; {len(s.unmatched)} unmatched."
         if errors:
             msg += f" {len(errors)} file error(s)."
-        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": _t.time()}
+        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("extract-reader", "children"),
@@ -283,8 +281,7 @@ def register_callbacks(app: Any) -> None:
         if st.get("error"):
             return dbc.Alert(f"AI extraction failed: {st['error']}", color="danger", className="py-1 mb-0"), True, no_update
         if st.get("started") and st.get("summary"):
-            import time as _t
-            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": _t.time()}
+            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}
         return no_update, True, no_update
 
     # Render the currently-open paper. Driven purely by the stored source id (+ reviewer / AI-refresh)
