@@ -1,0 +1,141 @@
+"""Source rows + project stats."""
+
+import json
+import sqlite3
+from typing import Optional
+
+from ailr.core._db_facade import _row_to_source
+from ailr.core.source import Source
+from ailr.exceptions import DatabaseError, DuplicateError
+
+
+class SourcesMixin:
+    def insert_source(self, source: Source) -> int:
+        if source.project_id is None:
+            raise DatabaseError("Cannot insert source without project_id")
+        try:
+            cur = self._conn.execute(
+                """
+                INSERT INTO sources
+                    (project_id, doi, pmid, title, abstract, authors, year, journal,
+                     source_database, pdf_path, markdown_path, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    source.project_id,
+                    source.doi,
+                    source.pmid,
+                    source.title,
+                    source.abstract,
+                    json.dumps(source.authors) if source.authors else None,
+                    source.year,
+                    source.journal,
+                    source.source_database,
+                    str(source.pdf_path) if source.pdf_path else None,
+                    str(source.markdown_path) if source.markdown_path else None,
+                    json.dumps(source.metadata) if source.metadata else None,
+                ),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError as e:
+            raise DuplicateError(
+                f"Source already exists (project_id={source.project_id}, doi={source.doi})"
+            ) from e
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to insert source: {e}") from e
+
+    def get_source(self, source_id: int) -> Optional[Source]:
+        row = self._conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
+        return _row_to_source(row) if row else None
+
+    def list_sources(
+        self,
+        project_id: int,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> list[Source]:
+        sql = "SELECT * FROM sources WHERE project_id = ? AND COALESCE(is_duplicate, 0) = 0 ORDER BY id"
+        params: list = [project_id]
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+        rows = self._conn.execute(sql, params).fetchall()
+        return [_row_to_source(r) for r in rows]
+
+    def find_by_doi(self, project_id: int, doi: str) -> Optional[Source]:
+        row = self._conn.execute(
+            "SELECT * FROM sources WHERE project_id = ? AND lower(doi) = lower(?)",
+            (project_id, doi),
+        ).fetchone()
+        return _row_to_source(row) if row else None
+
+    def find_by_title(self, project_id: int, title: str) -> list[Source]:
+        rows = self._conn.execute(
+            "SELECT * FROM sources WHERE project_id = ? AND title = ?",
+            (project_id, title),
+        ).fetchall()
+        return [_row_to_source(r) for r in rows]
+
+    def count_sources(self, project_id: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        return row["n"]
+
+    def stats(self, project_id: int) -> dict:
+        total = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ?", (project_id,)
+        ).fetchone()["n"]
+
+        by_year = [
+            dict(row)
+            for row in self._conn.execute(
+                """SELECT year, COUNT(*) AS n FROM sources
+                   WHERE project_id = ? AND year IS NOT NULL
+                   GROUP BY year ORDER BY year DESC""",
+                (project_id,),
+            ).fetchall()
+        ]
+
+        by_journal = [
+            dict(row)
+            for row in self._conn.execute(
+                """SELECT journal, COUNT(*) AS n FROM sources
+                   WHERE project_id = ? AND journal IS NOT NULL
+                   GROUP BY journal ORDER BY n DESC LIMIT 10""",
+                (project_id,),
+            ).fetchall()
+        ]
+
+        by_source_database = [
+            dict(row)
+            for row in self._conn.execute(
+                """SELECT COALESCE(source_database, 'unknown') AS source_database,
+                          COUNT(*) AS n
+                   FROM sources WHERE project_id = ?
+                   GROUP BY source_database ORDER BY n DESC""",
+                (project_id,),
+            ).fetchall()
+        ]
+
+        with_doi = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND doi IS NOT NULL",
+            (project_id,),
+        ).fetchone()["n"]
+
+        with_abstract = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND abstract IS NOT NULL",
+            (project_id,),
+        ).fetchone()["n"]
+
+        return {
+            "total": total,
+            "with_doi": with_doi,
+            "with_abstract": with_abstract,
+            "by_source_database": by_source_database,
+            "by_year": by_year,
+            "by_journal": by_journal,
+        }
+
+    # ── Screening decisions ──────────────────────────────────────────
