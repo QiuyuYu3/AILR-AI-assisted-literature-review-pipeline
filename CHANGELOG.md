@@ -13,6 +13,9 @@
 ### Docs
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
 
+### Fixed
+- Conflicts page "Recently resolved" list for abstract screening was always empty (queried the wrong stage label).
+
 ### Internal
 - Code cleanup / refactor (no behavior change).
 
