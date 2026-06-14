@@ -14,6 +14,7 @@ This is the canonical pattern used by the v2 extraction prompt.
 
 from __future__ import annotations
 
+import re
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
@@ -151,6 +152,20 @@ def schema_to_markdown(fields: list[FieldSpec]) -> str:
     for f in fields:
         _render_field_md(f, lines, indent=0)
     return "\n".join(lines)
+
+
+_PROMPT_LEFTOVER = re.compile(r"\{\{[^}]+\}\}")
+
+
+def compose_prompt(template: str, **values: str) -> str:
+    """Fill {{key}} placeholders, then drop any leftover {{...}} so they don't leak into the prompt.
+
+    Shared by the reviewers (what is sent to the LLM) and the UI preview so the two never drift.
+    """
+    composed = template or ""
+    for key, value in values.items():
+        composed = composed.replace("{{" + key + "}}", value)
+    return _PROMPT_LEFTOVER.sub("", composed)
 
 
 def _render_field_md(field: FieldSpec, lines: list[str], indent: int) -> None:

@@ -1,6 +1,5 @@
 """Reviewers: abstraction, decision dataclasses, and the LLM-backed reviewer."""
 
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -8,7 +7,12 @@ from typing import Any, Literal, Optional
 
 from ailr.core.source import Source
 from ailr.exceptions import LLMError
-from ailr.extraction import FieldSpec, build_extraction_tool_schema, schema_to_markdown
+from ailr.extraction import (
+    FieldSpec,
+    build_extraction_tool_schema,
+    compose_prompt,
+    schema_to_markdown,
+)
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 
 
@@ -217,15 +221,10 @@ class LLMReviewer(Reviewer):
             tool_schema = _add_flag_check_to_schema(tool_schema)
 
         schema_md = schema_to_markdown(fields)
-        system_prompt = (
-            prompt_template
-            .replace("{{schema_md}}", schema_md)
-            .replace("{{schema_json}}", schema_md)  # legacy alias
-            .replace("{{criteria}}", criteria_text)
+        # The paper text is sent as a separate user message, so {{paper_text}} is intentionally dropped.
+        system_prompt = compose_prompt(
+            prompt_template, schema_md=schema_md, schema_json=schema_md, criteria=criteria_text
         )
-        # Drop any leftover {{...}} placeholders so they don't leak literally into the prompt.
-        # (The paper text is sent as a separate user message, so {{paper_text}} is intentionally dropped.)
-        system_prompt = re.sub(r"\{\{[^}]+\}\}", "", system_prompt)
 
         user_message = _format_paper_message(source, paper_text)
 
@@ -268,7 +267,7 @@ class LLMReviewer(Reviewer):
 
 
 def _render_system_prompt(template: str, criteria_text: str) -> str:
-    return template.replace("{{criteria}}", criteria_text)
+    return compose_prompt(template, criteria=criteria_text)
 
 
 def _format_paper_message(source: Source, paper_text: str) -> str:

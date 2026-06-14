@@ -2,12 +2,12 @@
 
 import json
 import os
-import re
 from pathlib import Path
 from typing import Optional
 
 from ailr.core import pdf_paths
 from ailr.core.project import Project
+from ailr.extraction import compose_prompt  # noqa: F401  (re-exported for UI callers)
 
 _project: Optional[Project] = None
 
@@ -140,14 +140,6 @@ def read_criteria(fallback: str = "(criteria file not found)") -> str:
 def read_screening_prompt(fallback: str = "(screening prompt file not found)") -> str:
     project = get_project()
     return read_text_or(project.root / project.config.screening.prompt, fallback)
-
-
-def compose_prompt(text: str, **values: str) -> str:
-    """Fill {{key}} placeholders, then drop any leftover {{...}} so they don't leak into the prompt."""
-    composed = text or ""
-    for key, value in values.items():
-        composed = composed.replace("{{" + key + "}}", value)
-    return re.sub(r"\{\{[^}]+\}\}", "", composed)
 
 
 def _short_author_year(src) -> str:
