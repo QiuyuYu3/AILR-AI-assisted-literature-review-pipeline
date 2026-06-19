@@ -50,15 +50,11 @@ One person sets this up; everyone else just receives the URL.
    postgresql://user:password@host.example.com/dbname?sslmode=require
    ```
 
-2. **Change the prefix** from `postgresql://` to `postgresql+psycopg://` (this tells the app which driver to use — everything after the prefix stays exactly as the host gave it):
+2. **Use the URL as-is** — paste it exactly as the host gave it. ailr automatically selects the right driver, so `postgresql://`, `postgres://`, and `postgresql+psycopg://` all work. (Older docs told you to change the prefix to `postgresql+psycopg://`; that still works but is no longer required.)
 
-   ```
-   postgresql+psycopg://user:password@host.example.com/dbname?sslmode=require
-   ```
+3. In **Step 2** below you put this URL into the project's `lit_review.yaml`. Because it contains the password, share the project folder **privately** (a synced drive like Box, or a **private** git repo) — never a public git repo. The generated `.gitignore` excludes `lit_review.yaml` so it isn't committed by accident.
 
-3. In Step 2 you put this URL into the project's `lit_review.yaml`. Because it contains the password, share the project folder **privately** (a synced drive like Box, or a **private** git repo) — never a public git repo. The generated `.gitignore` excludes `lit_review.yaml` so it isn't committed by accident.
-
-There are three ways to get that database, from easiest to most involved — all give you the same kind of `postgresql+psycopg://` URL:
+There are three ways to get that database, from easiest to most involved — all give you the same kind of PostgreSQL connection URL:
 
 - **Managed host, free tier** *(recommended to start)* — a company runs the database for you in the cloud; you just sign up and create one. No installation, and the free tier is usually enough for a review.
 - **Managed host, paid plan** — the same, but with more storage or performance if a large project outgrows the free tier. Usually a few dollars a month.
@@ -130,6 +126,6 @@ This copies all of the project's data into PostgreSQL. Afterwards, set `storage.
 |---|---|---|
 | Settings shows a local SQLite file, not the shared DB | `database_url` is missing/misspelled in `lit_review.yaml`, or that teammate's copy of the file didn't sync | add `storage.database_url` to the yaml; make sure everyone has the same `lit_review.yaml` |
 | Teammates can't see each other's decisions | different **project names**, or one person isn't on the shared DB | use the identical project name everywhere; check Settings shows the same database for everyone |
-| App can't connect to the database | wrong prefix or a copy/paste error in the URL | confirm the prefix is `postgresql+psycopg://` and the rest of the URL is exactly what the host gave (including `?sslmode=require` if present) |
+| App can't connect to the database | a copy/paste error in the URL, or the host/network is unreachable | check the URL is exactly what the host gave (including `?sslmode=require` if present); the prefix can be `postgresql://` or `postgresql+psycopg://` — either works |
 | PDFs won't open for a teammate | the project folder (with `data/pdfs/`) hasn't finished syncing on their machine | let the shared drive finish syncing, then click **Re-scan data/pdfs** on the full-text Workflow page |
 | A second screening vote was rejected | `assisted` mode allows **one human per paper** | this is expected — that paper was already screened by someone; use **Conflicts** if you disagree with the recorded decision |

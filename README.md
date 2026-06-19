@@ -92,7 +92,7 @@ Each stage has its own model in **Settings** (provider / model / temperature) �
 
 Give everyone a shared **PostgreSQL** database so you co-edit one project in real time. Use any managed Postgres host (several have free tiers) or self-host one.
 
-1. Create a PostgreSQL database, copy its connection URL, and change the prefix to `postgresql+psycopg://`.
+1. Create a PostgreSQL database and copy its connection URL — paste it as-is (`postgresql://…`); ailr selects the right driver automatically (`postgresql+psycopg://` also works).
 2. Add it to the project's `lit_review.yaml`:
    ```yaml
    storage:
