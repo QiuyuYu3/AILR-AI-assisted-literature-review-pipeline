@@ -18,7 +18,7 @@ from ailr.core import audit
 from ailr.core._db_admin import AdminMixin
 from ailr.core._db_calibration import CalibrationMixin
 from ailr.core._db_extraction import ExtractionMixin
-from ailr.core._db_facade import _EngineConn, _make_engine
+from ailr.core._db_facade import _EngineConn, _make_engine, _normalize_db_url
 from ailr.core._db_schema import SCHEMA_SQL, metadata  # noqa: F401  (re-exported for compatibility)
 from ailr.core._db_screening import ScreeningMixin
 from ailr.core._db_screening_aux import ScreeningAuxMixin
@@ -41,7 +41,7 @@ class Database(
         # Accept either a SQLAlchemy URL ("postgresql+psycopg://...", "sqlite:///...")
         # or a filesystem path/Path (treated as a SQLite file) for backward compatibility.
         if isinstance(url_or_path, str) and "://" in url_or_path:
-            self.url = url_or_path
+            self.url = _normalize_db_url(url_or_path)
             self.path = None
         else:
             p = Path(url_or_path)

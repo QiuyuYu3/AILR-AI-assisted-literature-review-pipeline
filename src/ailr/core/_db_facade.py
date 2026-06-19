@@ -238,6 +238,18 @@ class _EngineConn:
         self._engine.dispose()
 
 
+def _normalize_db_url(url: str) -> str:
+    """Standardize PostgreSQL URLs on the psycopg (v3) driver.
+
+    A plain `postgresql://` (or `postgres://`) makes SQLAlchemy default to psycopg2, which
+    this project does not depend on; rewrite the driver so any of these just work.
+    """
+    for prefix in ("postgresql+psycopg2://", "postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
 def _make_engine(url: str):
     if url.startswith("sqlite"):
         engine = create_engine(url, future=True, connect_args={"check_same_thread": False})
