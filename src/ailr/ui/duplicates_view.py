@@ -1,11 +1,14 @@
 """Duplicates tab: ingest-dropped duplicates (audit trail) + manually-flagged sources, both as tables."""
 
+import json
 from typing import Any
 
 import dash_ag_grid as dag
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html, no_update
 
+from ailr.core.source import source_from_record
+from ailr.exceptions import DuplicateError
 from ailr.ui._common import format_authors, get_project
 
 _INGEST_COLS = [
@@ -74,14 +77,18 @@ def layout() -> Any:
             html.Hr(className="my-3"),
             html.H6("Removed at import"),
             html.P(
-                f"{len(ingest_rows)} record(s) dropped during ingest (DOI or fuzzy title; never imported as sources).",
+                f"{len(ingest_rows)} record(s) dropped during ingest (DOI or fuzzy title; never imported as sources). "
+                "Select rows and Restore to bring a wrongly-dropped record back as a source.",
                 className="text-muted small",
             ),
+            dbc.Button("Restore selected", id="dup-ingest-restore", color="secondary", outline=True, size="sm", className="mb-2"),
+            html.Div(id="dup-ingest-feedback", className="small mb-2"),
             dag.AgGrid(
+                id="dup-ingest-grid",
                 rowData=ingest_rows,
                 columnDefs=_INGEST_COLS,
                 defaultColDef={"sortable": True, "filter": True, "resizable": True},
-                dashGridOptions={"pagination": True, "paginationPageSize": 25, "paginationPageSizeSelector": [25, 50, 100], "enableCellTextSelection": True},
+                dashGridOptions={"rowSelection": {"mode": "multiRow", "checkboxes": True, "headerCheckbox": True, "enableClickSelection": False}, "pagination": True, "paginationPageSize": 25, "paginationPageSizeSelector": [25, 50, 100], "enableCellTextSelection": True},
                 style={"height": "45vh"},
             ),
         ]
@@ -107,3 +114,41 @@ def register_callbacks(app: Any) -> None:
                 db.mark_source_duplicate(int(sid), False)
                 n += 1
         return _manual_rows(), dbc.Alert(f"Restored {n} source(s).", color="success", className="mb-0 py-1")
+
+    @app.callback(
+        Output("dup-ingest-grid", "rowData"),
+        Output("dup-ingest-feedback", "children"),
+        Input("dup-ingest-restore", "n_clicks"),
+        State("dup-ingest-grid", "selectedRows"),
+        prevent_initial_call=True,
+    )
+    def _restore_ingest(_clicks, selected):
+        if not selected:
+            return no_update, dbc.Alert("Select one or more rows first.", color="warning", className="mb-0 py-1")
+        project = get_project()
+        db = project.db
+        restored = already = skipped = errors = 0
+        for row in selected:
+            rec = row.get("full_record_json")
+            if not rec:
+                skipped += 1  # older row dropped before full-record storage existed
+                continue
+            try:
+                src = source_from_record(json.loads(rec))
+                src.project_id = project.project_id
+                db.insert_source(src)
+                db.delete_duplicate(int(row["id"]))
+                restored += 1
+            except DuplicateError:
+                already += 1  # a source with this DOI already exists (a true duplicate)
+            except Exception:
+                errors += 1
+        parts = [f"Restored {restored}."]
+        if already:
+            parts.append(f"{already} already in the library (same DOI) — left as duplicates.")
+        if skipped:
+            parts.append(f"{skipped} have no stored full record (re-import to enable restore).")
+        if errors:
+            parts.append(f"{errors} failed.")
+        color = "success" if restored else "warning"
+        return _ingest_rows(), dbc.Alert(" ".join(parts), color=color, className="mb-0 py-1")

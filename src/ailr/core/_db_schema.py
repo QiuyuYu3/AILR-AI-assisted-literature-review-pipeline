@@ -436,6 +436,7 @@ Table(
     Column("doi", Text),
     Column("reason", Text, nullable=False),
     Column("matched_source_id", Integer),
+    Column("full_record_json", Text),  # complete source JSON so a dropped record can be restored
     Column("detected_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     Index("idx_duplicates_project", "project_id"),
 )

@@ -135,24 +135,50 @@ class ScreeningAuxMixin:
         reason: str,
         matched_source_id: Optional[int] = None,
         authors: Optional[str] = None,
+        full_record_json: Optional[str] = None,
     ) -> int:
         try:
             cur = self._conn.execute(
-                "INSERT INTO duplicates (project_id, title, authors, doi, reason, matched_source_id) VALUES (?, ?, ?, ?, ?, ?)",
-                (project_id, title, authors, doi, reason, matched_source_id),
+                "INSERT INTO duplicates (project_id, title, authors, doi, reason, matched_source_id, full_record_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (project_id, title, authors, doi, reason, matched_source_id, full_record_json),
             )
             self._conn.commit()
             return cur.lastrowid
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert duplicate: {e}") from e
 
+    def insert_duplicates(self, rows: list[tuple]) -> None:
+        """Bulk-insert duplicate rows in one transaction. Each row is
+        (project_id, title, authors, doi, reason, matched_source_id, full_record_json)."""
+        if not rows:
+            return
+        try:
+            with self._lock, self._conn.transaction():
+                for r in rows:
+                    self._conn.execute(
+                        "INSERT INTO duplicates (project_id, title, authors, doi, reason, matched_source_id, full_record_json) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        r,
+                    )
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to insert duplicates: {e}") from e
+
     def list_duplicates(self, project_id: int) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT id, title, authors, doi, reason, matched_source_id, detected_at "
+            "SELECT id, title, authors, doi, reason, matched_source_id, full_record_json, detected_at "
             "FROM duplicates WHERE project_id = ? ORDER BY id DESC",
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def delete_duplicate(self, duplicate_id: int) -> int:
+        try:
+            cur = self._conn.execute("DELETE FROM duplicates WHERE id = ?", (duplicate_id,))
+            self._conn.commit()
+            return cur.rowcount
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to delete duplicate: {e}") from e
 
     def mark_source_duplicate(self, source_id: int, is_duplicate: bool = True) -> None:
         """Flag/unflag a real source as a manually-found duplicate (hides it from screening/sources)."""

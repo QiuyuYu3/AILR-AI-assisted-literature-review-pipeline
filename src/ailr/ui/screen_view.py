@@ -147,7 +147,7 @@ _WITHIN_OPTIONS = [
     {"label": "Title and abstract", "value": "title_and_abstract"},
     {"label": "Authors (exact)", "value": "authors_exact"},
     {"label": "Authors (fuzzy)", "value": "authors_fuzzy"},
-    {"label": "All of the above", "value": "all"},
+    {"label": "All fields (incl. DOI)", "value": "all"},
 ]
 
 
@@ -825,7 +825,8 @@ def _kw_match(s: Source, kw_low: str, within: str) -> bool:
         return any(kw_low in a.lower() for a in (s.authors or []))
     if within == "all":
         hay = " ".join(
-            [s.title or "", s.abstract or "", s.journal or "", " ".join(s.authors or [])]
+            [s.title or "", s.abstract or "", s.journal or "", " ".join(s.authors or []),
+             s.doi or "", s.pmid or "", str(s.year or ""), s.source_database or ""]
         ).lower()
         return kw_low in hay
     return True

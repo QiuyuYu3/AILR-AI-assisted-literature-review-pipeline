@@ -80,8 +80,19 @@ class Database(
             metadata.create_all(self._engine)
             if self.dialect == "sqlite":
                 self._sqlite_column_migrations()
+            self._ensure_post_release_columns()
         except SQLAlchemyError as e:
             raise DatabaseError(f"Failed to initialize schema: {e}") from e
+
+    def _ensure_post_release_columns(self) -> None:
+        """Add columns introduced after a DB may have been created, on any dialect
+        (create_all only adds missing tables, not missing columns)."""
+        from sqlalchemy import inspect
+
+        existing = {c["name"] for c in inspect(self._engine).get_columns("duplicates")}
+        if "full_record_json" not in existing:
+            with self._engine.begin() as conn:
+                conn.exec_driver_sql("ALTER TABLE duplicates ADD COLUMN full_record_json TEXT")
 
     def _sqlite_column_migrations(self) -> None:
         """Add post-release columns to pre-existing SQLite DBs (create_all only creates

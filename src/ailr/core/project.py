@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from ailr.core.config import Config, load_config
 from ailr.core.database import Database
-from ailr.core.source import Source
+from ailr.core.source import Source, source_to_record
 from ailr.exceptions import (
     InputNotFoundError,
     ProjectNotFoundError,
@@ -157,8 +157,13 @@ class Project:
         for s in sources:
             s.project_id = self._project_id
 
-        for d in batch_dups:
-            self._db.insert_duplicate(self._project_id, d.title, d.doi, "doi (within import)", authors=_authors_str(d))
+        # Collect every dropped record (with its full JSON so it can be restored later) and
+        # write them in one bulk transaction instead of one INSERT+commit per duplicate.
+        def _dup_row(src: Source, reason: str, matched_id: Optional[int] = None) -> tuple:
+            return (self._project_id, src.title, _authors_str(src), src.doi, reason,
+                    matched_id, json.dumps(source_to_record(src)))
+
+        dup_rows: list[tuple] = [_dup_row(d, "doi (within import)") for d in batch_dups]
 
         cross_dups = 0
         unique_sources: list[Source] = []
@@ -169,7 +174,7 @@ class Project:
             matched_id = existing_doi_index.get(src.doi.lower().strip()) if src.doi else None
             if matched_id is not None:
                 cross_dups += 1
-                self._db.insert_duplicate(self._project_id, src.title, src.doi, "doi", matched_id, authors=_authors_str(src))
+                dup_rows.append(_dup_row(src, "doi", matched_id))
                 continue
             unique_sources.append(src)
 
@@ -186,9 +191,9 @@ class Project:
             }
             for new, existing_src in title_matches_raw
         ]
-        for new, existing_src in title_matches_raw:
-            self._db.insert_duplicate(self._project_id, new.title, new.doi, "title", existing_src.id, authors=_authors_str(new))
+        dup_rows.extend(_dup_row(new, "title", existing_src.id) for new, existing_src in title_matches_raw)
 
+        self._db.insert_duplicates(dup_rows)
         imported, failures = self._db.insert_sources(candidates_for_insert)
 
         return IngestResult(
