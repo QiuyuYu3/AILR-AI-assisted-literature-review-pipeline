@@ -159,6 +159,11 @@ class Project:
         else:
             raise UnsupportedFormatError(f"Unsupported file extension: {ext}")
 
+        # Empty-string DOIs (e.g. from IEEE RIS) are not "missing": PostgreSQL's (project_id, doi)
+        # unique key treats '' as a real value, so two of them collide. Normalize blanks to None.
+        for s in sources:
+            s.doi = (s.doi or "").strip() or None
+
         parsed = len(sources)
         sources, batch_dups = dedup.dedup_by_doi(sources)
         for s in sources:

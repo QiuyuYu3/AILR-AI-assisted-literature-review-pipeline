@@ -19,7 +19,7 @@ _INSERT_SOURCE_SQL = _INSERT_SOURCE_COLS + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 
 def _source_params(source: "Source") -> tuple:
     return (
         source.project_id,
-        source.doi,
+        (source.doi or "").strip() or None,  # blank DOI -> NULL (PostgreSQL unique key treats '' as a value)
         source.pmid,
         source.title,
         source.abstract,
@@ -108,7 +108,7 @@ class SourcesMixin:
                 self._conn.execute(
                     sql,
                     (
-                        s.doi, s.pmid, s.title, s.abstract,
+                        (s.doi or "").strip() or None, s.pmid, s.title, s.abstract,
                         json.dumps(s.authors) if s.authors else None,
                         s.year, s.journal, s.source_database,
                         json.dumps(s.metadata) if s.metadata else None,
