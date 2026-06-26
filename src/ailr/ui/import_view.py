@@ -183,7 +183,12 @@ def register_callbacks(app: Any) -> None:
             ]),
         ]
         if r.failed:
-            body.append(html.Div(f"{r.failed} record(s) failed to import.", className="text-danger small"))
+            body.append(html.Div(f"{r.failed} record(s) failed to import:", className="text-danger small mt-1"))
+            body.append(html.Ul(
+                [html.Li(f"{(f.get('title') or '(no title)')[:80]} — {f.get('error', '')}", className="small text-danger")
+                 for f in r.failures[:10]],
+                className="mb-0",
+            ))
         body.append(html.Small("Open Sources or Screening to see the new records.", className="text-muted"))
         return dbc.Alert(body, color="success"), searches_out
 

@@ -8,42 +8,97 @@ from ailr.core._db_facade import _row_to_source
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError, DuplicateError
 
+_INSERT_SOURCE_COLS = (
+    "INSERT INTO sources "
+    "(project_id, doi, pmid, title, abstract, authors, year, journal, "
+    "source_database, pdf_path, markdown_path, metadata_json)"
+)
+_INSERT_SOURCE_SQL = _INSERT_SOURCE_COLS + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
+
+def _source_params(source: "Source") -> tuple:
+    return (
+        source.project_id,
+        source.doi,
+        source.pmid,
+        source.title,
+        source.abstract,
+        json.dumps(source.authors) if source.authors else None,
+        source.year,
+        source.journal,
+        source.source_database,
+        str(source.pdf_path) if source.pdf_path else None,
+        str(source.markdown_path) if source.markdown_path else None,
+        json.dumps(source.metadata) if source.metadata else None,
+    )
+
 
 class SourcesMixin:
-    def insert_source(self, source: Source) -> int:
+    def _insert_source_row(self, source: "Source") -> int:
+        """Run the INSERT without committing (for use inside a transaction)."""
         if source.project_id is None:
             raise DatabaseError("Cannot insert source without project_id")
+        return self._conn.execute(_INSERT_SOURCE_SQL, _source_params(source)).lastrowid
+
+    def _insert_sources_batch(self, batch: list["Source"]) -> None:
+        """One multi-row INSERT for the whole batch (no commit; caller wraps in a transaction).
+
+        Collapses N network round-trips into one statement — the main win for remote PostgreSQL.
+        Kept well under PostgreSQL's 65535-parameter limit by the caller's chunk size.
+        """
+        for s in batch:
+            if s.project_id is None:
+                raise DatabaseError("Cannot insert source without project_id")
+        row_ph = "(" + ", ".join(["?"] * 12) + ")"
+        sql = _INSERT_SOURCE_COLS + " VALUES " + ", ".join([row_ph] * len(batch))
+        params: list = []
+        for s in batch:
+            params.extend(_source_params(s))
+        self._conn.execute(sql, params)
+
+    def insert_source(self, source: Source) -> int:
         try:
-            cur = self._conn.execute(
-                """
-                INSERT INTO sources
-                    (project_id, doi, pmid, title, abstract, authors, year, journal,
-                     source_database, pdf_path, markdown_path, metadata_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    source.project_id,
-                    source.doi,
-                    source.pmid,
-                    source.title,
-                    source.abstract,
-                    json.dumps(source.authors) if source.authors else None,
-                    source.year,
-                    source.journal,
-                    source.source_database,
-                    str(source.pdf_path) if source.pdf_path else None,
-                    str(source.markdown_path) if source.markdown_path else None,
-                    json.dumps(source.metadata) if source.metadata else None,
-                ),
-            )
+            rid = self._insert_source_row(source)
             self._conn.commit()
-            return cur.lastrowid
+            return rid
         except sqlite3.IntegrityError as e:
             raise DuplicateError(
                 f"Source already exists (project_id={source.project_id}, doi={source.doi})"
             ) from e
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert source: {e}") from e
+
+    def insert_sources(self, sources: list[Source], chunk: int = 500) -> tuple[int, list[dict]]:
+        """Bulk-insert in chunked transactions (one commit per chunk, not per row).
+
+        If a chunk fails (a bad record or a transient blip), it is retried row-by-row so
+        the good rows still land and the offending one is isolated. Returns
+        (inserted_count, failures) where each failure is {"title", "error"}.
+        """
+        inserted = 0
+        failures: list[dict] = []
+        for i in range(0, len(sources), chunk):
+            batch = sources[i:i + chunk]
+            try:
+                with self._lock, self._conn.transaction():
+                    self._insert_sources_batch(batch)
+                inserted += len(batch)
+            except Exception:
+                for s in batch:
+                    try:
+                        with self._lock, self._conn.transaction():
+                            self._insert_source_row(s)
+                        inserted += 1
+                    except Exception as e:
+                        failures.append({"title": s.title, "error": str(e)})
+        return inserted, failures
+
+    def existing_doi_index(self, project_id: int) -> dict[str, int]:
+        """Map of normalized DOI (lower+strip) -> source id for the project, in one query."""
+        rows = self._conn.execute(
+            "SELECT id, doi FROM sources WHERE project_id = ? AND doi IS NOT NULL", (project_id,)
+        ).fetchall()
+        return {r["doi"].lower().strip(): r["id"] for r in rows if r["doi"]}
 
     def get_source(self, source_id: int) -> Optional[Source]:
         row = self._conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()

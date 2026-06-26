@@ -160,17 +160,16 @@ class Project:
         for d in batch_dups:
             self._db.insert_duplicate(self._project_id, d.title, d.doi, "doi (within import)", authors=_authors_str(d))
 
-        imported = 0
         cross_dups = 0
-        failed = 0
-        failures: list[dict[str, Any]] = []
         unique_sources: list[Source] = []
 
+        # Cross-import DOI dedup against existing rows, using one query instead of one per record.
+        existing_doi_index = self._db.existing_doi_index(self._project_id)
         for src in sources:
-            existing_match = self._db.find_by_doi(self._project_id, src.doi) if src.doi else None
-            if existing_match:
+            matched_id = existing_doi_index.get(src.doi.lower().strip()) if src.doi else None
+            if matched_id is not None:
                 cross_dups += 1
-                self._db.insert_duplicate(self._project_id, src.title, src.doi, "doi", existing_match.id, authors=_authors_str(src))
+                self._db.insert_duplicate(self._project_id, src.title, src.doi, "doi", matched_id, authors=_authors_str(src))
                 continue
             unique_sources.append(src)
 
@@ -190,19 +189,13 @@ class Project:
         for new, existing_src in title_matches_raw:
             self._db.insert_duplicate(self._project_id, new.title, new.doi, "title", existing_src.id, authors=_authors_str(new))
 
-        for src in candidates_for_insert:
-            try:
-                self._db.insert_source(src)
-                imported += 1
-            except Exception as e:
-                failed += 1
-                failures.append({"title": src.title, "error": str(e)})
+        imported, failures = self._db.insert_sources(candidates_for_insert)
 
         return IngestResult(
             parsed=parsed,
             imported=imported,
             deduplicated=len(batch_dups) + cross_dups + len(title_matches_raw),
-            failed=failed,
+            failed=len(failures),
             failures=failures,
             title_matches=title_matches,
         )
