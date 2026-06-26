@@ -56,6 +56,38 @@ def add_recent_project(path: Path) -> None:
         pass
 
 
+def remove_recent_project(path: Path) -> None:
+    p = str(Path(path).resolve())
+    try:
+        recent = json.loads(_RECENT_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    try:
+        _RECENT_FILE.write_text(json.dumps([x for x in recent if x != p], indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def clear_current_project_data() -> dict:
+    """Wipe all data of the active project but keep the project + its config/prompt files."""
+    proj = get_project()
+    return proj.db.delete_project_data(proj.project_id, keep_project_row=True)
+
+
+def delete_current_project() -> dict:
+    """Delete the active project entirely (data + project row + recent entry), keeping files.
+    Clears the active project and AILR_PROJECT so the app falls back to the project manager."""
+    global _project
+    proj = get_project()
+    root = proj.root
+    counts = proj.db.delete_project_data(proj.project_id, keep_project_row=False)
+    proj.db.close()
+    remove_recent_project(root)
+    _project = None
+    os.environ.pop("AILR_PROJECT", None)
+    return counts
+
+
 def has_project() -> bool:
     """Whether a project is loaded (or named via AILR_PROJECT) — gates the project manager."""
     return _project is not None or bool(os.environ.get("AILR_PROJECT"))

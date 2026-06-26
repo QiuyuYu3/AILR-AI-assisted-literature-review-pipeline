@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, html, no_update
+from dash import Input, Output, State, dcc, html, no_update
 
 from ailr.core.config import resolve_stage_llm, save_stage_llm_config
 from ailr.ui._common import (
+    clear_current_project_data,
+    delete_current_project,
     get_project,
     reload_project,
 )
@@ -174,6 +176,39 @@ def layout() -> Any:
                 ]
             ),
             html.Small("The extraction field list (schema) is set in the Template tab.", className="text-muted"),
+
+            html.Hr(className="my-4"),
+            html.H6("Danger zone", className="text-danger"),
+            html.P(
+                "Delete all data of this project (references, decisions, extractions, tags, duplicates…) "
+                "while keeping the project and its config/prompt files — useful to redo an import from scratch. "
+                "On a shared database this affects everyone. This cannot be undone.",
+                className="text-muted small mb-1",
+            ),
+            dbc.InputGroup(
+                [
+                    dbc.Input(id="settings-clear-confirm", placeholder=f"type '{project.root.name}' to confirm", size="sm"),
+                    dbc.Button("Clear all data", id="settings-clear-btn", color="danger", outline=True, size="sm"),
+                ],
+                style={"maxWidth": "480px"},
+            ),
+            html.Div(id="settings-clear-feedback", className="small mt-2"),
+
+            html.P(
+                "Delete this entire project — its data and the project row — and return to the Project "
+                "manager. Files on disk (lit_review.yaml, prompts, PDFs) are kept, so you can re-open the "
+                "folder later as a fresh empty project. On a shared database this affects everyone.",
+                className="text-muted small mb-1 mt-3",
+            ),
+            dbc.InputGroup(
+                [
+                    dbc.Input(id="settings-delproj-confirm", placeholder=f"type '{project.root.name}' to confirm", size="sm"),
+                    dbc.Button("Delete this project", id="settings-delproj-btn", color="danger", size="sm"),
+                ],
+                style={"maxWidth": "480px"},
+            ),
+            html.Div(id="settings-delproj-feedback", className="small mt-2"),
+            dcc.Location(id="settings-redirect", refresh=True),
         ]
     )
 
@@ -205,3 +240,41 @@ def register_callbacks(app: Any) -> None:
         except Exception as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
         return dbc.Alert("Saved models for both stages.", color="success", className="mb-0 py-1")
+
+    @app.callback(
+        Output("settings-clear-feedback", "children"),
+        Input("settings-clear-btn", "n_clicks"),
+        State("settings-clear-confirm", "value"),
+        prevent_initial_call=True,
+    )
+    def _clear_data(n, typed):
+        if not n:
+            return no_update
+        project = get_project()
+        if (typed or "").strip() != project.root.name:
+            return dbc.Alert(f"Type '{project.root.name}' to confirm.", color="warning", className="mb-0 py-1")
+        try:
+            counts = clear_current_project_data()
+        except Exception as e:
+            return dbc.Alert(f"Clear failed: {e}", color="danger", className="mb-0 py-1")
+        removed = sum(counts.values())
+        return dbc.Alert(f"Cleared all data ({removed} row(s) removed). Re-import to start fresh.", color="success", className="mb-0 py-1")
+
+    @app.callback(
+        Output("settings-redirect", "href"),
+        Output("settings-delproj-feedback", "children"),
+        Input("settings-delproj-btn", "n_clicks"),
+        State("settings-delproj-confirm", "value"),
+        prevent_initial_call=True,
+    )
+    def _delete_project(n, typed):
+        if not n:
+            return no_update, no_update
+        project = get_project()
+        if (typed or "").strip() != project.root.name:
+            return no_update, dbc.Alert(f"Type '{project.root.name}' to confirm.", color="warning", className="mb-0 py-1")
+        try:
+            delete_current_project()
+        except Exception as e:
+            return no_update, dbc.Alert(f"Delete failed: {e}", color="danger", className="mb-0 py-1")
+        return f"/?deleted={n}", no_update

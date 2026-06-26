@@ -10,6 +10,46 @@ from ailr.exceptions import DatabaseError, DuplicateError
 
 
 class AdminMixin:
+    # Delete order: rows referencing sources/test_runs first, then sources, then project-scoped
+    # tables (most project_id columns carry no FK, so only this ordering matters).
+    _PROJECT_DELETE_STEPS = (
+        ("test_extractions", "run_id IN (SELECT id FROM test_runs WHERE project_id = ?)"),
+        ("test_decisions", "run_id IN (SELECT id FROM test_runs WHERE project_id = ?)"),
+        ("source_tags", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
+        ("screening_decisions", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
+        ("screening_actions", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
+        ("reconciliations", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
+        ("notes", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
+        ("extractions", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
+        ("calibration_samples", "project_id = ?"),
+        ("sources", "project_id = ?"),
+        ("test_runs", "project_id = ?"),
+        ("tags", "project_id = ?"),
+        ("duplicates", "project_id = ?"),
+        ("exclusion_reasons", "project_id = ?"),
+        ("search_strategies", "project_id = ?"),
+        ("api_calls", "project_id = ?"),
+        ("prompt_versions", "project_id = ?"),
+        ("codebook_versions", "project_id = ?"),
+    )
+
+    def delete_project_data(self, project_id: int, *, keep_project_row: bool = True) -> dict[str, int]:
+        """Delete all of a project's data in one transaction. With keep_project_row the project
+        itself stays (a clean slate for re-import); otherwise the project row is removed too.
+        Never touches files on disk. Returns per-table deleted-row counts."""
+        counts: dict[str, int] = {}
+        try:
+            with self._lock, self._conn.transaction():
+                for table, where in self._PROJECT_DELETE_STEPS:
+                    cur = self._conn.execute(f"DELETE FROM {table} WHERE {where}", (project_id,))
+                    counts[table] = cur.rowcount
+                if not keep_project_row:
+                    cur = self._conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+                    counts["projects"] = cur.rowcount
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to delete project data: {e}") from e
+        return counts
+
     def raw_table(self, table: str, limit: int = 500) -> tuple[list[str], list[dict]]:
         """Return (column_names, rows) for a whitelisted table. Read-only DB inspection.
         Values are coerced to JSON-safe types so the UI grid never chokes on bytes/odd values."""
