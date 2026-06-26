@@ -22,6 +22,13 @@ def _authors_str(src: Source) -> Optional[str]:
     return json.dumps(src.authors) if src.authors else None
 
 
+def _record_score(src: Source) -> tuple:
+    """Completeness ranking for choosing which of two title-duplicate records to keep:
+    DOI first, then authors, then other bibliographic fields."""
+    others = sum(1 for v in (src.abstract, src.year, src.journal, src.pmid) if v)
+    return (1 if src.doi else 0, 1 if src.authors else 0, others)
+
+
 TEMPLATE_FILES = [
     ("config.yaml.tmpl", "lit_review.yaml"),
     ("screening_prompt.txt.tmpl", "prompts/screening.txt"),
@@ -191,7 +198,19 @@ class Project:
             }
             for new, existing_src in title_matches_raw
         ]
-        dup_rows.extend(_dup_row(new, "title", existing_src.id) for new, existing_src in title_matches_raw)
+        # A title match keeps ONE whole record — the more complete one (DOI first, then authors,
+        # then other fields) — and drops the other. The dropped record is logged in full so it can
+        # be restored if the match was a false positive (no field-level mixing across papers).
+        overwrites: list[tuple[int, Source]] = []
+        for new, existing_src in title_matches_raw:
+            if _record_score(new) > _record_score(existing_src):
+                # incoming is strictly more complete: it takes over the existing row (id preserved,
+                # so any attached work stays valid); the existing record's old content is the drop.
+                overwrites.append((existing_src.id, new))
+                dup_rows.append(_dup_row(existing_src, "title", existing_src.id))
+            else:
+                dup_rows.append(_dup_row(new, "title", existing_src.id))
+        self._db.overwrite_sources(overwrites)
 
         self._db.insert_duplicates(dup_rows)
         imported, failures = self._db.insert_sources(candidates_for_insert)

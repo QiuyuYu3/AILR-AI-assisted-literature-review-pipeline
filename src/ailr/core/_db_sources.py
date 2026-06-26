@@ -93,6 +93,30 @@ class SourcesMixin:
                         failures.append({"title": s.title, "error": str(e)})
         return inserted, failures
 
+    def overwrite_sources(self, updates: list[tuple[int, "Source"]]) -> int:
+        """Replace the bibliographic fields of existing rows (by id) with another source's, in one
+        transaction. Keeps id / project_id / pdf_path / markdown_path. Used by title-dedup to let a
+        more-complete incoming record take over the kept row without touching attached work."""
+        if not updates:
+            return 0
+        sql = (
+            "UPDATE sources SET doi = ?, pmid = ?, title = ?, abstract = ?, authors = ?, "
+            "year = ?, journal = ?, source_database = ?, metadata_json = ? WHERE id = ?"
+        )
+        with self._lock, self._conn.transaction():
+            for sid, s in updates:
+                self._conn.execute(
+                    sql,
+                    (
+                        s.doi, s.pmid, s.title, s.abstract,
+                        json.dumps(s.authors) if s.authors else None,
+                        s.year, s.journal, s.source_database,
+                        json.dumps(s.metadata) if s.metadata else None,
+                        sid,
+                    ),
+                )
+        return len(updates)
+
     def existing_doi_index(self, project_id: int) -> dict[str, int]:
         """Map of normalized DOI (lower+strip) -> source id for the project, in one query."""
         rows = self._conn.execute(
