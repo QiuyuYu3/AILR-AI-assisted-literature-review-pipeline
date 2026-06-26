@@ -6,15 +6,22 @@
 ### Added
 - Template: import variable definitions drafted by your own AI — paste JSON, validate (structure + warnings), and load into the editor to review before saving.
 - Search strategy archiving: record each database's search query / date / limits at import (with record counts), listed on the Import page and emitted in the methods export.
+- Duplicates: "Removed at import" records can now be restored as sources (select + Restore) — the full record is stored at import so a wrongly-dropped paper comes back complete.
+- Settings → Danger zone: clear all of a project's data, or delete the project entirely (data + row, files on disk kept), each guarded by a type-the-name confirmation.
+- Screening filter: "All fields" search now also matches DOI, PMID, year, and source database.
 
 ### Changed
 - PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.
+- Title deduplication now keeps the more complete record (DOI first, then authors, then other fields) instead of always keeping the first-imported one, and the fuzzy-title match threshold was raised from 90 to 95 to cut false-positive merges.
+- Imports are much faster on a shared PostgreSQL database: records are inserted in batched transactions and existing DOIs are loaded in one query instead of one per record.
 
 ### Docs
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
 
 ### Fixed
 - Conflicts page "Recently resolved" list for abstract screening was always empty (queried the wrong stage label).
+- Records with a blank (empty-string) DOI failed to import on PostgreSQL (unique-key collision); blank DOIs are now stored as NULL. Import failures now list the offending title and error in the UI.
+- PostgreSQL URLs work with any common prefix (`postgresql://`, `postgres://`, `postgresql+psycopg2://`) — they are normalized to the psycopg driver automatically.
 
 ### Internal
 - Code cleanup / refactor (no behavior change).
