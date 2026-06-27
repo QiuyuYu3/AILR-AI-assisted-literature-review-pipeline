@@ -29,8 +29,15 @@ def _build_content(reviewer: Optional[str]) -> Any:
     total_sources = db.count_sources(pid)
     ai_counts = db.screening_summary(pid, "ai")
     human_counts = db.screening_summary(pid, "human")
-    abstract_conflicts = db.count_unresolved_screening_conflicts(pid, stage="abstract")
-    ft_conflicts = db.count_unresolved_screening_conflicts(pid, stage="full_text")
+    # Count conflicts with the same rule the Conflicts tab uses for this mode: AI-vs-human in
+    # assisted, human-vs-human in independent.
+    _count_conflicts = (
+        db.count_unresolved_assisted_conflicts
+        if cfg.screening.workflow == "assisted"
+        else db.count_unresolved_screening_conflicts
+    )
+    abstract_conflicts = _count_conflicts(pid, stage="abstract")
+    ft_conflicts = _count_conflicts(pid, stage="full_text")
     total_conflicts = abstract_conflicts + ft_conflicts
     api_summary = db.api_call_summary(pid)
     total_calls = sum((row.get("calls") or 0) for row in api_summary)

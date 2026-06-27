@@ -781,34 +781,6 @@ def register_callbacks(app: Any) -> None:
         return cards, prev_disabled, next_disabled, page_info, counts_text
 
 
-def _kw_match(s: Source, kw_low: str, within: str) -> bool:
-    if within == "title_and_abstract":
-        return kw_low in ((s.title or "") + " " + (s.abstract or "")).lower()
-    if within == "authors_exact":
-        return any(a.strip().lower() == kw_low for a in (s.authors or []))
-    if within == "authors_fuzzy":
-        return any(kw_low in a.lower() for a in (s.authors or []))
-    if within == "all":
-        hay = " ".join(
-            [s.title or "", s.abstract or "", s.journal or "", " ".join(s.authors or []),
-             s.doi or "", s.pmid or "", str(s.year or ""), s.source_database or ""]
-        ).lower()
-        return kw_low in hay
-    return True
-
-
-def _apply_sort(sources: list[Source], sort_by: str) -> list[Source]:
-    if sort_by == "title":
-        return sorted(sources, key=lambda s: (s.title or "").lower())
-    if sort_by == "author":
-        return sorted(sources, key=lambda s: (s.authors[0] if s.authors else "").lower())
-    if sort_by == "year_desc":
-        return sorted(sources, key=lambda s: s.year or 0, reverse=True)
-    if sort_by == "year_asc":
-        return sorted(sources, key=lambda s: s.year or 9999)
-    return sorted(sources, key=lambda s: s.id or 0)
-
-
 def _meta_line(src: Source) -> str:
     parts: list[str] = []
     if src.journal:

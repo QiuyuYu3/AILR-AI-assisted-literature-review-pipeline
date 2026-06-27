@@ -350,34 +350,181 @@ class ScreeningMixin:
         ).fetchall()
         return [_row_to_source(r) for r in rows], total, page
 
+    def list_full_text_page(
+        self,
+        project_id: int,
+        reviewer_id: str,
+        *,
+        status: str = "all",
+        keyword: str = "",
+        within: str = "title_and_abstract",
+        tag_id: Optional[int] = None,
+        ft_avail: Optional[str] = None,  # 'has' / 'needs' / None
+        team_size: int = 2,
+        sort_by: str = "id",
+        page: int = 0,
+        page_size: int = 25,
+    ) -> tuple[list[Source], int, int]:
+        """Full-text review page (candidates = abstract-includes), filtered/sorted/paginated in SQL.
+        Returns (rows, total_matching, clamped_page)."""
+        # "final full-text include with markdown" = reconciled-as-include, or human-included with no
+        # conflict; gates the to_extract queue (mirrors list_full_text_final_includes_with_markdown).
+        final_include_md = """(s.markdown_path IS NOT NULL AND (
+            EXISTS (SELECT 1 FROM reconciliations r
+                    WHERE r.source_id = s.id AND r.stage = 'full_text_screening' AND r.final_value = 'include')
+            OR ((SELECT decision FROM screening_decisions d
+                 WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
+                 ORDER BY d.id DESC LIMIT 1) = 'include'
+                AND NOT EXISTS (SELECT 1 FROM reconciliations r
+                                WHERE r.source_id = s.id AND r.stage = 'full_text_screening'))
+        ))"""
+        where = [
+            "s.project_id = ?",
+            "COALESCE(s.is_duplicate, 0) = 0",
+            "EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id AND d.stage = 'abstract' AND d.decision = 'include')",
+        ]
+        params: list = [project_id]
+
+        if status == "to_review":
+            where.append("NOT EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id "
+                         "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = 'full_text')")
+            params.append(reviewer_id)
+            where.append("(SELECT COUNT(DISTINCT reviewer_id) FROM screening_decisions "
+                         "WHERE source_id = s.id AND reviewer_type = 'human' AND stage = 'full_text') < ?")
+            params.append(team_size)
+        elif status == "reviewed":
+            where.append("EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id "
+                         "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = 'full_text')")
+            params.append(reviewer_id)
+        elif status == "to_extract":
+            where.append(final_include_md)
+            where.append("NOT EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
+                         "AND e.extractor_type = 'human' AND e.field_name = '_submitted')")
+        elif status == "extracted_mine":
+            where.append("(SELECT extractor_id FROM extractions e WHERE e.source_id = s.id "
+                         "AND e.extractor_type = 'human' AND e.field_name = '_submitted' "
+                         "ORDER BY e.id DESC LIMIT 1) = ?")
+            params.append(reviewer_id)
+
+        kw = (keyword or "").strip().lower()
+        if kw:
+            like = f"%{kw}%"
+            if within and within.startswith("authors"):
+                where.append("lower(s.authors) LIKE ?")
+                params.append(like)
+            elif within == "all":
+                cols = ["s.title", "s.abstract", "s.journal", "s.authors", "s.doi", "s.pmid", "s.source_database"]
+                clause = " OR ".join(f"lower({c}) LIKE ?" for c in cols) + " OR CAST(s.year AS TEXT) LIKE ?"
+                where.append("(" + clause + ")")
+                params += [like] * len(cols) + [like]
+            else:
+                where.append("(lower(s.title) LIKE ? OR lower(s.abstract) LIKE ?)")
+                params += [like, like]
+
+        if ft_avail == "has":
+            where.append("s.markdown_path IS NOT NULL")
+        elif ft_avail == "needs":
+            where.append("s.markdown_path IS NULL")
+
+        if tag_id is not None:
+            where.append("s.id IN (SELECT source_id FROM source_tags WHERE tag_id = ?)")
+            params.append(tag_id)
+
+        where_sql = " AND ".join(where)
+        total = self._conn.execute(
+            f"SELECT COUNT(*) AS n FROM sources s WHERE {where_sql}", params
+        ).fetchone()["n"]
+
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        page = max(0, min(page, total_pages - 1))
+        offset = page * page_size
+
+        order = {
+            "id": "s.id",
+            "title": "lower(s.title)",
+            "author": "lower(s.authors)",
+            "year_desc": "s.year DESC NULLS LAST",
+            "year_asc": "s.year ASC NULLS LAST",
+        }.get(sort_by, "s.id")
+
+        rows = self._conn.execute(
+            f"SELECT s.* FROM sources s WHERE {where_sql} ORDER BY {order} LIMIT ? OFFSET ?",
+            params + [page_size, offset],
+        ).fetchall()
+        return [_row_to_source(r) for r in rows], total, page
+
+    def count_full_text_candidates(self, project_id: int) -> int:
+        """Number of full-text candidates (sources with an abstract 'include')."""
+        return self._conn.execute(
+            "SELECT COUNT(*) AS n FROM sources s WHERE s.project_id = ? AND COALESCE(s.is_duplicate,0) = 0 "
+            "AND EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id AND d.stage = 'abstract' AND d.decision = 'include')",
+            (project_id,),
+        ).fetchone()["n"]
+
+    def final_include_md_ids(self, source_ids: list[int]) -> set[int]:
+        """Subset of the given sources that are 'final full-text include with markdown' (extraction-
+        eligible): reconciled-as-include, or human-included with no conflict, and markdown present."""
+        if not source_ids:
+            return set()
+        ph = ",".join("?" for _ in source_ids)
+        sql = f"""
+            SELECT s.id FROM sources s
+            WHERE s.id IN ({ph}) AND s.markdown_path IS NOT NULL
+              AND (
+                EXISTS (SELECT 1 FROM reconciliations r
+                        WHERE r.source_id = s.id AND r.stage = 'full_text_screening' AND r.final_value = 'include')
+                OR ((SELECT decision FROM screening_decisions d
+                     WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
+                     ORDER BY d.id DESC LIMIT 1) = 'include'
+                    AND NOT EXISTS (SELECT 1 FROM reconciliations r
+                                    WHERE r.source_id = s.id AND r.stage = 'full_text_screening'))
+              )
+        """
+        return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
+
     def list_sources_overview(self, project_id: int) -> list[dict]:
-        """Joined view used by the Sources overview UI: source row + latest AI/human decision + extraction count."""
+        """Joined view for the Sources overview UI: source row + latest AI/human decision + extraction
+        count. Each derived value is aggregated once per source then LEFT JOINed (instead of a
+        correlated subquery per row), so it scales with the number of decisions, not rows*subqueries."""
         sql = """
+            WITH latest_ai AS (
+                SELECT sd.source_id, sd.decision, sd.confidence
+                FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_type = 'ai' GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            ),
+            latest_abs AS (
+                SELECT sd.source_id, sd.decision
+                FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_type = 'human' AND stage = 'abstract' GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            ),
+            latest_ft AS (
+                SELECT sd.source_id, sd.decision
+                FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_type = 'human' AND stage = 'full_text' GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            ),
+            ext AS (
+                SELECT source_id, COUNT(*) AS n FROM extractions
+                WHERE extractor_type = 'ai' AND field_name != '_flag_check' GROUP BY source_id
+            )
             SELECT
-                s.id,
-                s.year,
-                s.journal,
-                s.title,
-                s.authors,
-                s.doi,
-                s.source_database,
+                s.id, s.year, s.journal, s.title, s.authors, s.doi, s.source_database,
                 CASE WHEN s.markdown_path IS NOT NULL THEN 1 ELSE 0 END AS has_markdown,
-                (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type = 'ai'
-                   ORDER BY id DESC LIMIT 1) AS ai_decision,
-                (SELECT confidence FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type = 'ai'
-                   ORDER BY id DESC LIMIT 1) AS ai_confidence,
-                (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = 'abstract'
-                   ORDER BY id DESC LIMIT 1) AS abstract_decision,
-                (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = 'full_text'
-                   ORDER BY id DESC LIMIT 1) AS full_text_decision,
-                (SELECT COUNT(*) FROM extractions
-                   WHERE source_id = s.id AND extractor_type = 'ai'
-                     AND field_name != '_flag_check') AS ai_extracted_fields
+                latest_ai.decision AS ai_decision,
+                latest_ai.confidence AS ai_confidence,
+                latest_abs.decision AS abstract_decision,
+                latest_ft.decision AS full_text_decision,
+                COALESCE(ext.n, 0) AS ai_extracted_fields
             FROM sources s
+            LEFT JOIN latest_ai ON latest_ai.source_id = s.id
+            LEFT JOIN latest_abs ON latest_abs.source_id = s.id
+            LEFT JOIN latest_ft ON latest_ft.source_id = s.id
+            LEFT JOIN ext ON ext.source_id = s.id
             WHERE s.project_id = ? AND COALESCE(s.is_duplicate, 0) = 0
             ORDER BY s.id
         """
@@ -733,6 +880,34 @@ class ScreeningMixin:
               )
         """
         return self._conn.execute(sql, (project_id, stage, stage, stage, reconcile_stage)).fetchone()["n"]
+
+    def count_unresolved_assisted_conflicts(self, project_id: int, stage: str = "abstract") -> int:
+        """Assisted-mode unresolved-conflict count; mirrors list_assisted_conflicts (AI vs human
+        differ, or either is 'uncertain', once both have a verdict and it isn't reconciled)."""
+        reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
+        sql = """
+            SELECT COUNT(*) AS n FROM sources s
+            WHERE s.project_id = ?
+              AND (SELECT decision FROM screening_decisions
+                   WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
+                   ORDER BY id DESC LIMIT 1) IS NOT NULL
+              AND (SELECT decision FROM screening_decisions
+                   WHERE source_id = s.id AND reviewer_type='human' AND stage=?
+                   ORDER BY id DESC LIMIT 1) IS NOT NULL
+              AND (
+                  (SELECT decision FROM screening_decisions
+                   WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
+                   ORDER BY id DESC LIMIT 1)
+                  != (SELECT decision FROM screening_decisions
+                      WHERE source_id = s.id AND reviewer_type='human' AND stage=?
+                      ORDER BY id DESC LIMIT 1)
+                  OR (SELECT decision FROM screening_decisions
+                      WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
+                      ORDER BY id DESC LIMIT 1) = 'uncertain'
+              )
+              AND NOT EXISTS (SELECT 1 FROM reconciliations WHERE source_id = s.id AND stage = ?)
+        """
+        return self._conn.execute(sql, (project_id, stage, stage, stage, stage, stage, reconcile_stage)).fetchone()["n"]
 
     def count_human_decisions_per_source(
         self,

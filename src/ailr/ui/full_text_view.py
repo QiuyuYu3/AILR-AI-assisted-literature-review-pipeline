@@ -18,9 +18,7 @@ from ailr.ui._common import get_project, reload_project, triggered_click_id
 from ailr.ui.screen_view import (
     _SORT_OPTIONS,
     _WITHIN_OPTIONS,
-    _apply_sort,
     _history_block,
-    _kw_match,
     _short_author_year,
 )
 
@@ -601,8 +599,21 @@ def register_callbacks(app: Any) -> None:
         if not rid:
             return [dbc.Alert("Enter your reviewer ID above to begin.", color="info")], "", True, True, ""
 
-        all_candidates = db.list_sources_for_full_text(pid, require_markdown=False)
-        if not all_candidates:
+        team_size = 2 if workflow == "independent" else 1
+        try:
+            psize = int(pagesize)
+        except (TypeError, ValueError):
+            psize = 25
+        try:
+            tag_id = int(tag_filter) if tag_filter else None
+        except (TypeError, ValueError):
+            tag_id = None
+        ft_set = set(ftavail or [])
+        ft_avail = "has" if ("has" in ft_set and "needs" not in ft_set) else ("needs" if ("needs" in ft_set and "has" not in ft_set) else None)
+        req_page = (page_state or {}).get("page", 0)
+
+        total_candidates = db.count_full_text_candidates(pid)
+        if total_candidates == 0:
             return (
                 [
                     dbc.Alert(
@@ -618,63 +629,18 @@ def register_callbacks(app: Any) -> None:
                 "",
             )
 
-        source_ids = [s.id for s in all_candidates if s.id is not None]
-        my_decisions = db.get_decisions_by_reviewer(source_ids, rid, stage="full_text")
-        team_size = 2 if workflow == "independent" else 1
-        human_counts = db.count_human_decisions_per_source(pid, stage="full_text")
-        extract_ids = {s.id for s in db.list_full_text_final_includes_with_markdown(pid)}
-        extracted_by = db.human_extractors_for_sources(list(extract_ids))  # {sid: extractor_id}
-
-        if status == "to_review":
-            sources = [
-                s for s in all_candidates
-                if s.id not in my_decisions and human_counts.get(s.id, 0) < team_size
-            ]
-        elif status == "reviewed":
-            sources = [s for s in all_candidates if s.id in my_decisions]
-        elif status == "to_extract":
-            sources = [s for s in all_candidates if s.id in extract_ids and s.id not in extracted_by]
-        elif status == "extracted_mine":
-            sources = [s for s in all_candidates if extracted_by.get(s.id) == rid]
-        else:
-            sources = list(all_candidates)
-
-        kw = (search or "").strip().lower()
-        if kw:
-            sources = [s for s in sources if _kw_match(s, kw, within or "title_and_abstract")]
-
-        ft_set = set(ftavail or [])
-        if "has" in ft_set and "needs" not in ft_set:
-            sources = [s for s in sources if s.markdown_path]
-        elif "needs" in ft_set and "has" not in ft_set:
-            sources = [s for s in sources if not s.markdown_path]
-        # both checked or both unchecked → no filter
-
-        if tag_filter:
-            try:
-                tagged_ids = {s.id for s in db.get_sources_for_tag(int(tag_filter))}
-                sources = [s for s in sources if s.id in tagged_ids]
-            except (TypeError, ValueError):
-                pass
-
-        sources = _apply_sort(sources, sort_by or "id")
-
-        try:
-            psize = int(pagesize)
-        except (TypeError, ValueError):
-            psize = 25
-        total = len(sources)
-        total_pages = max(1, (total + psize - 1) // psize)
-        page = (page_state or {}).get("page", 0)
-        page = max(0, min(page, total_pages - 1))
-        page_sources = sources[page * psize : page * psize + psize]
-
-        peer_counts = (
-            db.count_peer_reviewers(source_ids, rid, stage="full_text")
-            if workflow == "independent" else {}
+        # Filter + sort + paginate in SQL: only this page's rows come back, not all candidates.
+        page_sources, total, page = db.list_full_text_page(
+            pid, rid, status=status, keyword=search or "", within=within or "title_and_abstract",
+            tag_id=tag_id, ft_avail=ft_avail, team_size=team_size, sort_by=sort_by or "id",
+            page=req_page, page_size=psize,
         )
 
         page_ids = [s.id for s in page_sources if s.id is not None]
+        my_decisions = db.get_decisions_by_reviewer(page_ids, rid, stage="full_text")
+        peer_counts = db.count_peer_reviewers(page_ids, rid, stage="full_text") if workflow == "independent" else {}
+        extract_ids = db.final_include_md_ids(page_ids)            # which of this page are extraction-eligible
+        extracted_by = db.human_extractors_for_sources(page_ids)  # {sid: extractor_id who submitted}
         tags_by_source = db.get_tags_for_sources(page_ids)
         ai_by_source = db.get_latest_ai_decisions(page_ids, stage="full_text")
         note_counts = db.count_notes(page_ids)
@@ -695,11 +661,12 @@ def register_callbacks(app: Any) -> None:
         if not cards:
             cards = [dbc.Alert("No sources match the current filter.", color="success")]
 
+        total_pages = max(1, (total + psize - 1) // psize)
         prev_disabled = page <= 0
         next_disabled = page >= total_pages - 1
         page_info = f"Page {page + 1} of {total_pages}  ({total} total)" if total else ""
-        n_reviewed = sum(1 for s in all_candidates if s.id in my_decisions)
-        counts = f"{n_reviewed} / {len(all_candidates)} reviewed by you • {total} match current filter"
+        n_reviewed = db.count_reviewer_decisions(pid, rid, stage="full_text")
+        counts = f"{n_reviewed} / {total_candidates} reviewed by you • {total} match current filter"
         return cards, counts, prev_disabled, next_disabled, page_info
 
 

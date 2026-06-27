@@ -14,6 +14,7 @@
 - PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.
 - Title deduplication now keeps the more complete record (DOI first, then authors, then other fields) instead of always keeping the first-imported one, and the fuzzy-title match threshold was raised from 90 to 95 to cut false-positive merges.
 - Imports are much faster on a shared PostgreSQL database: records are inserted in batched transactions and existing DOIs are loaded in one query instead of one per record.
+- Screening and full-text review stay fast at thousands of records: the lists now filter/sort/paginate in SQL (only the visible page is fetched, not the whole table), votes commit in one transaction, a composite index speeds the status filters and vote locks, and the Sources overview query was rewritten to avoid a per-row subquery scan.
 
 ### Docs
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
@@ -22,6 +23,9 @@
 - Conflicts page "Recently resolved" list for abstract screening was always empty (queried the wrong stage label).
 - Records with a blank (empty-string) DOI failed to import on PostgreSQL (unique-key collision); blank DOIs are now stored as NULL. Import failures now list the offending title and error in the UI.
 - PostgreSQL URLs work with any common prefix (`postgresql://`, `postgres://`, `postgresql+psycopg2://`) — they are normalized to the psycopg driver automatically.
+- Clicking include/exclude (and the tag/note/duplicate/conflict-resolve actions) now always acts on the clicked card; previously, when the list re-rendered at the same moment, an action could land on a different paper.
+- Vote locking: a rapid double-click no longer records a duplicate of your own vote, and the team cap (1 human + AI in assisted, 2 humans in independent) now blocks a third reviewer in both modes (independent previously had no lock).
+- Conflicts: two reviewers both voting "uncertain" (AI + human in assisted, or both humans in independent) are now flagged for adjudication instead of silently disappearing — at both the abstract and full-text stages — and the dashboard conflict count uses the same rule as the Conflicts tab for each mode.
 
 ### Internal
 - Code cleanup / refactor (no behavior change).
