@@ -303,25 +303,26 @@ def register_callbacks(app: Any) -> None:
         if isinstance(triggered, dict) and triggered.get("type") == "ft-decide":
             source_id = int(triggered["source"])
             decision = triggered["decision"]
-            # Idempotent vote: ignore a rapid double-click that lands before the card re-renders.
-            if db.has_human_decision(source_id, rid, "full_text"):
+            # Vote lock in one query: skip my double-click; cap team size (assisted 1 + AI, independent 2).
+            i_voted, others = db.screening_lock_check(source_id, rid, "full_text")
+            if i_voted:
                 return {"ts": _t.time()}, no_update
-            # Team lock: 1 human (+ AI) in assisted, 2 humans in independent — block the extra reviewer.
             team_humans = 1 if get_project().config.screening.workflow == "assisted" else 2
-            if db.count_other_human_reviewers(source_id, "full_text", rid) >= team_humans:
+            if others >= team_humans:
                 other = db.other_human_decided(source_id, "full_text", rid) or "another reviewer"
                 return {"ts": _t.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": _t.time()}
-            db.insert_screening_decision(
-                ScreeningDecision(
-                    decision=decision,
-                    reasoning="(full-text review)",
-                    reviewer_type="human",
-                    reviewer_id=rid,
-                    source_id=source_id,
-                    stage="full_text",
+            with db._conn.transaction():  # decision + action in one commit
+                db.insert_screening_decision(
+                    ScreeningDecision(
+                        decision=decision,
+                        reasoning="(full-text review)",
+                        reviewer_type="human",
+                        reviewer_id=rid,
+                        source_id=source_id,
+                        stage="full_text",
+                    )
                 )
-            )
-            db.insert_screening_action(source_id, rid, action="vote", decision=decision)
+                db.insert_screening_action(source_id, rid, action="vote", decision=decision)
             src = db.get_source(source_id)
             return {"ts": _t.time()}, {
                 "sid": source_id,

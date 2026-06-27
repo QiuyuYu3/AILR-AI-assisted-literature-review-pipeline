@@ -321,6 +321,8 @@ Table(
     Column("stage", Text, server_default=text("'abstract'")),
     Column("timestamp", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     Index("idx_screening_source", "source_id"),
+    # the screening list, status filters, and vote locks all filter on these three together
+    Index("idx_screening_lookup", "source_id", "reviewer_type", "stage"),
 )
 
 Table(

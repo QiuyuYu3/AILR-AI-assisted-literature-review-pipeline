@@ -146,8 +146,7 @@ _PAGE_SIZES = [
 
 _WITHIN_OPTIONS = [
     {"label": "Title and abstract", "value": "title_and_abstract"},
-    {"label": "Authors (exact)", "value": "authors_exact"},
-    {"label": "Authors (fuzzy)", "value": "authors_fuzzy"},
+    {"label": "Authors", "value": "authors"},
     {"label": "All fields (incl. DOI)", "value": "all"},
 ]
 
@@ -567,26 +566,26 @@ def register_callbacks(app: Any) -> None:
         if isinstance(triggered, dict) and triggered.get("type") == "screen-decide":
             source_id = int(triggered["source"])
             decision = triggered["decision"]
-            # Idempotent vote: if I already decided this paper (e.g. a rapid double-click before the
-            # card re-renders), don't add a second row. Re-voting requires Reset first.
-            if db.has_human_decision(source_id, rid, "abstract"):
+            # Vote lock in one query: skip if I already decided this paper (rapid double-click), and
+            # cap the team size — 1 human (+ AI) in assisted, 2 humans in independent.
+            i_voted, others = db.screening_lock_check(source_id, rid, "abstract")
+            if i_voted:
                 return {"ts": time.time()}, no_update
-            # Team lock: cap a paper at its team size — 1 human (+ AI) in assisted, 2 humans in
-            # independent. Block whoever would be the extra reviewer, no matter who.
             team_humans = 1 if get_project().config.screening.workflow == "assisted" else 2
-            if db.count_other_human_reviewers(source_id, "abstract", rid) >= team_humans:
+            if others >= team_humans:
                 other = db.other_human_decided(source_id, "abstract", rid) or "another reviewer"
                 return {"ts": time.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": time.time()}
-            db.insert_screening_decision(
-                ScreeningDecision(
-                    decision=decision,
-                    reasoning="(inline screening)",
-                    reviewer_type="human",
-                    reviewer_id=rid,
-                    source_id=source_id,
+            with db._conn.transaction():  # decision + action in one commit
+                db.insert_screening_decision(
+                    ScreeningDecision(
+                        decision=decision,
+                        reasoning="(inline screening)",
+                        reviewer_type="human",
+                        reviewer_id=rid,
+                        source_id=source_id,
+                    )
                 )
-            )
-            db.insert_screening_action(source_id, rid, action="vote", decision=decision)
+                db.insert_screening_action(source_id, rid, action="vote", decision=decision)
             src = db.get_source(source_id)
             return {"ts": time.time()}, {
                 "sid": source_id,
@@ -736,65 +735,28 @@ def register_callbacks(app: Any) -> None:
             empty = dbc.Alert("Enter your reviewer ID above to begin.", color="info")
             return empty, True, True, "", ""
 
-        all_sources = db.list_sources(pid)
-        source_ids = [s.id for s in all_sources if s.id is not None]
-        my_decisions = db.get_decisions_by_reviewer(source_ids, rid)
-
-        # Team-aware "To screen": in independent mode, exclude sources where >=2 humans already voted.
-        # In assisted mode, 1 human vote = done.
+        # Team-aware "To screen": independent = 2 humans per paper, assisted = 1 human (+ AI).
         team_size = 2 if workflow == "independent" else 1
-        human_counts: dict[int, int] = {}
-        if status == "to_screen":
-            human_counts = db.count_human_decisions_per_source(pid)
-
-        if status == "to_screen":
-            sources = [
-                s for s in all_sources
-                if s.id not in my_decisions and human_counts.get(s.id, 0) < team_size
-            ]
-        elif status == "reviewed":
-            sources = [s for s in all_sources if s.id in my_decisions]
-        elif status == "calibration":
-            rounds = db.list_calibration_rounds(pid, "screening")
-            if rounds:
-                cal_ids = {s.id for s in db.list_calibration_sample(pid, "screening", max(rounds))}
-                sources = [s for s in all_sources if s.id in cal_ids]
-            else:
-                sources = []
-        else:
-            sources = list(all_sources)
-
-        kw = (search or "").strip().lower()
-        if kw:
-            sources = [s for s in sources if _kw_match(s, kw, within or "title_and_abstract")]
-
-        if tag_filter:
-            try:
-                tag_id = int(tag_filter)
-                tagged_ids = {s.id for s in db.get_sources_for_tag(tag_id)}
-                sources = [s for s in sources if s.id in tagged_ids]
-            except (TypeError, ValueError):
-                pass
-
-        sources = _apply_sort(sources, sort_by)
-
         try:
             psize = int(pagesize)
         except (TypeError, ValueError):
             psize = 25
-        total = len(sources)
-        total_pages = max(1, (total + psize - 1) // psize)
-        page = (page_state or {}).get("page", 0)
-        page = max(0, min(page, total_pages - 1))
-        start = page * psize
-        page_sources = sources[start : start + psize]
+        try:
+            tag_id = int(tag_filter) if tag_filter else None
+        except (TypeError, ValueError):
+            tag_id = None
+        req_page = (page_state or {}).get("page", 0)
 
-        peer_counts: dict[int, int] = {}
-        if workflow == "independent":
-            visible_ids = [s.id for s in page_sources if s.id is not None]
-            peer_counts = db.count_peer_reviewers(visible_ids, rid)
+        # Filter + sort + paginate in SQL: only this page's rows come back, not the whole table.
+        page_sources, total, page = db.list_sources_page(
+            pid, rid, stage="abstract", status=status, keyword=search or "",
+            within=within or "title_and_abstract", tag_id=tag_id, team_size=team_size,
+            sort_by=sort_by, page=req_page, page_size=psize,
+        )
 
         visible_ids = [s.id for s in page_sources if s.id is not None]
+        my_decisions = db.get_decisions_by_reviewer(visible_ids, rid)
+        peer_counts = db.count_peer_reviewers(visible_ids, rid) if workflow == "independent" else {}
         tags_per_source = db.get_tags_for_sources(visible_ids)
         note_counts = db.count_notes(visible_ids)
 
@@ -810,11 +772,12 @@ def register_callbacks(app: Any) -> None:
         if not cards:
             cards = [dbc.Alert("No sources match the current filter.", color="success")]
 
+        total_pages = max(1, (total + psize - 1) // psize)
         prev_disabled = page <= 0
         next_disabled = page >= total_pages - 1
         page_info = f"Page {page + 1} of {total_pages}  ({total} total)" if total else ""
-        n_reviewed = sum(1 for s in all_sources if s.id in my_decisions)
-        counts_text = f"{n_reviewed} / {len(all_sources)} reviewed by you • {total} match current filter"
+        n_reviewed, total_sources = db.screen_counts(pid, rid)
+        counts_text = f"{n_reviewed} / {total_sources} reviewed by you • {total} match current filter"
         return cards, prev_disabled, next_disabled, page_info, counts_text
 
 

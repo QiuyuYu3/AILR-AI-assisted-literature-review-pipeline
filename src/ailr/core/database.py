@@ -93,6 +93,13 @@ class Database(
         if "full_record_json" not in existing:
             with self._engine.begin() as conn:
                 conn.exec_driver_sql("ALTER TABLE duplicates ADD COLUMN full_record_json TEXT")
+        # composite index speeds the screening list / status filters / vote locks (existing DBs only;
+        # fresh ones get it from create_all). CREATE INDEX IF NOT EXISTS works on SQLite + PostgreSQL.
+        with self._engine.begin() as conn:
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_screening_lookup "
+                "ON screening_decisions (source_id, reviewer_type, stage)"
+            )
 
     def _sqlite_column_migrations(self) -> None:
         """Add post-release columns to pre-existing SQLite DBs (create_all only creates

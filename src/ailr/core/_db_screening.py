@@ -261,6 +261,95 @@ class ScreeningMixin:
             out.setdefault(d.pop("source_id"), []).append(d)
         return out
 
+    def list_sources_page(
+        self,
+        project_id: int,
+        reviewer_id: str,
+        *,
+        stage: str = "abstract",
+        status: str = "all",
+        keyword: str = "",
+        within: str = "title_and_abstract",
+        tag_id: Optional[int] = None,
+        team_size: int = 2,
+        sort_by: str = "id",
+        page: int = 0,
+        page_size: int = 25,
+    ) -> tuple[list[Source], int, int]:
+        """Filtered + sorted + paginated source page, done in SQL so only one page is fetched.
+
+        Returns (rows, total_matching, clamped_page). Case-insensitive search uses lower(col) LIKE
+        (portable across SQLite and PostgreSQL). Author search matches the stored JSON text.
+        """
+        where = ["s.project_id = ?", "COALESCE(s.is_duplicate, 0) = 0"]
+        params: list = [project_id]
+
+        if status == "to_screen":
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id "
+                "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = ?)"
+            )
+            params += [reviewer_id, stage]
+            where.append(
+                "(SELECT COUNT(DISTINCT reviewer_id) FROM screening_decisions "
+                "WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) < ?"
+            )
+            params += [stage, team_size]
+        elif status == "reviewed":
+            where.append(
+                "EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id "
+                "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = ?)"
+            )
+            params += [reviewer_id, stage]
+        elif status == "calibration":
+            where.append(
+                "s.id IN (SELECT source_id FROM calibration_samples WHERE project_id = ? AND stage = ? "
+                "AND sample_round = (SELECT MAX(sample_round) FROM calibration_samples WHERE project_id = ? AND stage = ?))"
+            )
+            params += [project_id, stage, project_id, stage]
+
+        kw = (keyword or "").strip().lower()
+        if kw:
+            like = f"%{kw}%"
+            if within and within.startswith("authors"):
+                where.append("lower(s.authors) LIKE ?")
+                params.append(like)
+            elif within == "all":
+                cols = ["s.title", "s.abstract", "s.journal", "s.authors", "s.doi", "s.pmid", "s.source_database"]
+                clause = " OR ".join(f"lower({c}) LIKE ?" for c in cols) + " OR CAST(s.year AS TEXT) LIKE ?"
+                where.append("(" + clause + ")")
+                params += [like] * len(cols) + [like]
+            else:  # title_and_abstract
+                where.append("(lower(s.title) LIKE ? OR lower(s.abstract) LIKE ?)")
+                params += [like, like]
+
+        if tag_id is not None:
+            where.append("s.id IN (SELECT source_id FROM source_tags WHERE tag_id = ?)")
+            params.append(tag_id)
+
+        where_sql = " AND ".join(where)
+        total = self._conn.execute(
+            f"SELECT COUNT(*) AS n FROM sources s WHERE {where_sql}", params
+        ).fetchone()["n"]
+
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        page = max(0, min(page, total_pages - 1))
+        offset = page * page_size
+
+        order = {
+            "id": "s.id",
+            "title": "lower(s.title)",
+            "author": "lower(s.authors)",
+            "year_desc": "s.year DESC NULLS LAST",
+            "year_asc": "s.year ASC NULLS LAST",
+        }.get(sort_by, "s.id")
+
+        rows = self._conn.execute(
+            f"SELECT s.* FROM sources s WHERE {where_sql} ORDER BY {order} LIMIT ? OFFSET ?",
+            params + [page_size, offset],
+        ).fetchall()
+        return [_row_to_source(r) for r in rows], total, page
+
     def list_sources_overview(self, project_id: int) -> list[dict]:
         """Joined view used by the Sources overview UI: source row + latest AI/human decision + extraction count."""
         sql = """
@@ -341,6 +430,20 @@ class ScreeningMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete screening_decisions: {e}") from e
 
+    def screen_counts(self, project_id: int, reviewer_id: str, stage: str = "abstract") -> tuple[int, int]:
+        """(sources reviewed by me, total sources) in one round trip for the sidebar text."""
+        row = self._conn.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM sources WHERE project_id = ?) AS total,
+                (SELECT COUNT(DISTINCT d.source_id) FROM screening_decisions d
+                   JOIN sources s ON s.id = d.source_id
+                   WHERE s.project_id = ? AND d.reviewer_id = ? AND d.stage = ?) AS mine
+            """,
+            (project_id, project_id, reviewer_id, stage),
+        ).fetchone()
+        return row["mine"], row["total"]
+
     def count_reviewer_decisions(self, project_id: int, reviewer_id: str, stage: str = "abstract") -> int:
         """How many of the project's sources this reviewer has decided at a stage (no full load)."""
         row = self._conn.execute(
@@ -399,6 +502,21 @@ class ScreeningMixin:
         for r in rows:
             out[r["source_id"]] = r["n"]
         return out
+
+    def screening_lock_check(self, source_id: int, reviewer_id: str, stage: str = "abstract") -> tuple[bool, int]:
+        """(I already decided this paper?, # of distinct OTHER humans who decided it) in one query —
+        for the vote lock (idempotent self-vote + team-size cap) without two round trips."""
+        row = self._conn.execute(
+            """
+            SELECT
+                SUM(CASE WHEN reviewer_id = ? THEN 1 ELSE 0 END) AS mine,
+                COUNT(DISTINCT CASE WHEN reviewer_id != ? THEN reviewer_id END) AS others
+            FROM screening_decisions
+            WHERE source_id = ? AND reviewer_type = 'human' AND stage = ?
+            """,
+            (reviewer_id, reviewer_id, source_id, stage),
+        ).fetchone()
+        return bool(row["mine"] or 0), int(row["others"] or 0)
 
     def count_other_human_reviewers(self, source_id: int, stage: str, reviewer_id: str) -> int:
         """Distinct humans OTHER than reviewer_id who have decided this source at this stage.
