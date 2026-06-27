@@ -557,23 +557,33 @@ class ScreeningMixin:
         return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
     def list_screening_conflicts(self, project_id: int, stage: str = "abstract") -> list[Source]:
-        """Sources at the given stage where ≥2 distinct human verdicts exist and no reconciliation recorded."""
+        """Independent mode: both humans have voted but there is no clean agreed include/exclude —
+        either they differ, or anyone voted 'uncertain' (uncertain is unresolved, needs adjudication).
+        Excludes already-reconciled sources."""
         reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
         sql = """
             SELECT s.* FROM sources s
             WHERE s.project_id = ?
               AND (
-                  SELECT COUNT(DISTINCT decision)
+                  SELECT COUNT(DISTINCT reviewer_id)
                   FROM screening_decisions
                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?
-              ) > 1
+              ) >= 2
+              AND (
+                  (SELECT COUNT(DISTINCT decision)
+                   FROM screening_decisions
+                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) > 1
+                  OR EXISTS (
+                   SELECT 1 FROM screening_decisions
+                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ? AND decision = 'uncertain')
+              )
               AND NOT EXISTS (
                   SELECT 1 FROM reconciliations
                   WHERE source_id = s.id AND stage = ?
               )
             ORDER BY s.id
         """
-        rows = self._conn.execute(sql, (project_id, stage, reconcile_stage)).fetchall()
+        rows = self._conn.execute(sql, (project_id, stage, stage, stage, reconcile_stage)).fetchall()
         return [_row_to_source(r) for r in rows]
 
     def list_assisted_conflicts(self, project_id: int, stage: str = "abstract") -> list[Source]:
@@ -589,16 +599,21 @@ class ScreeningMixin:
               AND (SELECT decision FROM screening_decisions
                    WHERE source_id = s.id AND reviewer_type='human' AND stage=?
                    ORDER BY id DESC LIMIT 1) IS NOT NULL
-              AND (SELECT decision FROM screening_decisions
+              AND (
+                  (SELECT decision FROM screening_decisions
                    WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
                    ORDER BY id DESC LIMIT 1)
-                != (SELECT decision FROM screening_decisions
-                    WHERE source_id = s.id AND reviewer_type='human' AND stage=?
-                    ORDER BY id DESC LIMIT 1)
+                  != (SELECT decision FROM screening_decisions
+                      WHERE source_id = s.id AND reviewer_type='human' AND stage=?
+                      ORDER BY id DESC LIMIT 1)
+                  OR (SELECT decision FROM screening_decisions
+                      WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
+                      ORDER BY id DESC LIMIT 1) = 'uncertain'
+              )
               AND NOT EXISTS (SELECT 1 FROM reconciliations WHERE source_id = s.id AND stage = ?)
             ORDER BY s.id
         """
-        params = (project_id, stage, stage, stage, stage, reconcile_stage)
+        params = (project_id, stage, stage, stage, stage, stage, reconcile_stage)
         rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_source(r) for r in rows]
 
@@ -693,21 +708,31 @@ class ScreeningMixin:
             raise DatabaseError(f"Failed to delete reconciliation: {e}") from e
 
     def count_unresolved_screening_conflicts(self, project_id: int, stage: str = "abstract") -> int:
+        """Independent-mode unresolved-conflict count; mirrors list_screening_conflicts (differ or
+        any 'uncertain' once both humans have voted)."""
         reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
         sql = """
             SELECT COUNT(*) AS n FROM sources s
             WHERE s.project_id = ?
               AND (
-                  SELECT COUNT(DISTINCT decision)
+                  SELECT COUNT(DISTINCT reviewer_id)
                   FROM screening_decisions
                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?
-              ) > 1
+              ) >= 2
+              AND (
+                  (SELECT COUNT(DISTINCT decision)
+                   FROM screening_decisions
+                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) > 1
+                  OR EXISTS (
+                   SELECT 1 FROM screening_decisions
+                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ? AND decision = 'uncertain')
+              )
               AND NOT EXISTS (
                   SELECT 1 FROM reconciliations
                   WHERE source_id = s.id AND stage = ?
               )
         """
-        return self._conn.execute(sql, (project_id, stage, reconcile_stage)).fetchone()["n"]
+        return self._conn.execute(sql, (project_id, stage, stage, stage, reconcile_stage)).fetchone()["n"]
 
     def count_human_decisions_per_source(
         self,
