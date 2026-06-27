@@ -27,7 +27,7 @@ from ailr.ui import (
     template_view,
     workflow_view,
 )
-from ailr.ui._common import get_project, has_project, resolve_pdf_path
+from ailr.ui._common import get_project, has_project, resolve_pdf_path, triggered_click_id
 from ailr.ui.screen_view import _history_block
 from ailr.ui.tags_view import TAG_COLOR_OPTIONS
 
@@ -353,11 +353,8 @@ def build_app() -> Dash:
         prevent_initial_call=True,
     )
     def _switch_tab(_clicks):
-        triggered = ctx.triggered_id
-        if not triggered or not isinstance(triggered, dict):
-            return no_update
-        any_click = any(c for c in (ctx.triggered or []) if c.get("value"))
-        if not any_click:
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update
         return triggered.get("tab", no_update)
 
@@ -414,11 +411,8 @@ def build_app() -> Dash:
         prevent_initial_call=True,
     )
     def _open_history(_s, _c, _ft, _ex, reviewer, was_open):
-        triggered = ctx.triggered_id
-        if triggered is None or not isinstance(triggered, dict):
-            return no_update, no_update, no_update
-        any_click = any(t for t in (ctx.triggered or []) if t.get("value"))
-        if not any_click:
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update, no_update, no_update
 
         sid = int(triggered["source"])
@@ -457,14 +451,10 @@ def build_app() -> Dash:
         prevent_initial_call=True,
     )
     def _open_tag_modal(_clicks, _ft_clicks, _ex_clicks, _done, was_open):
-        triggered = ctx.triggered_id
-        if triggered == "tag-modal-done":
+        if ctx.triggered_id == "tag-modal-done":
             return False, no_update, no_update, no_update, no_update, no_update
-
-        if triggered is None or not isinstance(triggered, dict):
-            return no_update, no_update, no_update, no_update, no_update, no_update
-        any_click = any(t for t in (ctx.triggered or []) if t.get("value"))
-        if not any_click:
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update, no_update, no_update, no_update, no_update, no_update
 
         sid = int(triggered["source"])
@@ -564,10 +554,8 @@ def build_app() -> Dash:
         prevent_initial_call=True,
     )
     def _open_reader(_clicks):
-        triggered = ctx.triggered_id
-        if not isinstance(triggered, dict):
-            return no_update, no_update, no_update, no_update
-        if not any(t.get("value") for t in (ctx.triggered or [])):
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update, no_update, no_update, no_update
         sid = int(triggered["source"])
         src = get_project().db.get_source(sid)
@@ -624,10 +612,8 @@ def build_app() -> Dash:
         prevent_initial_call=True,
     )
     def _open_note_modal(_s, _ft, _ex):
-        triggered = ctx.triggered_id
-        if not isinstance(triggered, dict):
-            return no_update, no_update, no_update
-        if not any(t.get("value") for t in (ctx.triggered or [])):
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update, no_update, no_update
         sid = int(triggered["source"])
         return True, f"Notes — #{sid}", {"sid": sid}
@@ -682,20 +668,18 @@ def build_app() -> Dash:
     )
     def _mutate_notes(_add, _del, text, data, reviewer):
         import time
-        triggered = ctx.triggered_id
         db = get_project().db
 
-        if isinstance(triggered, dict) and triggered.get("type") == "note-delete":
-            if not any(t.get("value") for t in (ctx.triggered or [])):
-                return no_update, no_update
-            db.delete_note(int(triggered["note_id"]))
-            return {"ts": time.time()}, no_update
-
-        if triggered == "note-add":
+        if ctx.triggered_id == "note-add":
             if not _add or not text or not text.strip() or not data:
                 return no_update, no_update
             db.add_note(int(data["sid"]), (reviewer or "").strip() or None, text.strip())
             return {"ts": time.time()}, ""
+
+        triggered = triggered_click_id()
+        if triggered is not None and triggered.get("type") == "note-delete":
+            db.delete_note(int(triggered["note_id"]))
+            return {"ts": time.time()}, no_update
 
         return no_update, no_update
 

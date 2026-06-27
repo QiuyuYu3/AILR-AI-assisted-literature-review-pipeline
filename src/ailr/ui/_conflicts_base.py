@@ -11,10 +11,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import ALL, Input, Output, State, ctx, html, no_update
+from dash import ALL, Input, Output, State, html, no_update
 
 from ailr.core.source import Source
-from ailr.ui._common import _short_author_year, get_project
+from ailr.ui._common import _short_author_year, get_project, triggered_click_id
 
 _DECISION_COLORS = {
     "include": "success",
@@ -148,14 +148,9 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         prevent_initial_call=True,
     )
     def _on_resolve(_clicks, reviewer, rationales, rationale_ids):
-        triggered = ctx.triggered_id
         rid = (reviewer or "").strip()
-        if triggered is None or not rid:
-            return no_update
-        any_click = any(c for c in (ctx.triggered or []) if c.get("value"))
-        if not any_click:
-            return no_update
-        if not isinstance(triggered, dict) or triggered.get("type") != decide_type:
+        triggered = triggered_click_id()  # the actually-clicked button (not the first re-rendered one)
+        if triggered is None or not rid or triggered.get("type") != decide_type:
             return no_update
 
         source_id = int(triggered["source"])
@@ -180,7 +175,7 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         )
         def _toggle_abstract(clicks, is_open_list):
             from dash import callback_context
-            triggered = ctx.triggered_id
+            triggered = triggered_click_id()
             if triggered is None:
                 return no_update
             target_sid = triggered.get("source")
@@ -199,11 +194,8 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         prevent_initial_call=True,
     )
     def _on_undo(_clicks):
-        triggered = ctx.triggered_id
-        if triggered is None or not isinstance(triggered, dict):
-            return no_update
-        any_click = any(c for c in (ctx.triggered or []) if c.get("value"))
-        if not any_click:
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update
         rec_id = int(triggered["rec_id"])
         db = get_project().db

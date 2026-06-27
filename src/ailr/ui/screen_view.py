@@ -17,6 +17,7 @@ from ailr.ui._common import (
     get_project,
     read_criteria,
     read_screening_prompt,
+    triggered_click_id,
 )
 
 
@@ -553,13 +554,12 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _on_action(_decide_clicks, _reset_clicks, reviewer):
-        triggered = ctx.triggered_id
         rid = (reviewer or "").strip()
+        # Act on the button that actually carries the click — not ctx.triggered_id, which can point at
+        # a value-less freshly-rendered button and apply the decision to the wrong paper when a click
+        # coincides with the card list re-rendering.
+        triggered = triggered_click_id()
         if triggered is None or not rid:
-            return no_update, no_update
-
-        any_click = any(c for c in (ctx.triggered or []) if c.get("value"))
-        if not any_click:
             return no_update, no_update
 
         db = get_project().db
@@ -649,10 +649,8 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _on_mark_duplicate(_clicks):
-        triggered = ctx.triggered_id
-        if not isinstance(triggered, dict):
-            return no_update
-        if not any(c.get("value") for c in (ctx.triggered or [])):
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update
         get_project().db.mark_source_duplicate(int(triggered["source"]), True)
         return {"ts": time.time()}

@@ -129,7 +129,7 @@ def register_callbacks(app: Any) -> None:
         db = project.db
         restored = already = skipped = errors = 0
         for row in selected:
-            rec = row.get("full_record_json")
+            rec = db.get_duplicate_record(row["id"]) if row.get("id") is not None else None
             if not rec:
                 skipped += 1  # older row dropped before full-record storage existed
                 continue

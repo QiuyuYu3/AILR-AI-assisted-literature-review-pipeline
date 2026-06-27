@@ -298,6 +298,16 @@ class ScreeningMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete screening_decisions: {e}") from e
 
+    def count_reviewer_decisions(self, project_id: int, reviewer_id: str, stage: str = "abstract") -> int:
+        """How many of the project's sources this reviewer has decided at a stage (no full load)."""
+        row = self._conn.execute(
+            """SELECT COUNT(DISTINCT d.source_id) AS n
+               FROM screening_decisions d JOIN sources s ON s.id = d.source_id
+               WHERE s.project_id = ? AND d.reviewer_id = ? AND d.stage = ?""",
+            (project_id, reviewer_id, stage),
+        ).fetchone()
+        return row["n"]
+
     def get_decisions_by_reviewer(
         self,
         source_ids: list[int],

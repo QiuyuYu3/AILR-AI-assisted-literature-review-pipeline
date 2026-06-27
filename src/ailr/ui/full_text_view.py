@@ -5,6 +5,7 @@ Shares workflow (assisted/independent) with abstract screening.
 AI's verdict at this stage is derived from extraction.flag_check.
 """
 
+import json
 from typing import Any, Optional
 
 import dash_bootstrap_components as dbc
@@ -13,7 +14,7 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
 from ailr.ui import ai_runner
-from ailr.ui._common import get_project, reload_project
+from ailr.ui._common import get_project, reload_project, triggered_click_id
 from ailr.ui.screen_view import (
     _SORT_OPTIONS,
     _WITHIN_OPTIONS,
@@ -288,13 +289,13 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _on_action(_d, _r, reviewer):
-        triggered = ctx.triggered_id
         rid = (reviewer or "").strip()
-        if triggered is None or not rid:
+        # Use the button that actually carries the click value (not ctx.triggered_id, which can point
+        # at a value-less freshly-rendered button) so the decision always lands on the clicked paper.
+        clicked = next((c for c in (ctx.triggered or []) if c.get("value")), None)
+        if clicked is None or not rid:
             return no_update, no_update
-        any_click = any(c for c in (ctx.triggered or []) if c.get("value"))
-        if not any_click:
-            return no_update, no_update
+        triggered = json.loads(clicked["prop_id"].rsplit(".", 1)[0])
 
         import time as _t
         db = get_project().db
@@ -403,10 +404,8 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _on_ft_mark_duplicate(_clicks):
-        triggered = ctx.triggered_id
-        if not isinstance(triggered, dict):
-            return no_update
-        if not any(c.get("value") for c in (ctx.triggered or [])):
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update
         import time as _t
         get_project().db.mark_source_duplicate(int(triggered["source"]), True)
@@ -419,11 +418,9 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _on_move_to_screening(_clicks, reviewer):
-        triggered = ctx.triggered_id
-        if not isinstance(triggered, dict):
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update
-        if not any(c.get("value") for c in (ctx.triggered or [])):
-            return no_update  # ignore auto-fire on (re-)creation
         import time as _t
         sid = int(triggered["source"])
         db = get_project().db
@@ -444,12 +441,10 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _open_exclude(_open, _cancel):
-        triggered = ctx.triggered_id
-        if triggered == "ft-exclude-cancel":
+        if ctx.triggered_id == "ft-exclude-cancel":
             return False, no_update, no_update, no_update, no_update, no_update
-        if not isinstance(triggered, dict):
-            return (no_update,) * 6
-        if not any(t.get("value") for t in (ctx.triggered or [])):
+        triggered = triggered_click_id()
+        if triggered is None:
             return (no_update,) * 6
         sid = int(triggered["source"])
         proj = get_project()

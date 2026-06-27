@@ -7,7 +7,7 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, html, no_update
 
 from ailr.exceptions import DuplicateError
-from ailr.ui._common import get_project
+from ailr.ui._common import get_project, triggered_click_id
 
 TAG_COLOR_OPTIONS = [
     {"label": "Gray", "value": "secondary"},
@@ -127,11 +127,8 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _save(_clicks, names, name_ids, colors, color_ids):
-        triggered = ctx.triggered_id
-        if triggered is None or not isinstance(triggered, dict):
-            return no_update
-        any_click = any(c for c in (ctx.triggered or []) if c.get("value"))
-        if not any_click:
+        triggered = triggered_click_id()
+        if triggered is None:
             return no_update
         tag_id = int(triggered["id"])
         name = None
@@ -162,23 +159,17 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _delete_flow(_open_clicks, _cancel, _confirm, pending):
-        triggered = ctx.triggered_id
-        if triggered is None:
-            return no_update, no_update, no_update
-        any_click = any(c for c in (ctx.triggered or []) if c.get("value"))
-        if not any_click:
-            return no_update, no_update, no_update
-
-        if triggered == "tags-delete-cancel":
+        if ctx.triggered_id == "tags-delete-cancel":
             return False, "", None
 
-        if triggered == "tags-delete-confirm":
+        if ctx.triggered_id == "tags-delete-confirm":
             if pending and pending.get("id"):
                 db = get_project().db
                 db.delete_tag(int(pending["id"]))
             return False, "", None
 
-        if isinstance(triggered, dict) and triggered.get("type") == "tag-delete":
+        triggered = triggered_click_id()  # a tag-delete (open) button on a re-rendering list
+        if triggered is not None and triggered.get("type") == "tag-delete":
             tag_id = int(triggered["id"])
             db = get_project().db
             row = db._conn.execute("SELECT name FROM tags WHERE id = ?", (tag_id,)).fetchone()

@@ -41,16 +41,14 @@ def _build_content(reviewer: Optional[str]) -> Any:
     ft_human = db.screening_summary(pid, "human", stage="full_text")
     ft_sources_screened = db.count_sources_screened(pid, "human", stage="full_text")
 
-    all_sources = db.list_sources(pid)
-    all_ids = [s.id for s in all_sources if s.id is not None]
-    with_md = sum(1 for s in all_sources if s.markdown_path)
+    with_md = db.count_sources_with_markdown(pid)
     # Count extraction only among papers still confirmed for it (full-text includes with markdown),
     # so a paper moved back to full-text review stops counting as extracted until it's re-included.
     eligible_ext_ids = [s.id for s in db.list_full_text_final_includes_with_markdown(pid)]
     ai_extracted = len(db.sources_with_extraction(eligible_ext_ids, "ai"))
     human_extracted = len(db.sources_with_submission(eligible_ext_ids))
 
-    my_done = len(db.get_decisions_by_reviewer(all_ids, rid)) if rid else 0
+    my_done = db.count_reviewer_decisions(pid, rid) if rid else 0
 
     cards = [
         _stage_card(

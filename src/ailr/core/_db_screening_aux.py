@@ -165,12 +165,20 @@ class ScreeningAuxMixin:
             raise DatabaseError(f"Failed to insert duplicates: {e}") from e
 
     def list_duplicates(self, project_id: int) -> list[dict]:
+        # full_record_json is intentionally omitted: it is large and only needed at restore time,
+        # which fetches it per selected row via get_duplicate_record().
         rows = self._conn.execute(
-            "SELECT id, title, authors, doi, reason, matched_source_id, full_record_json, detected_at "
+            "SELECT id, title, authors, doi, reason, matched_source_id, detected_at "
             "FROM duplicates WHERE project_id = ? ORDER BY id DESC",
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_duplicate_record(self, duplicate_id: int) -> Optional[str]:
+        row = self._conn.execute(
+            "SELECT full_record_json FROM duplicates WHERE id = ?", (duplicate_id,)
+        ).fetchone()
+        return row["full_record_json"] if row else None
 
     def delete_duplicate(self, duplicate_id: int) -> int:
         try:

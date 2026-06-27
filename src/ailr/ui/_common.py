@@ -5,11 +5,31 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from dash import ctx
+
 from ailr.core import pdf_paths
 from ailr.core.project import Project
 from ailr.extraction import compose_prompt  # noqa: F401  (re-exported for UI callers)
 
 _project: Optional[Project] = None
+
+
+def triggered_click_id() -> Optional[dict]:
+    """The pattern-matching id of the input that actually carries a click this cycle.
+
+    Prefer this over ctx.triggered_id for actions on a re-rendering list of cards: ctx.triggered_id
+    is the *first* triggered input, which can be a value-less freshly-rendered button, so a click
+    that coincides with a re-render would act on the wrong row. This returns the id of the component
+    whose value is set (the real click), or None if no real click happened.
+    """
+    clicked = next(
+        (c for c in (ctx.triggered or [])
+         if c.get("value") and c["prop_id"].startswith("{")),  # pattern-matching ids only
+        None,
+    )
+    if not clicked:
+        return None
+    return json.loads(clicked["prop_id"].rsplit(".", 1)[0])
 
 
 def format_authors(raw: object, limit: int = 3) -> str:
