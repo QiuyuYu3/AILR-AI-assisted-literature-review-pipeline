@@ -52,6 +52,15 @@ def pdf_tools_panel() -> list[Any]:
             className="mb-2",
         ),
         html.P("Converted markdown shorter than this is flagged as likely scanned/failed (saved when you convert).", className="text-muted small mb-1"),
+        dbc.InputGroup(
+            [
+                dbc.InputGroupText("Parallel workers"),
+                dbc.Input(id="ft-workers", type="number", min=1, step=1, value=get_project().config.preprocess.workers, size="sm", style={"maxWidth": "120px"}),
+            ],
+            size="sm",
+            className="mb-2",
+        ),
+        html.P("How many PDFs to convert at once (pymupdf only; the marker backend always uses 1).", className="text-muted small mb-1"),
         dbc.Button("Convert PDFs to markdown", id="ft-preprocess-run", color="secondary", outline=True, size="sm"),
         html.Div(id="ft-preprocess-status", className="small mt-2"),
         dcc.Interval(id="ft-preprocess-poll", interval=1500, disabled=True),
@@ -200,15 +209,22 @@ def register_callbacks(app: Any) -> None:
         Output("ft-preprocess-status", "children"),
         Input("ft-preprocess-run", "n_clicks"),
         State("ft-low-text-threshold", "value"),
+        State("ft-workers", "value"),
         prevent_initial_call=True,
     )
-    def _preprocess_run(n, threshold):
+    def _preprocess_run(n, threshold, workers):
         if not n:
             return no_update, no_update
         project = get_project()
+        from ailr.core.config import save_preprocess_threshold, save_preprocess_workers
+        changed = False
         if threshold is not None and int(threshold) != project.config.preprocess.low_text_threshold:
-            from ailr.core.config import save_preprocess_threshold
             save_preprocess_threshold(project.root, int(threshold))
+            changed = True
+        if workers is not None and int(workers) != project.config.preprocess.workers:
+            save_preprocess_workers(project.root, max(1, int(workers)))
+            changed = True
+        if changed:
             project = reload_project()
         started = ai_runner.start_preprocess(project)
         msg = "Converting…" if started else "Already running…"

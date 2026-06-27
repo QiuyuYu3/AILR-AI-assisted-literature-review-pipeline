@@ -92,6 +92,7 @@ class PreprocessConfig(BaseModel):
     strip_references: bool = True
     keep_sections: list[str] = Field(default_factory=list)
     low_text_threshold: int = 2000  # converted markdown shorter than this ~ likely scanned/failed PDF
+    workers: int = 4  # parallel PDF->markdown conversions (pymupdf only; marker forced to 1)
 
 
 class StorageConfig(BaseModel):
@@ -275,7 +276,7 @@ def save_stage_workflow(project_dir: Path, stage: Literal["screening", "extracti
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
 
 
-def save_preprocess_threshold(project_dir: Path, low_text_threshold: int) -> None:
+def _save_preprocess_fields(project_dir: Path, fields: dict) -> None:
     config_path = project_dir / "lit_review.yaml"
     if not config_path.exists():
         raise ProjectNotFoundError(f"lit_review.yaml not found in {project_dir}")
@@ -289,7 +290,15 @@ def save_preprocess_threshold(project_dir: Path, low_text_threshold: int) -> Non
     block = data.setdefault("preprocess", {})
     if not isinstance(block, dict):
         raise ConfigError(f"Expected dict at preprocess: in {config_path}, got {type(block).__name__}")
-    block["low_text_threshold"] = low_text_threshold
+    block.update(fields)
 
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+
+
+def save_preprocess_threshold(project_dir: Path, low_text_threshold: int) -> None:
+    _save_preprocess_fields(project_dir, {"low_text_threshold": low_text_threshold})
+
+
+def save_preprocess_workers(project_dir: Path, workers: int) -> None:
+    _save_preprocess_fields(project_dir, {"workers": workers})

@@ -9,6 +9,7 @@
 - Duplicates: "Removed at import" records can now be restored as sources (select + Restore) — the full record is stored at import so a wrongly-dropped paper comes back complete.
 - Settings → Danger zone: clear all of a project's data, or delete the project entirely (data + row, files on disk kept), each guarded by a type-the-name confirmation.
 - Screening filter: "All fields" search now also matches DOI, PMID, year, and source database.
+- PDF→markdown conversion now runs PDFs in parallel (configurable "Parallel workers" on the full-text Workflow tab, default 4; the marker backend always uses 1).
 
 ### Changed
 - PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.

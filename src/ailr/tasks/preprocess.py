@@ -1,6 +1,8 @@
 """PreprocessTask: convert PDFs in data/pdfs/ into markdown in data/markdown/, update sources rows."""
 
+import os
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -107,12 +109,16 @@ class PreprocessTask:
         strip_refs = self.project.config.preprocess.strip_references
         low_text_threshold = self.project.config.preprocess.low_text_threshold
         items = sorted(pdf_by_source.items())
+        if only_ids is not None:
+            items = [(sid, pdf) for sid, pdf in items if sid in only_ids]
+        total = len(items)
 
-        for idx, (sid, pdf_file) in enumerate(items, 1):
+        # Already-converted ones are handled serially (cheap DB-only updates); the rest are converted
+        # in a thread pool, but file/DB writes + progress stay on this thread.
+        done = 0
+        to_convert: list[tuple[int, Path]] = []
+        for sid, pdf_file in items:
             source = sources_by_id[sid]
-            if only_ids is not None and sid not in only_ids:
-                continue
-
             md_path = md_dir / f"{sid}.md"
             if md_path.exists() and not force:
                 summary.skipped_already_done += 1
@@ -120,31 +126,43 @@ class PreprocessTask:
                     self.project.db.update_markdown_path(sid, md_path)
                 if source.pdf_path is None:
                     self.project.db.update_pdf_path(sid, pdf_file)
+                done += 1
                 if on_progress:
-                    on_progress(idx, len(items), source, None)
+                    on_progress(done, total, source, None)
                 continue
+            to_convert.append((sid, pdf_file))
 
-            try:
-                md_text = self.converter.convert(pdf_file)
-                if strip_refs:
-                    md_text = strip_references(md_text)
-                md_path.write_text(md_text, encoding="utf-8")
-                self.project.db.update_markdown_path(sid, md_path)
-                self.project.db.update_pdf_path(sid, pdf_file)
-                summary.converted += 1
-                if len(md_text.strip()) < low_text_threshold:
-                    summary.low_quality.append(
-                        {"source_id": sid, "title": source.title, "chars": len(md_text.strip())}
+        def _convert_one(pdf_file: Path) -> str:
+            md_text = self.converter.convert(pdf_file)
+            return strip_references(md_text) if strip_refs else md_text
+
+        with ThreadPoolExecutor(max_workers=self._worker_count()) as pool:
+            futures = {pool.submit(_convert_one, pdf): (sid, pdf) for sid, pdf in to_convert}
+            for fut in as_completed(futures):
+                sid, pdf_file = futures[fut]
+                source = sources_by_id[sid]
+                try:
+                    md_text = fut.result()
+                    md_path = md_dir / f"{sid}.md"
+                    md_path.write_text(md_text, encoding="utf-8")
+                    self.project.db.update_markdown_path(sid, md_path)
+                    self.project.db.update_pdf_path(sid, pdf_file)
+                    summary.converted += 1
+                    if len(md_text.strip()) < low_text_threshold:
+                        summary.low_quality.append(
+                            {"source_id": sid, "title": source.title, "chars": len(md_text.strip())}
+                        )
+                    done += 1
+                    if on_progress:
+                        on_progress(done, total, source, None)
+                except Exception as e:
+                    summary.failed += 1
+                    summary.failures.append(
+                        {"pdf": pdf_file.name, "source_id": sid, "error": str(e)}
                     )
-                if on_progress:
-                    on_progress(idx, len(items), source, None)
-            except Exception as e:
-                summary.failed += 1
-                summary.failures.append(
-                    {"pdf": pdf_file.name, "source_id": sid, "error": str(e)}
-                )
-                if on_progress:
-                    on_progress(idx, len(items), source, e)
+                    done += 1
+                    if on_progress:
+                        on_progress(done, total, source, e)
 
         # Report sources missing PDFs (only those that should have one — included or all)
         for source in sources_by_id.values():
@@ -155,6 +173,12 @@ class PreprocessTask:
                 )
 
         return summary
+
+    def _worker_count(self) -> int:
+        if self.converter.backend_name == "marker":  # GPU subprocess: never run in parallel
+            return 1
+        configured = self.project.config.preprocess.workers
+        return max(1, min(configured, os.cpu_count() or 1))
 
     def _resolve_pdfs(
         self,
