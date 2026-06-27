@@ -218,6 +218,49 @@ class ScreeningMixin:
         rows = self._conn.execute(sql, [stage, *source_ids]).fetchall()
         return {r["source_id"]: r["decision"] for r in rows}
 
+    def get_latest_ai_decision_rows(self, source_ids: list[int], stage: str = "abstract") -> dict[int, dict]:
+        """Full latest-AI-decision dict per source (batch) for conflict cards (decision + reasoning +
+        confidence + matched_criteria + evidence_quotes), matching get_latest_ai_decision's shape."""
+        if not source_ids:
+            return {}
+        placeholders = ",".join("?" for _ in source_ids)
+        sql = f"""
+            SELECT source_id, decision, reasoning, confidence, reviewer_id, evidence_quotes, matched_criteria, timestamp
+            FROM screening_decisions
+            WHERE id IN (
+                SELECT MAX(id) FROM screening_decisions
+                WHERE reviewer_type = 'ai' AND stage = ? AND source_id IN ({placeholders})
+                GROUP BY source_id
+            )
+        """
+        out: dict[int, dict] = {}
+        for r in self._conn.execute(sql, [stage, *source_ids]).fetchall():
+            d = dict(r)
+            sid = d.pop("source_id")
+            if d.get("evidence_quotes"):
+                d["evidence_quotes"] = json.loads(d["evidence_quotes"])
+            if d.get("matched_criteria"):
+                d["matched_criteria"] = json.loads(d["matched_criteria"])
+            out[sid] = d
+        return out
+
+    def get_human_decisions_for_sources(self, source_ids: list[int], stage: str = "abstract") -> dict[int, list[dict]]:
+        """All human decisions grouped by source (batch), matching get_human_decisions' row shape."""
+        if not source_ids:
+            return {}
+        placeholders = ",".join("?" for _ in source_ids)
+        sql = f"""
+            SELECT source_id, id, decision, reviewer_id, reasoning, confidence, timestamp
+            FROM screening_decisions
+            WHERE reviewer_type = 'human' AND stage = ? AND source_id IN ({placeholders})
+            ORDER BY id
+        """
+        out: dict[int, list[dict]] = {}
+        for r in self._conn.execute(sql, [stage, *source_ids]).fetchall():
+            d = dict(r)
+            out.setdefault(d.pop("source_id"), []).append(d)
+        return out
+
     def list_sources_overview(self, project_id: int) -> list[dict]:
         """Joined view used by the Sources overview UI: source row + latest AI/human decision + extraction count."""
         sql = """
@@ -356,6 +399,16 @@ class ScreeningMixin:
         for r in rows:
             out[r["source_id"]] = r["n"]
         return out
+
+    def count_other_human_reviewers(self, source_id: int, stage: str, reviewer_id: str) -> int:
+        """Distinct humans OTHER than reviewer_id who have decided this source at this stage.
+        Used to cap a paper at the team size (1 human in assisted, 2 in independent)."""
+        row = self._conn.execute(
+            "SELECT COUNT(DISTINCT reviewer_id) AS n FROM screening_decisions "
+            "WHERE source_id = ? AND stage = ? AND reviewer_type = 'human' AND reviewer_id != ?",
+            (source_id, stage, reviewer_id),
+        ).fetchone()
+        return row["n"]
 
     def has_human_decision(self, source_id: int, reviewer_id: str, stage: str = "abstract") -> bool:
         row = self._conn.execute(

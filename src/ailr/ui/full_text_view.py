@@ -303,10 +303,14 @@ def register_callbacks(app: Any) -> None:
         if isinstance(triggered, dict) and triggered.get("type") == "ft-decide":
             source_id = int(triggered["source"])
             decision = triggered["decision"]
-            if get_project().config.screening.workflow == "assisted":
-                other = db.other_human_decided(source_id, "full_text", rid)
-                if other:
-                    return {"ts": _t.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": _t.time()}
+            # Idempotent vote: ignore a rapid double-click that lands before the card re-renders.
+            if db.has_human_decision(source_id, rid, "full_text"):
+                return {"ts": _t.time()}, no_update
+            # Team lock: 1 human (+ AI) in assisted, 2 humans in independent — block the extra reviewer.
+            team_humans = 1 if get_project().config.screening.workflow == "assisted" else 2
+            if db.count_other_human_reviewers(source_id, "full_text", rid) >= team_humans:
+                other = db.other_human_decided(source_id, "full_text", rid) or "another reviewer"
+                return {"ts": _t.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": _t.time()}
             db.insert_screening_decision(
                 ScreeningDecision(
                     decision=decision,

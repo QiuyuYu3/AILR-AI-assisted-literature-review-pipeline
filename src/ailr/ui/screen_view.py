@@ -567,12 +567,16 @@ def register_callbacks(app: Any) -> None:
         if isinstance(triggered, dict) and triggered.get("type") == "screen-decide":
             source_id = int(triggered["source"])
             decision = triggered["decision"]
-            # assisted = one human per paper: if someone else already screened it, don't add a
-            # second vote (the staleness race where two reviewers grab the same paper).
-            if get_project().config.screening.workflow == "assisted":
-                other = db.other_human_decided(source_id, "abstract", rid)
-                if other:
-                    return {"ts": time.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": time.time()}
+            # Idempotent vote: if I already decided this paper (e.g. a rapid double-click before the
+            # card re-renders), don't add a second row. Re-voting requires Reset first.
+            if db.has_human_decision(source_id, rid, "abstract"):
+                return {"ts": time.time()}, no_update
+            # Team lock: cap a paper at its team size — 1 human (+ AI) in assisted, 2 humans in
+            # independent. Block whoever would be the extra reviewer, no matter who.
+            team_humans = 1 if get_project().config.screening.workflow == "assisted" else 2
+            if db.count_other_human_reviewers(source_id, "abstract", rid) >= team_humans:
+                other = db.other_human_decided(source_id, "abstract", rid) or "another reviewer"
+                return {"ts": time.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": time.time()}
             db.insert_screening_decision(
                 ScreeningDecision(
                     decision=decision,

@@ -355,6 +355,27 @@ class ExtractionMixin:
             out.append(d)
         return out
 
+    def get_flag_checks(self, source_ids: list[int], extractor_type: str = "ai") -> dict[int, list[dict]]:
+        """Latest flag_check per source (batch) for conflict cards."""
+        if not source_ids:
+            return {}
+        placeholders = ",".join("?" for _ in source_ids)
+        sql = f"""
+            SELECT source_id, value FROM extractions
+            WHERE id IN (
+                SELECT MAX(id) FROM extractions
+                WHERE extractor_type = ? AND field_name = '_flag_check' AND source_id IN ({placeholders})
+                GROUP BY source_id
+            )
+        """
+        out: dict[int, list[dict]] = {}
+        for r in self._conn.execute(sql, [extractor_type, *source_ids]).fetchall():
+            try:
+                out[r["source_id"]] = json.loads(r["value"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return out
+
     def get_flag_check(self, source_id: int, extractor_type: str = "ai") -> Optional[list[dict]]:
         row = self._conn.execute(
             "SELECT value FROM extractions WHERE source_id = ? AND extractor_type = ? AND field_name = '_flag_check' ORDER BY id DESC LIMIT 1",

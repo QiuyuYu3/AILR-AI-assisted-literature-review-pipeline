@@ -93,7 +93,16 @@ def initial_payload(cfg: ConflictConfig) -> tuple[Any, str, Any]:
     else:
         conflicts = db.list_screening_conflicts(project.project_id, stage=cfg.stage)
     if conflicts:
-        cards = [_conflict_card(cfg, s, db) for s in conflicts]
+        # Fetch all per-card data in a few batch queries instead of 2-3 queries per card (the N+1
+        # that made resolving a conflict slow on a shared DB).
+        sids = [s.id for s in conflicts if s.id is not None]
+        human = db.get_human_decisions_for_sources(sids, stage=cfg.stage)
+        ai_rows = db.get_latest_ai_decision_rows(sids, stage=cfg.stage)
+        flags = db.get_flag_checks(sids) if cfg.show_flag_check else {}
+        cards = [
+            _conflict_card(cfg, s, human.get(s.id, []), ai_rows.get(s.id), flags.get(s.id))
+            for s in conflicts
+        ]
         count_text = f"{len(conflicts)} unresolved conflict(s)"
     else:
         cards = [dbc.Alert(cfg.no_conflicts_msg, color="success")]
@@ -228,15 +237,12 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         return initial_payload(cfg)
 
 
-def _conflict_card(cfg: ConflictConfig, src: Source, db: Any) -> Any:
+def _conflict_card(cfg: ConflictConfig, src: Source, decisions: list[dict], ai: Any, flag_check: Any) -> Any:
     sid = src.id
-    decisions = db.get_human_decisions(sid, stage=cfg.stage)
 
     vote_rows: list[Any] = []
-    ai = db.get_latest_ai_decision(sid, stage=cfg.stage)
     if ai is not None:
-        flag_check = db.get_flag_check(sid, "ai") if cfg.show_flag_check else None
-        vote_rows.append(ai_detail_block(ai, flag_check=flag_check))
+        vote_rows.append(ai_detail_block(ai, flag_check=flag_check if cfg.show_flag_check else None))
     for d in decisions:
         color = _DECISION_COLORS.get(d["decision"], "secondary")
         reasoning = (d.get("reasoning") or "").strip()
