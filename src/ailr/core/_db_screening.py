@@ -360,6 +360,7 @@ class ScreeningMixin:
         within: str = "title_and_abstract",
         tag_id: Optional[int] = None,
         ft_avail: Optional[str] = None,  # 'has' / 'needs' / None
+        id_whitelist: Optional[set[int]] = None,  # restrict to these source ids (used by the low-text filter)
         team_size: int = 2,
         sort_by: str = "id",
         page: int = 0,
@@ -430,6 +431,14 @@ class ScreeningMixin:
             where.append("s.id IN (SELECT source_id FROM source_tags WHERE tag_id = ?)")
             params.append(tag_id)
 
+        if id_whitelist is not None:
+            if id_whitelist:
+                ph = ",".join("?" for _ in id_whitelist)
+                where.append(f"s.id IN ({ph})")
+                params += list(id_whitelist)
+            else:
+                where.append("1 = 0")  # empty whitelist -> no matches
+
         where_sql = " AND ".join(where)
         total = self._conn.execute(
             f"SELECT COUNT(*) AS n FROM sources s WHERE {where_sql}", params
@@ -460,6 +469,15 @@ class ScreeningMixin:
             "AND EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id AND d.stage = 'abstract' AND d.decision = 'include')",
             (project_id,),
         ).fetchone()["n"]
+
+    def full_text_candidate_ids(self, project_id: int) -> list[int]:
+        """Ids of all full-text candidates (abstract-includes); used to compute the low-text set."""
+        rows = self._conn.execute(
+            "SELECT s.id FROM sources s WHERE s.project_id = ? AND COALESCE(s.is_duplicate,0) = 0 "
+            "AND EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id AND d.stage = 'abstract' AND d.decision = 'include')",
+            (project_id,),
+        ).fetchall()
+        return [r["id"] for r in rows]
 
     def final_include_md_ids(self, source_ids: list[int]) -> set[int]:
         """Subset of the given sources that are 'final full-text include with markdown' (extraction-

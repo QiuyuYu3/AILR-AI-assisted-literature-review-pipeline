@@ -5,6 +5,7 @@ and records the absolute PDF path on that source. `preprocess` reads it directly
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,7 @@ from ailr.ingest.dedup import normalize_title
 from ailr.ingest.ris import pdf_attachment_from_record
 
 _TITLE_THRESHOLD = 90
+_TITLE_TIE_DELTA = 3  # titles within this score of the best are treated as ties, broken by year
 
 
 @dataclass
@@ -149,9 +151,28 @@ def _match_source(
     if not title:
         return None
     new_norm = normalize_title(title)
-    best_score, best = 0, None
-    for ex_norm, ex_src in existing_norms:
-        score = fuzz.token_set_ratio(new_norm, ex_norm)
-        if score > best_score:
-            best_score, best = score, ex_src
-    return best if best_score >= _TITLE_THRESHOLD else None
+    scored = [(fuzz.token_set_ratio(new_norm, ex_norm), ex_src) for ex_norm, ex_src in existing_norms]
+    if not scored:
+        return None
+    best_score = max(s for s, _ in scored)
+    if best_score < _TITLE_THRESHOLD:
+        return None
+    # Break near-ties (e.g. "LAEO-Net" vs "LAEO-Net++", both ~100) by matching the record's year.
+    top = [src for s, src in scored if s >= best_score - _TITLE_TIE_DELTA]
+    if len(top) > 1:
+        ry = _record_year(rec)
+        if ry is not None:
+            year_match = [src for src in top if src.year == ry]
+            if len(year_match) == 1:
+                return year_match[0]
+    return max(scored, key=lambda t: t[0])[1]
+
+
+def _record_year(rec: dict) -> Optional[int]:
+    for key in ("year", "publication_year", "date"):
+        v = rec.get(key)
+        if v:
+            m = re.search(r"\d{4}", str(v))
+            if m:
+                return int(m.group())
+    return None

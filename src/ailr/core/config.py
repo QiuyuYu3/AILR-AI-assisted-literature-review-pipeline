@@ -302,3 +302,7 @@ def save_preprocess_threshold(project_dir: Path, low_text_threshold: int) -> Non
 
 def save_preprocess_workers(project_dir: Path, workers: int) -> None:
     _save_preprocess_fields(project_dir, {"workers": workers})
+
+
+def save_preprocess_backend(project_dir: Path, pdf_backend: str) -> None:
+    _save_preprocess_fields(project_dir, {"pdf_backend": pdf_backend})

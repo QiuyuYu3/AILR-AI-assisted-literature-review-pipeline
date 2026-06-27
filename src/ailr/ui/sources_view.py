@@ -117,6 +117,39 @@ def _extract_modal() -> Any:
     )
 
 
+def _edit_modal() -> Any:
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle(id="sources-edit-title")),
+            dbc.ModalBody(
+                [
+                    dcc.Store(id="sources-edit-id"),
+                    dbc.Label("DOI", className="small fw-bold"),
+                    dbc.Input(id="sources-edit-doi", placeholder="e.g. 10.1109/TPAMI.2020.3048482", className="mb-2"),
+                    dbc.Label("Title", className="small fw-bold"),
+                    dbc.Textarea(id="sources-edit-title-input", style={"height": "70px"}, className="mb-2"),
+                    dbc.Row(
+                        [
+                            dbc.Col([dbc.Label("Year", className="small fw-bold"), dbc.Input(id="sources-edit-year", type="number")], width=4),
+                            dbc.Col([dbc.Label("Journal", className="small fw-bold"), dbc.Input(id="sources-edit-journal")], width=8),
+                        ],
+                        className="g-2",
+                    ),
+                    html.Div(id="sources-edit-modal-feedback", className="mt-2"),
+                ]
+            ),
+            dbc.ModalFooter(
+                [
+                    dbc.Button("Cancel", id="sources-edit-cancel", color="secondary", outline=True),
+                    dbc.Button("Save", id="sources-edit-save", color="primary"),
+                ]
+            ),
+        ],
+        id="sources-edit-modal",
+        is_open=False,
+    )
+
+
 def _extraction_detail(source_id: int) -> Any:
     db = get_project().db
     src = db.get_source(source_id)
@@ -153,7 +186,7 @@ def _extraction_detail(source_id: int) -> Any:
 
 
 def layout() -> Any:
-    return html.Div([_extract_modal(), dbc.Row(
+    return html.Div([_extract_modal(), _edit_modal(), dbc.Row(
         [
             dbc.Col(
                 [
@@ -268,6 +301,7 @@ def layout() -> Any:
             ),
             dbc.Col(
                 [
+                    html.Div(id="sources-doi-warning"),
                     dbc.Row(
                         [
                             dbc.Col(
@@ -295,8 +329,17 @@ def layout() -> Any:
                         color="secondary",
                         outline=True,
                         size="sm",
+                        className="mb-2 me-2",
+                    ),
+                    dbc.Button(
+                        "Edit metadata of selected row",
+                        id="sources-edit-open",
+                        color="secondary",
+                        outline=True,
+                        size="sm",
                         className="mb-2",
                     ),
+                    html.Div(id="sources-edit-feedback", className="mb-2"),
                     dag.AgGrid(
                         id="sources-grid",
                         columnDefs=_build_column_defs(_PRESETS["all"]),
@@ -351,16 +394,95 @@ def register_callbacks(app: Any) -> None:
         return True, f"AI extraction — #{sid}", _extraction_detail(int(sid))
 
     @app.callback(
+        Output("sources-edit-modal", "is_open"),
+        Output("sources-edit-title", "children"),
+        Output("sources-edit-id", "data"),
+        Output("sources-edit-doi", "value"),
+        Output("sources-edit-title-input", "value"),
+        Output("sources-edit-year", "value"),
+        Output("sources-edit-journal", "value"),
+        Output("sources-edit-modal-feedback", "children"),
+        Output("sources-edit-feedback", "children", allow_duplicate=True),
+        Input("sources-edit-open", "n_clicks"),
+        State("sources-grid", "selectedRows"),
+        prevent_initial_call=True,
+    )
+    def _open_edit(_n, selected):
+        if not selected:
+            return (no_update,) * 8 + (dbc.Alert("Select a row first (checkbox in the ID column).", color="warning", className="py-1 mb-0"),)
+        sid = selected[0].get("id")
+        if sid is None:
+            return (no_update,) * 9
+        src = get_project().db.get_source(int(sid))
+        if src is None:
+            return (no_update,) * 8 + (dbc.Alert(f"Source #{sid} not found.", color="danger", className="py-1 mb-0"),)
+        return (True, f"Edit metadata — #{sid}", {"sid": int(sid)},
+                src.doi or "", src.title or "", src.year, src.journal or "", "", "")
+
+    @app.callback(
+        Output("sources-edit-modal", "is_open", allow_duplicate=True),
+        Output("sources-edit-feedback", "children", allow_duplicate=True),
+        Output("sources-edit-modal-feedback", "children", allow_duplicate=True),
+        Input("sources-edit-save", "n_clicks"),
+        State("sources-edit-id", "data"),
+        State("sources-edit-doi", "value"),
+        State("sources-edit-title-input", "value"),
+        State("sources-edit-year", "value"),
+        State("sources-edit-journal", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_edit(_n, iddata, doi, title, year, journal):
+        if not iddata or "sid" not in iddata:
+            return no_update, no_update, no_update
+        if not title or not str(title).strip():
+            return no_update, no_update, dbc.Alert("Title cannot be empty.", color="danger", className="py-1 mb-0")
+        yr = None
+        if year not in (None, ""):
+            try:
+                yr = int(year)
+            except (TypeError, ValueError):
+                return no_update, no_update, dbc.Alert("Year must be a number.", color="danger", className="py-1 mb-0")
+        sid = int(iddata["sid"])
+        get_project().db.update_source(sid, {"doi": doi, "title": title, "year": yr, "journal": journal})
+        return False, dbc.Alert(f"#{sid} updated.", color="success", className="py-1 mb-0"), ""
+
+    @app.callback(
+        Output("sources-edit-modal", "is_open", allow_duplicate=True),
+        Input("sources-edit-cancel", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _cancel_edit(_n):
+        return False
+
+    @app.callback(
+        Output("sources-doi-warning", "children"),
+        Input("sources-edit-feedback", "children"),
+        Input("sources-refresh", "n_clicks"),
+    )
+    def _doi_warning(_e, _r):
+        project = get_project()
+        n = project.db.count_sources_missing_doi(project.project_id)
+        if n:
+            return dbc.Alert(
+                f"{n} source(s) have no DOI. DOI is the stable key for de-duplication, PDF linking and exports — "
+                "select a row and click “Edit metadata” to add one.",
+                color="warning",
+                className="py-2 mb-2",
+            )
+        return ""
+
+    @app.callback(
         Output("sources-grid", "rowData"),
         Input("sources-refresh", "n_clicks"),
         Input("bulk-feedback", "children"),
         Input("sources-tag-feedback", "children"),
+        Input("sources-edit-feedback", "children"),
         Input("tags-refresh", "data"),
         Input("sources-filter-stage", "value"),
         Input("sources-filter-decision", "value"),
         prevent_initial_call=True,
     )
-    def _populate(_refresh, _feedback, _tag_feedback, _tag_refresh, stage_field, decision):
+    def _populate(_refresh, _feedback, _tag_feedback, _edit_feedback, _tag_refresh, stage_field, decision):
         rows = _initial_overview_rows()
         if decision and stage_field:
             if decision == "__none__":

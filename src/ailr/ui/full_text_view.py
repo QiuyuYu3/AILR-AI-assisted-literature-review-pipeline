@@ -6,6 +6,7 @@ AI's verdict at this stage is derived from extraction.flag_check.
 """
 
 import json
+import shutil
 from typing import Any, Optional
 
 import dash_bootstrap_components as dbc
@@ -61,7 +62,25 @@ def pdf_tools_panel() -> list[Any]:
             className="mb-2",
         ),
         html.P("How many PDFs to convert at once (pymupdf only; the marker backend always uses 1).", className="text-muted small mb-1"),
+        dbc.InputGroup(
+            [
+                dbc.InputGroupText("Backend"),
+                dbc.Select(
+                    id="ft-backend",
+                    options=[
+                        {"label": "pymupdf — fast, text PDFs", "value": "pymupdf"},
+                        {"label": "marker — OCR, scanned PDFs", "value": "marker"},
+                    ],
+                    value=get_project().config.preprocess.pdf_backend,
+                ),
+            ],
+            size="sm",
+            className="mb-2",
+        ),
+        html.Div(id="ft-backend-warning"),
+        dbc.Checkbox(id="ft-force-convert", label="Force re-convert all (overwrite existing markdown)", value=False, className="mb-2"),
         dbc.Button("Convert PDFs to markdown", id="ft-preprocess-run", color="secondary", outline=True, size="sm"),
+        dbc.Button("Re-convert low-text / failed", id="ft-reconvert-lowtext", color="secondary", outline=True, size="sm", className="ms-2"),
         html.Div(id="ft-preprocess-status", className="small mt-2"),
         dcc.Interval(id="ft-preprocess-poll", interval=1500, disabled=True),
         # ── Step 3 (optional) — import converted .md instead ─────────────────
@@ -126,6 +145,7 @@ def layout() -> Any:
                         options=[
                             {"label": "Has full-text", "value": "has"},
                             {"label": "Needs full-text", "value": "needs"},
+                            {"label": "Low-text / failed", "value": "low"},
                         ],
                         value=["has"],
                         className="mb-2",
@@ -210,13 +230,15 @@ def register_callbacks(app: Any) -> None:
         Input("ft-preprocess-run", "n_clicks"),
         State("ft-low-text-threshold", "value"),
         State("ft-workers", "value"),
+        State("ft-backend", "value"),
+        State("ft-force-convert", "value"),
         prevent_initial_call=True,
     )
-    def _preprocess_run(n, threshold, workers):
+    def _preprocess_run(n, threshold, workers, backend, force):
         if not n:
             return no_update, no_update
         project = get_project()
-        from ailr.core.config import save_preprocess_threshold, save_preprocess_workers
+        from ailr.core.config import save_preprocess_backend, save_preprocess_threshold, save_preprocess_workers
         changed = False
         if threshold is not None and int(threshold) != project.config.preprocess.low_text_threshold:
             save_preprocess_threshold(project.root, int(threshold))
@@ -224,10 +246,56 @@ def register_callbacks(app: Any) -> None:
         if workers is not None and int(workers) != project.config.preprocess.workers:
             save_preprocess_workers(project.root, max(1, int(workers)))
             changed = True
+        if backend and backend != project.config.preprocess.pdf_backend:
+            save_preprocess_backend(project.root, backend)
+            changed = True
         if changed:
             project = reload_project()
-        started = ai_runner.start_preprocess(project)
-        msg = "Converting…" if started else "Already running…"
+        started = ai_runner.start_preprocess(project, force=bool(force))
+        msg = ("Re-converting all…" if force else "Converting…") if started else "Already running…"
+        return False, dbc.Alert(msg, color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output("ft-backend-warning", "children"),
+        Input("ft-backend", "value"),
+    )
+    def _on_backend_change(backend):
+        # Persist immediately so the per-card "Re-convert" (on the review tab) honours the chosen backend,
+        # and warn up-front when marker is selected but its CLI isn't installed.
+        if backend:
+            project = get_project()
+            if backend != project.config.preprocess.pdf_backend:
+                from ailr.core.config import save_preprocess_backend
+                save_preprocess_backend(project.root, backend)
+                reload_project()
+        if backend == "marker" and shutil.which("marker_single") is None:
+            return dbc.Alert(
+                "marker is selected but 'marker_single' is not on PATH — install marker (e.g. pip install marker-pdf) "
+                "or conversions will fail. pymupdf works without any install.",
+                color="warning",
+                className="py-1 mb-2 mt-1",
+            )
+        return ""
+
+    @app.callback(
+        Output("ft-preprocess-poll", "disabled", allow_duplicate=True),
+        Output("ft-preprocess-status", "children", allow_duplicate=True),
+        Input("ft-reconvert-lowtext", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _reconvert_lowtext(n):
+        if not n:
+            return no_update, no_update
+        project = get_project()
+        threshold = project.config.preprocess.low_text_threshold
+        low_ids = {
+            cid for cid in project.db.full_text_candidate_ids(project.project_id)
+            if _low_text_md(project.root, cid, threshold)
+        }
+        if not low_ids:
+            return True, dbc.Alert("No low-text / failed markdown to re-convert.", color="secondary", className="py-1 mb-0")
+        started = ai_runner.start_preprocess(project, force=True, only_ids=low_ids)
+        msg = f"Re-converting {len(low_ids)} low-text / failed PDF(s)…" if started else "Already running…"
         return False, dbc.Alert(msg, color="info", className="py-1 mb-0")
 
     @app.callback(
@@ -432,6 +500,36 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("ft-refresh", "data", allow_duplicate=True),
+        Output("ft-action-banner", "children", allow_duplicate=True),
+        Input({"type": "ft-reconvert", "source": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _on_reconvert(_clicks):
+        triggered = triggered_click_id()
+        if triggered is None:
+            return no_update, no_update
+        sid = int(triggered["source"])
+        import time as _t
+        from ailr.tasks.preprocess import PreprocessTask
+        try:
+            summary = PreprocessTask(get_project()).run(force=True, only_ids={sid})
+        except Exception as e:
+            return no_update, dbc.Alert(f"Re-convert #{sid} failed: {e}", color="danger", className="py-2 mb-2")
+        if summary.converted:
+            still_low = any(q["source_id"] == sid for q in summary.low_quality)
+            msg = f"#{sid} re-converted." + (" Still low-text — the PDF is likely scanned; install and select the marker backend (OCR)." if still_low else "")
+            color = "warning" if still_low else "success"
+        elif summary.failed:
+            err = summary.failures[0]["error"] if summary.failures else "unknown error"
+            msg = f"#{sid} re-convert failed: {err}"
+            color = "danger"
+        else:
+            msg = f"#{sid} not re-converted — no PDF found for this source."
+            color = "secondary"
+        return {"ts": _t.time()}, dbc.Alert(msg, color=color, className="py-2 mb-2")
+
+    @app.callback(
+        Output("ft-refresh", "data", allow_duplicate=True),
         Input({"type": "ft-move-screen", "source": ALL}, "n_clicks"),
         State("shared-reviewer", "value"),
         prevent_initial_call=True,
@@ -625,7 +723,17 @@ def register_callbacks(app: Any) -> None:
         except (TypeError, ValueError):
             tag_id = None
         ft_set = set(ftavail or [])
-        ft_avail = "has" if ("has" in ft_set and "needs" not in ft_set) else ("needs" if ("needs" in ft_set and "has" not in ft_set) else None)
+        low_mode = "low" in ft_set
+        ft_avail = None if low_mode else ("has" if ("has" in ft_set and "needs" not in ft_set) else ("needs" if ("needs" in ft_set and "has" not in ft_set) else None))
+        # Low-text/failed is a file-content state, not a DB column: compute the id set on disk and
+        # hand it to the SQL query as a whitelist (keeps filtering/paging in SQL).
+        id_whitelist = None
+        if low_mode:
+            threshold = project.config.preprocess.low_text_threshold
+            id_whitelist = {
+                cid for cid in db.full_text_candidate_ids(pid)
+                if _low_text_md(project.root, cid, threshold)
+            }
         req_page = (page_state or {}).get("page", 0)
 
         total_candidates = db.count_full_text_candidates(pid)
@@ -648,7 +756,7 @@ def register_callbacks(app: Any) -> None:
         # Filter + sort + paginate in SQL: only this page's rows come back, not all candidates.
         page_sources, total, page = db.list_full_text_page(
             pid, rid, status=status, keyword=search or "", within=within or "title_and_abstract",
-            tag_id=tag_id, ft_avail=ft_avail, team_size=team_size, sort_by=sort_by or "id",
+            tag_id=tag_id, ft_avail=ft_avail, id_whitelist=id_whitelist, team_size=team_size, sort_by=sort_by or "id",
             page=req_page, page_size=psize,
         )
 
@@ -811,7 +919,8 @@ def _ft_card(
             dbc.Button("Tags", id={"type": "ft-tag-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
             dbc.Button(f"Note ({note_count})" if note_count else "Note", id={"type": "ft-note-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
             dbc.Button("Duplicate", id={"type": "ft-duplicate", "source": sid}, size="sm", color="link", className="p-0 me-3 text-danger"),
-            dbc.Button("↺ Move to screening", id={"type": "ft-move-screen", "source": sid}, size="sm", color="link", className="p-0 text-secondary"),
+            dbc.Button("↺ Move to screening", id={"type": "ft-move-screen", "source": sid}, size="sm", color="link", className="p-0 me-3 text-secondary"),
+            dbc.Button("⟳ Re-convert PDF", id={"type": "ft-reconvert", "source": sid}, size="sm", color="link", className="p-0 text-secondary"),
         ],
         className="mt-1",
     )

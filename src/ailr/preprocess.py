@@ -88,16 +88,19 @@ _REFERENCES_PATTERNS = [
     r"(?im)^#{1,6}\s*(references|bibliography|literature\s+cited|works\s+cited)\s*$",
     r"(?im)^(references|bibliography|literature\s+cited|works\s+cited)\s*$",
 ]
+_REFERENCES_MIN_FRACTION = 0.5  # a heading before this point is body text (e.g. JSTOR cover-page boilerplate), not the bibliography
 
 
 def strip_references(md_text: str) -> str:
-    """Cut everything from the first References/Bibliography heading onward."""
-    earliest = len(md_text)
+    """Cut from the bibliography heading onward; only a heading in the latter part of the
+    document counts, so an early 'References' mention (e.g. a JSTOR cover page) is not mistaken
+    for the real reference list and the body kept intact."""
+    cutoff = len(md_text) * _REFERENCES_MIN_FRACTION
+    earliest = None
     for pattern in _REFERENCES_PATTERNS:
         for match in re.finditer(pattern, md_text):
-            if match.start() < earliest:
+            if match.start() >= cutoff and (earliest is None or match.start() < earliest):
                 earliest = match.start()
-            break
-    if earliest < len(md_text):
+    if earliest is not None:
         return md_text[:earliest].rstrip()
     return md_text

@@ -89,15 +89,15 @@ def start_extraction(project: Any, mock: bool, all_sources: bool = False, force:
     return _start("extraction", _run_extraction, project, mock, all_sources, force)
 
 
-def start_preprocess(project: Any) -> bool:
-    return _start("preprocess", _run_preprocess, project, False)
+def start_preprocess(project: Any, force: bool = False, only_ids=None) -> bool:
+    return _start("preprocess", _run_preprocess, project, force, only_ids)
 
 
-def _run_preprocess(key: str, project: Any, _mock: bool) -> None:
+def _run_preprocess(key: str, project: Any, force: bool, only_ids) -> None:
     try:
         from ailr.tasks.preprocess import PreprocessTask
 
-        summary = PreprocessTask(project).run(on_progress=_progress_cb(key))
+        summary = PreprocessTask(project).run(force=force, only_ids=only_ids, on_progress=_progress_cb(key))
         text = (
             f"Converted {summary.converted}, already done {summary.skipped_already_done}, "
             f"failed {summary.failed}, no PDF for {len(summary.missing_pdfs)} source(s)."

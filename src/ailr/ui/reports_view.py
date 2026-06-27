@@ -270,4 +270,13 @@ def register_callbacks(app: Any) -> None:
             import traceback
             traceback.print_exc()
             return no_update, dbc.Alert(f"Export failed: {e}", color="danger", className="mb-0 py-1")
-        return dcc.send_string(content, filename), f"Downloaded {filename}"
+        msg: Any = f"Downloaded {filename}"
+        if trig == "report-dl-ris":
+            missing = proj.db.count_sources_missing_doi(proj.project_id)
+            if missing:
+                msg = dbc.Alert(
+                    f"Downloaded {filename}. Note: {missing} source(s) have no DOI — after the Zotero round-trip "
+                    "these may not re-link by DOI (they fall back to title matching). Add DOIs on the Sources tab.",
+                    color="warning", className="mb-0 py-1",
+                )
+        return dcc.send_string(content, filename), msg

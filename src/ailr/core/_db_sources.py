@@ -15,6 +15,8 @@ _INSERT_SOURCE_COLS = (
 )
 _INSERT_SOURCE_SQL = _INSERT_SOURCE_COLS + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
+_EDITABLE_SOURCE_COLUMNS = {"doi", "title", "year", "journal"}
+
 
 def _source_params(source: "Source") -> tuple:
     return (
@@ -127,6 +129,26 @@ class SourcesMixin:
     def get_source(self, source_id: int) -> Optional[Source]:
         row = self._conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
         return _row_to_source(row) if row else None
+
+    def update_source(self, source_id: int, fields: dict) -> None:
+        """Edit bibliographic metadata. Only whitelisted columns are writable; blank text -> NULL."""
+        cols = {k: v for k, v in fields.items() if k in _EDITABLE_SOURCE_COLUMNS}
+        if not cols:
+            return
+        clean = {k: (v if k == "year" else ((str(v).strip() or None) if v is not None else None)) for k, v in cols.items()}
+        set_sql = ", ".join(f"{c} = ?" for c in clean)
+        try:
+            self._conn.execute(f"UPDATE sources SET {set_sql} WHERE id = ?", list(clean.values()) + [source_id])
+            self._conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to update source {source_id}: {e}") from e
+
+    def count_sources_missing_doi(self, project_id: int) -> int:
+        return self._conn.execute(
+            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND COALESCE(is_duplicate, 0) = 0 "
+            "AND (doi IS NULL OR TRIM(doi) = '')",
+            (project_id,),
+        ).fetchone()["n"]
 
     def list_sources(
         self,

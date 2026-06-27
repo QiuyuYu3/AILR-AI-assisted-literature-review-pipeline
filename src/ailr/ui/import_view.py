@@ -189,6 +189,13 @@ def register_callbacks(app: Any) -> None:
                  for f in r.failures[:10]],
                 className="mb-0",
             ))
+        missing_doi = project.db.count_sources_missing_doi(project.project_id)
+        if missing_doi:
+            body.append(html.Div(
+                f"{missing_doi} source(s) in this project have no DOI — DOI is the stable key for de-duplication, "
+                "PDF linking and exports. Add them on the Sources tab (“Edit metadata”).",
+                className="text-warning small mt-1",
+            ))
         body.append(html.Small("Open Sources or Screening to see the new records.", className="text-muted"))
         return dbc.Alert(body, color="success"), searches_out
 
