@@ -47,6 +47,7 @@ class ScreeningTask:
         *,
         limit: Optional[int] = None,
         on_progress: Optional[ProgressCallback] = None,
+        batch: bool = False,
     ) -> ScreenRunSummary:
         config = self.project.config
         prompt_path = self.project.root / config.screening.prompt
@@ -64,6 +65,16 @@ class ScreeningTask:
 
         summary = ScreenRunSummary(total=len(un_screened))
 
+        # Mock runs buffer all decisions and write them in one multi-row INSERT at the end (fast,
+        # no per-row Neon round trips); real runs keep the per-row, per-commit path for durability.
+        buffer: list[ScreeningDecision] = []
+
+        def _save(decision: ScreeningDecision) -> None:
+            if batch:
+                buffer.append(decision)
+            else:
+                self.project.db.insert_screening_decision(decision)
+
         for idx, source in enumerate(un_screened, 1):
             if not source.abstract:
                 summary.skipped_no_abstract += 1
@@ -76,7 +87,7 @@ class ScreeningTask:
                     source_id=source.id,
                     confidence=1.0,
                 )
-                self.project.db.insert_screening_decision(placeholder)
+                _save(placeholder)
                 summary.add_decision(placeholder)
                 if on_progress:
                     on_progress(idx, summary.total, placeholder, None)
@@ -85,10 +96,10 @@ class ScreeningTask:
             try:
                 decision = self.reviewer.screen(source, criteria_text, prompt_template)
                 decision.source_id = source.id
-                self.project.db.insert_screening_decision(decision)
+                _save(decision)
                 summary.add_decision(decision)
 
-                if isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
+                if not batch and isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
                     meta = self.reviewer.last_metadata
                     self.project.db.insert_api_call(self.project.project_id, meta)
                     summary.total_cost_estimate += meta.cost_estimate
@@ -106,4 +117,7 @@ class ScreeningTask:
                 if on_progress:
                     on_progress(idx, summary.total, None, e)
 
+        if batch and buffer:
+            with self.project.db._conn.transaction():
+                self.project.db.insert_screening_decisions_batch(buffer)
         return summary

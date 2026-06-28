@@ -8,7 +8,7 @@ from typing import Callable, Optional
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.extraction import compose_schema
-from ailr.reviewers import Reviewer, SourceExtraction
+from ailr.reviewers import ExtractionResult, Reviewer, ScreeningDecision, SourceExtraction
 from ailr.reviewers import LLMReviewer
 
 ProgressCallback = Callable[[int, int, Optional[Source], Optional[Exception]], None]
@@ -40,6 +40,7 @@ class ExtractionTask:
         only_includes: bool = True,
         force: bool = False,
         on_progress: Optional[ProgressCallback] = None,
+        batch: bool = False,
     ) -> ExtractRunSummary:
         config = self.project.config
         prompt_path = self.project.root / config.extraction.prompt
@@ -57,6 +58,11 @@ class ExtractionTask:
             candidates = candidates[:limit]
 
         summary = ExtractRunSummary(total_candidates=len(candidates))
+
+        # Mock runs buffer everything and write it in a few multi-row INSERTs at the end (fast, no
+        # per-row Neon round trips); real runs keep the per-row, per-commit path for durability.
+        all_results: list[ExtractionResult] = []
+        all_ft_decisions: list[ScreeningDecision] = []
 
         for idx, source in enumerate(candidates, 1):
             if not source.markdown_path:
@@ -95,32 +101,45 @@ class ExtractionTask:
 
                 for result in extraction.results:
                     result.source_id = source.id
-                    self.project.db.insert_extraction(result)
 
+                # Derive a full-text screening decision from the flag_check verdicts and persist it so
+                # the FT review tab + conflict detection work uniformly.
+                ft_decision = None
                 if extraction.flag_check is not None:
-                    self.project.db.insert_flag_check(
+                    ft_decision = ScreeningDecision(
+                        decision=_derive_ft_decision(extraction.flag_check),
+                        reasoning="(derived from extraction flag_check)",
+                        reviewer_type=self.reviewer.reviewer_type,
+                        reviewer_id=self.reviewer.reviewer_id,
                         source_id=source.id,
-                        extractor_type=self.reviewer.reviewer_type,
-                        extractor_id=self.reviewer.reviewer_id,
-                        flag_check=extraction.flag_check,
-                    )
-                    # Derive a full-text screening decision from the flag_check verdicts
-                    # and persist it so the FT review tab + conflict detection work uniformly.
-                    derived = _derive_ft_decision(extraction.flag_check)
-                    from ailr.reviewers import ScreeningDecision
-                    self.project.db.insert_screening_decision(
-                        ScreeningDecision(
-                            decision=derived,
-                            reasoning="(derived from extraction flag_check)",
-                            reviewer_type=self.reviewer.reviewer_type,
-                            reviewer_id=self.reviewer.reviewer_id,
-                            source_id=source.id,
-                            stage="full_text",
-                            confidence=_avg_flag_confidence(extraction.flag_check),
-                        )
+                        stage="full_text",
+                        confidence=_avg_flag_confidence(extraction.flag_check),
                     )
 
-                if isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
+                if batch:
+                    all_results.extend(extraction.results)
+                    if extraction.flag_check is not None:
+                        all_results.append(ExtractionResult(
+                            extractor_type=self.reviewer.reviewer_type,
+                            extractor_id=self.reviewer.reviewer_id,
+                            field_name="_flag_check",
+                            value=extraction.flag_check,
+                            source_id=source.id,
+                        ))
+                        all_ft_decisions.append(ft_decision)
+                else:
+                    for result in extraction.results:
+                        self.project.db.insert_extraction(result)
+                    if extraction.flag_check is not None:
+                        self.project.db.insert_flag_check(
+                            source_id=source.id,
+                            extractor_type=self.reviewer.reviewer_type,
+                            extractor_id=self.reviewer.reviewer_id,
+                            flag_check=extraction.flag_check,
+                        )
+                        self.project.db.insert_screening_decision(ft_decision)
+
+                if not batch and isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
                     meta = self.reviewer.last_metadata
                     self.project.db.insert_api_call(self.project.project_id, meta)
                     summary.total_cost_estimate += meta.cost_estimate
@@ -139,6 +158,10 @@ class ExtractionTask:
                 if on_progress:
                     on_progress(idx, len(candidates), source, e)
 
+        if batch and (all_results or all_ft_decisions):
+            with self.project.db._conn.transaction():
+                self.project.db.insert_extractions(all_results)
+                self.project.db.insert_screening_decisions_batch(all_ft_decisions)
         return summary
 
     def _select_candidates(self, only_includes: bool) -> list[Source]:

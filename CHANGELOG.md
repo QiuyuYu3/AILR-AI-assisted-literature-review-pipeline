@@ -13,6 +13,7 @@
 - Full-text: per-card "Re-convert PDF" button, "Force re-convert all" and "Re-convert low-text / failed" buttons plus a backend selector (pymupdf/marker) on the Workflow tab, and a "Low-text / failed" filter that surfaces papers whose converted markdown is empty or too short.
 - "Clear mock AI results" buttons on the Screening and Extraction pages remove only mock-provider AI rows (real AI and human decisions/extractions are kept), so runs done with the Mock toggle don't linger in the real data.
 - A real AI screening/extraction run now first clears earlier mock results, so it runs over them instead of skipping sources that were only mock-screened (the run summary reports how many mock rows it replaced).
+- Mock AI runs are much faster on a shared PostgreSQL database: results are written in a few batched multi-row INSERTs at the end instead of one round trip per row. Real runs keep the per-row, per-commit path for durability.
 - Sources: edit a paper's metadata (DOI, title, authors, year, journal, source database, abstract) — select a row and click "Edit metadata" to open a confirm dialog — plus a missing-DOI reminder on the Sources tab, after import, and when exporting the includes RIS, since DOI is what keeps de-duplication and PDF linking reliable.
 
 ### Changed

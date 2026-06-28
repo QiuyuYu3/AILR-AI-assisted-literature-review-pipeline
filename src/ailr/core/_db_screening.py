@@ -59,6 +59,37 @@ class ScreeningMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert screening_decision: {e}") from e
 
+    def insert_screening_decisions_batch(self, decisions: list["ScreeningDecision"]) -> None:
+        """One multi-row INSERT for many decisions (mock runs only — speed matters, per-row durability
+        does not). Real runs keep the per-row insert_screening_decision path. Caller may wrap in a
+        transaction; the trailing commit is a no-op inside one."""
+        rows = [d for d in decisions if d.source_id is not None]
+        if not rows:
+            return
+        cols = (
+            "source_id", "reviewer_type", "reviewer_id", "decision", "reasoning",
+            "evidence_quotes", "matched_criteria", "confidence", "llm_params",
+            "prompt_version", "raw_output", "stage",
+        )
+        group = "(" + ",".join("?" for _ in cols) + ")"
+        params: list = []
+        for d in rows:
+            params.extend([
+                d.source_id, d.reviewer_type, d.reviewer_id, d.decision, d.reasoning,
+                json.dumps(d.evidence_quotes) if d.evidence_quotes else None,
+                json.dumps(d.matched_criteria) if d.matched_criteria else None,
+                d.confidence, json.dumps(d.llm_params) if d.llm_params else None,
+                d.prompt_version, d.raw_output, d.stage,
+            ])
+        try:
+            self._conn.execute(
+                f"INSERT INTO screening_decisions ({','.join(cols)}) VALUES {','.join(group for _ in rows)}",
+                params,
+            )
+            self._conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to insert screening_decisions batch: {e}") from e
+
     def list_unscreened(
         self,
         project_id: int,
@@ -605,6 +636,11 @@ class ScreeningMixin:
             params.append(stage)
         n = self._conn.execute(f"SELECT COUNT(*) AS n FROM screening_decisions WHERE {where}", params).fetchone()["n"]
         self._conn.execute(f"DELETE FROM screening_decisions WHERE {where}", params)
+        # mock screening/calibration API-call rows (token/cost tracking)
+        self._conn.execute(
+            "DELETE FROM api_calls WHERE project_id = ? AND provider = 'mock' AND model = 'mock-screen'",
+            (project_id,),
+        )
         self._conn.commit()
         return n
 

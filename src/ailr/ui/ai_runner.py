@@ -135,7 +135,7 @@ def _run_screening(key: str, project: Any, mock: bool) -> None:
         replaced = project.db.clear_mock_ai_decisions(project.project_id) if not mock else 0
         client = _make_client(project, "screen", mock)
         reviewer = LLMReviewer(client, prompt_version=_screening_prompt_version(project))
-        summary = ScreeningTask(project, reviewer).run(on_progress=_progress_cb(key))
+        summary = ScreeningTask(project, reviewer).run(on_progress=_progress_cb(key), batch=mock)
         text = (
             f"Screened {summary.screened}/{summary.total} — "
             f"include {summary.include}, exclude {summary.exclude}, uncertain {summary.uncertain}."
@@ -208,7 +208,7 @@ def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = Fals
         replaced = project.db.clear_mock_ai_extractions(project.project_id) if not mock else 0
         client = _make_client(project, "extract", mock)
         summary = ExtractionTask(project, LLMReviewer(client)).run(
-            only_includes=not all_sources, force=force, on_progress=_progress_cb(key)
+            only_includes=not all_sources, force=force, on_progress=_progress_cb(key), batch=mock
         )
         text = (
             f"Extracted {summary.extracted}/{summary.total_candidates} "
