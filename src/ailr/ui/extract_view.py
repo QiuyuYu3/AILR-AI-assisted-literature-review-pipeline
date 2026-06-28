@@ -53,6 +53,12 @@ def ai_extraction_panel() -> list[Any]:
         dbc.Button("Run AI extraction", id="extract-ai-run", color="primary", outline=True, size="sm"),
         html.Div(id="extract-ai-status", className="small mt-2"),
         dcc.Interval(id="extract-ai-poll", interval=1200, disabled=True),
+        dcc.ConfirmDialogProvider(
+            dbc.Button("Clear mock AI results", color="link", size="sm", className="text-danger p-0 mt-2"),
+            id="extract-clear-mock",
+            message="Delete all MOCK AI extractions in this project (including the derived full-text verdicts)? Real AI and human extractions are kept.",
+        ),
+        html.Div(id="extract-clear-mock-status", className="small mt-1"),
         html.Details(
             [
                 html.Summary("Import AI extraction results (ran it yourself)", className="small"),
@@ -263,6 +269,20 @@ def register_callbacks(app: Any) -> None:
         started = ai_runner.start_extraction(get_project(), bool(mock), force=bool(force))
         msg = "AI extraction started…" if started else "Already running…"
         return False, dbc.Alert(msg, color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output("extract-clear-mock-status", "children"),
+        Output("extract-refresh", "data", allow_duplicate=True),
+        Input("extract-clear-mock", "submit_n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _clear_mock(n):
+        if not n:
+            return no_update, no_update
+        import time as _t
+        project = get_project()
+        cleared = project.db.clear_mock_ai_extractions(project.project_id)
+        return dbc.Alert(f"Cleared {cleared} mock AI extraction row(s).", color="success", className="py-1 mb-0"), {"ts": _t.time()}
 
     @app.callback(
         Output("extract-ai-status", "children", allow_duplicate=True),

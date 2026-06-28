@@ -131,6 +131,8 @@ def _screening_prompt_version(project: Any) -> str:
 
 def _run_screening(key: str, project: Any, mock: bool) -> None:
     try:
+        # A real run supersedes earlier mock results: clear them first so they don't block re-screening.
+        replaced = project.db.clear_mock_ai_decisions(project.project_id) if not mock else 0
         client = _make_client(project, "screen", mock)
         reviewer = LLMReviewer(client, prompt_version=_screening_prompt_version(project))
         summary = ScreeningTask(project, reviewer).run(on_progress=_progress_cb(key))
@@ -138,6 +140,8 @@ def _run_screening(key: str, project: Any, mock: bool) -> None:
             f"Screened {summary.screened}/{summary.total} — "
             f"include {summary.include}, exclude {summary.exclude}, uncertain {summary.uncertain}."
         )
+        if replaced:
+            text += f" Replaced {replaced} earlier mock decision(s)."
         with _lock:
             _jobs[key].update({"running": False, "summary": text})
     except Exception as e:  # surface to the UI rather than dying silently in the thread
@@ -200,6 +204,8 @@ def _run_calibration(key: str, project: Any, mock: bool, n: int) -> None:
 
 def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> None:
     try:
+        # A real run supersedes earlier mock results: clear them first so they don't block re-extraction.
+        replaced = project.db.clear_mock_ai_extractions(project.project_id) if not mock else 0
         client = _make_client(project, "extract", mock)
         summary = ExtractionTask(project, LLMReviewer(client)).run(
             only_includes=not all_sources, force=force, on_progress=_progress_cb(key)
@@ -209,6 +215,8 @@ def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = Fals
             f"(already done {summary.skipped_already_done}, failed {summary.failed}). "
             f"{summary.total_input_tokens + summary.total_output_tokens:,} tokens"
         )
+        if replaced:
+            text += f" Replaced {replaced} earlier mock extraction row(s)."
         with _lock:
             _jobs[key].update({"running": False, "summary": text})
     except Exception as e:

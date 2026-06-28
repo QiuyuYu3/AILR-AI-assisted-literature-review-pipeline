@@ -595,6 +595,19 @@ class ScreeningMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete screening_decisions: {e}") from e
 
+    def clear_mock_ai_decisions(self, project_id: int, stage: Optional[str] = None) -> int:
+        """Delete mock AI screening decisions (provider 'mock') in a project; real AI and human are kept."""
+        where = ("reviewer_type = 'ai' AND reviewer_id LIKE 'mock:%' "
+                 "AND source_id IN (SELECT id FROM sources WHERE project_id = ?)")
+        params: list = [project_id]
+        if stage is not None:
+            where += " AND stage = ?"
+            params.append(stage)
+        n = self._conn.execute(f"SELECT COUNT(*) AS n FROM screening_decisions WHERE {where}", params).fetchone()["n"]
+        self._conn.execute(f"DELETE FROM screening_decisions WHERE {where}", params)
+        self._conn.commit()
+        return n
+
     def screen_counts(self, project_id: int, reviewer_id: str, stage: str = "abstract") -> tuple[int, int]:
         """(sources reviewed by me, total sources) in one round trip for the sidebar text."""
         row = self._conn.execute(

@@ -212,6 +212,16 @@ class ExtractionMixin:
         ).fetchall()
         return {r["source_id"]: r["extractor_id"] for r in rows}
 
+    def clear_mock_ai_extractions(self, project_id: int) -> int:
+        """Delete mock AI extractions (provider 'mock', incl. their _flag_check rows) in a project;
+        real AI and human extractions are kept."""
+        where = ("extractor_type = 'ai' AND extractor_id LIKE 'mock:%' "
+                 "AND source_id IN (SELECT id FROM sources WHERE project_id = ?)")
+        n = self._conn.execute(f"SELECT COUNT(*) AS n FROM extractions WHERE {where}", (project_id,)).fetchone()["n"]
+        self._conn.execute(f"DELETE FROM extractions WHERE {where}", (project_id,))
+        self._conn.commit()
+        return n
+
     def list_abstract_includes(self, project_id: int) -> list[Source]:
         """Sources flagged include at the abstract stage (by any reviewer). For RIS export to Zotero."""
         sql = """

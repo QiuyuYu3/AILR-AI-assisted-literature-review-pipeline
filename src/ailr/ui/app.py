@@ -307,6 +307,25 @@ def build_app() -> Dash:
         State("shared-reviewer", "value"),
     )
     def _render_tab(tab: str, reviewer):
+        # A failure while building a tab's layout (e.g. a transient DB hiccup) would otherwise be
+        # swallowed and leave the content blank ("nothing happens until I refresh"); surface it instead.
+        try:
+            return _tab_layout(tab, reviewer)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return dbc.Alert(
+                [
+                    "Could not load this tab: ",
+                    html.Code(str(e)),
+                    html.Br(),
+                    html.Small("Often a transient database hiccup — click the tab again. If it keeps happening, copy this message."),
+                ],
+                color="danger",
+                className="m-3",
+            )
+
+    def _tab_layout(tab: str, reviewer):
         # Project gate: with no project open, every tab shows the project manager.
         if tab == "projects" or not has_project():
             return project_manager_view.layout()

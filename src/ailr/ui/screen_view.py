@@ -186,6 +186,12 @@ def ai_screening_panel() -> list[Any]:
         dbc.Button("Run AI screening", id="screen-ai-run", color="primary", outline=True, size="sm"),
         html.Div(id="screen-ai-status", className="small mt-2"),
         dcc.Interval(id="screen-ai-poll", interval=1200, disabled=True),
+        dcc.ConfirmDialogProvider(
+            dbc.Button("Clear mock AI results", color="link", size="sm", className="text-danger p-0 mt-2"),
+            id="screen-clear-mock",
+            message="Delete all MOCK AI screening decisions in this project? Real AI and human decisions are kept.",
+        ),
+        html.Div(id="screen-clear-mock-status", className="small mt-1"),
         # ── Step 3 (optional) — Import AI results run elsewhere ───────────────
         html.Hr(className="my-3"),
         html.Details(
@@ -355,6 +361,20 @@ def register_callbacks(app: Any) -> None:
         started = ai_runner.start_screening(get_project(), bool(mock))
         msg = "AI screening started…" if started else "Already running…"
         return False, dbc.Alert(msg, color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output("screen-clear-mock-status", "children"),
+        Output("screen-refresh", "data", allow_duplicate=True),
+        Input("screen-clear-mock", "submit_n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _clear_mock(n):
+        if not n:
+            return no_update, no_update
+        import time as _t
+        project = get_project()
+        cleared = project.db.clear_mock_ai_decisions(project.project_id)
+        return dbc.Alert(f"Cleared {cleared} mock AI screening decision(s).", color="success", className="py-1 mb-0"), {"ts": _t.time()}
 
     @app.callback(
         Output("screen-ai-status", "children", allow_duplicate=True),
