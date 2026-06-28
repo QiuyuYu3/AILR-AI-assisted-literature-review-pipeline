@@ -78,12 +78,12 @@ def layout() -> Any:
                 [
                     html.Summary("How to use a shared database (Postgres / Neon)", className="small"),
                     html.P(
-                        "Create a free Neon database, copy its connection URL, change the prefix to "
-                        "postgresql+psycopg://, then add it to this project's lit_review.yaml:",
+                        "Create a free Neon database, copy its connection URL, and add it to this project's "
+                        "lit_review.yaml as-is (postgresql:// or postgres:// — the driver is set automatically):",
                         className="small text-muted mb-1",
                     ),
                     html.Pre(
-                        'storage:\n  database_url: "postgresql+psycopg://user:pw@host/db?sslmode=require"',
+                        'storage:\n  database_url: "postgresql://user:pw@host/db?sslmode=require"',
                         style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"},
                         className="mb-1",
                     ),

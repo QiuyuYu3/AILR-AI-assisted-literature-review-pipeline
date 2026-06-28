@@ -755,7 +755,7 @@ def ui(
 @app.command("db-migrate")
 def db_migrate(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
-    to: Annotated[Optional[str], typer.Option("--to", help="Target DB URL (e.g. postgresql+psycopg://user:pw@host/db). Defaults to the project's storage.database_url.")] = None,
+    to: Annotated[Optional[str], typer.Option("--to", help="Target DB URL, pasted as-is (e.g. postgresql://user:pw@host/db). Defaults to the project's storage.database_url.")] = None,
     from_sqlite: Annotated[Optional[Path], typer.Option("--from", help="Source SQLite file. Defaults to the project's storage.database file.")] = None,
 ) -> None:
     """Copy all data from the project's SQLite DB into a target DB (e.g. Postgres/Neon). The target should be empty."""

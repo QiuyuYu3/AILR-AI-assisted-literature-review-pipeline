@@ -22,6 +22,9 @@
 - Imports are much faster on a shared PostgreSQL database: records are inserted in batched transactions and existing DOIs are loaded in one query instead of one per record.
 - Screening and full-text review stay fast at thousands of records: the lists now filter/sort/paginate in SQL (only the visible page is fetched, not the whole table), votes commit in one transaction, a composite index speeds the status filters and vote locks, and the Sources overview query was rewritten to avoid a per-row subquery scan.
 
+### Changed (docs/UI)
+- The shared-database hints (new-project form, Settings, config template, db-migrate `--to`) now say to paste the Neon/Postgres URL as-is (`postgresql://` or `postgres://`) — no need to rewrite the prefix, the driver is set automatically.
+
 ### Docs
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
 

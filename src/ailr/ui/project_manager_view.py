@@ -78,12 +78,12 @@ def layout():
                                             dbc.Label("PostgreSQL connection URL", className="small fw-bold"),
                                             dbc.Input(
                                                 id="pm-new-pgurl",
-                                                placeholder="postgresql+psycopg://user:password@host:5432/dbname",
+                                                placeholder="postgresql://user:password@host/dbname?sslmode=require",
                                                 size="sm",
                                                 className="mb-1",
                                             ),
                                             html.Div(
-                                                "Tip: a free Neon/Supabase database gives you this URL.",
+                                                "Tip: a free Neon/Supabase database gives you this URL — paste it as-is (postgresql:// or postgres://).",
                                                 className="text-muted small mb-2",
                                             ),
                                         ],
