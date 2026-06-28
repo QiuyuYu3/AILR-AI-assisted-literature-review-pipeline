@@ -74,8 +74,9 @@ def _soft_checks(cf: dict, report: ValidationReport) -> None:
     name = cf.get("name")
     if not cf.get("description"):
         report.add("warning", "no description (the AI reads this as the field's label)", field=name)
-    if cf.get("enum") and cf.get("type") != "string":
-        report.add("warning", "enum is only used on text fields", field=name)
+    scalar_list = cf.get("type") == "list" and cf.get("item_type") in ("string", "integer", "number", "boolean")
+    if cf.get("enum") and cf.get("type") != "string" and not scalar_list:
+        report.add("warning", "enum is only used on text fields or lists of text", field=name)
     if cf.get("type") == "object" and not cf.get("fields"):
         report.add("warning", "object field has no sub-fields", field=name)
     if cf.get("type") == "list" and cf.get("item_type") == "object" and not cf.get("item_fields"):

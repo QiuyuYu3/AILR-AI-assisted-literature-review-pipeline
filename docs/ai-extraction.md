@@ -122,11 +122,11 @@ Use **Calibration → Quick test** on a handful of papers first. If a value land
 Instead of building the extraction fields one by one, let your own ChatGPT/Claude draft them and import the result.
 
 1. On the **Template** page, open **Import variable definitions from your AI** and **copy the message** there.
-2. Paste it into your AI, describe what you want to capture from each paper, and it returns a JSON list of fields.
-3. Paste that JSON back into the box, click **Validate** (it checks the structure and flags problems), then **Load into editor**.
+2. Paste it into your AI. For the best result, paste your **full codebook or existing extraction prompt** (with any per-field definitions and examples you already have), not just a list of names — the message asks the AI to preserve that wording in the descriptions.
+3. Paste the JSON it returns back into the box, click **Validate** (it checks the structure and flags problems), then **Load into editor**.
 4. Review the fields in the editor — fix names, tighten descriptions, set options — and click **Save template**.
 
-Nothing is written until you Save, so the import is just a starting point you adjust. The descriptions matter most: the AI reads each one as the label for what to put in that field (explained above). The JSON it expects is an object `{"fields": [ ... ]}`, each field `{name, type, description, ...}` — but the in-app message already spells this out, so you don't have to.
+Nothing is written until you Save, so the import is just a starting point you adjust. The descriptions do the heavy lifting: the model sees only each field's **name, description, and option list**, so the description must fully *define* the field — and for a field with fixed options, it must say what each option means (the option labels alone are not enough). The message now asks your AI for exactly this, but it is worth checking the imported descriptions are complete before you Save. The JSON it expects is an object `{"fields": [ ... ]}`, each field `{name, type, description, ...}` — the in-app message spells this out, so you don't have to.
 
 ## Rewriting the whole scaffold (advanced)
 

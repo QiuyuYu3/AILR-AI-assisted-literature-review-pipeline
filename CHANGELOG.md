@@ -18,6 +18,7 @@
 
 ### Added
 - Template: "Save template" also writes a re-importable JSON copy of your variables to `extraction_variables.json` (the app still runs on `schema.yaml`; the JSON is a portable mirror).
+- Template: the "draft variables with your AI" message now asks for descriptions that fully define each field — including what each option of an enum means, and preserving any codebook/prompt wording you paste — so imported field descriptions carry the per-option guidance the model needs (the model only ever sees name + description + options).
 - Schema: list (multi-select) fields now honour `enum`, so each item is constrained to a fixed option set (e.g. a "modality" field limited to Audio / Video / Text / Sensor) in both the enforced tool schema and the codebook/preview.
 
 ### Fixed

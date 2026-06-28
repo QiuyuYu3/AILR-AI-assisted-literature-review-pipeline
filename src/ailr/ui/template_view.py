@@ -78,13 +78,14 @@ Return just the prompt text, no explanation."""
 _AGENT_SCHEMA_MSG = """Help me define the extraction variables for a literature review, as JSON I can import into my tool.
 
 Review topic: [one sentence]
-What to capture from each paper: [list your variables, or paste your draft codebook]
+What to capture from each paper: [list your variables, or paste your full codebook / existing extraction prompt — include any per-field definitions and examples you already have]
 
 Return ONLY a JSON object in this exact shape (valid JSON, no comments):
 {
   "fields": [
-    {"name": "snake_case_name", "type": "string", "description": "one clear line", "required": false},
-    {"name": "country", "type": "string", "enum": ["USA", "UK", "China"], "description": "Country of data collection"},
+    {"name": "snake_case_name", "type": "string", "description": "Full definition of what to extract and how to decide it.", "required": false},
+    {"name": "setting", "type": "string", "enum": ["Controlled task", "Unstructured", "Clinical interview"],
+     "description": "The interaction context. Controlled task = explicit rules/procedure (games, structured interview); Unstructured = free conversation/play with no task rules; Clinical interview = a diagnostic or therapeutic session."},
     {"name": "tasks", "type": "list", "item_type": "object",
      "item_fields": [
        {"name": "task_name", "type": "string", "description": "Name of the interaction task"},
@@ -94,7 +95,11 @@ Return ONLY a JSON object in this exact shape (valid JSON, no comments):
 }
 Rules:
 - types: string, integer, number, boolean, list, object
-- use snake_case names and give every field a clear one-line description
+- use snake_case names
+- write a description that fully DEFINES each field — what to extract and how to judge it. Do not shorten it to a bare label.
+- for any field with "enum" options, define what each option means inside the description (unless an option is self-evident) — the tool shows the model only the field name, its description, and the option list, so option meanings must live in the description.
+- if I pasted a codebook or existing prompt that already has per-field definitions or examples, PRESERVE that wording in the descriptions rather than condensing it.
+- inside a description, write any examples in single quotes (e.g., 'vocal synchrony') — do NOT use unescaped double quotes, or the JSON will be invalid
 - for things a paper can have many of, use type "list" + item_type "object" + item_fields (one entry each)
 - add "enum" only when the answer must be one of a fixed set of options
 - do NOT add inclusion/exclusion or "flag check" criteria as fields — the tool re-checks those from your criteria automatically; the schema is data fields only"""
