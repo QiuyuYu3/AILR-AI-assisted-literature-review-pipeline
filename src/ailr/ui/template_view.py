@@ -20,23 +20,26 @@ from ailr.ui._common import compose_prompt, get_project, read_criteria
 
 
 def _extraction_run_prompt() -> str:
-    """Ready-to-paste prompt for running AI extraction externally: criteria + field names + output format."""
+    """Faithful, paste-ready preview of the exact prompt ailr sends — your saved extraction template
+    with {{criteria}} and {{schema_md}} filled in (via the same compose_prompt the reviewer uses), plus
+    the output structure the tool enforces. Reproducible in any other agent."""
     project = get_project()
     criteria = read_criteria()
     try:
-        fields_md = schema_to_markdown(compose_schema(project.root / project.config.extraction.schema_path))
+        schema_md = schema_to_markdown(compose_schema(project.root / project.config.extraction.schema_path))
     except Exception:
-        fields_md = "(save the template first)"
+        schema_md = "(save the template first)"
+    system = compose_prompt(_prompt_text(), criteria=criteria, schema_md=schema_md)
     return (
-        "Extract structured data from the full paper(s) for a review.\n\n"
-        "=== CRITERIA (context) ===\n" + criteria + "\n\n"
-        "=== FIELDS TO EXTRACT — use EXACTLY these names as keys ===\n" + fields_md + "\n\n"
-        "=== OUTPUT — return ONLY a JSON array, one object per paper ===\n"
+        system + "\n\n"
+        "=== OUTPUT — return ONLY this JSON, one object per paper ===\n"
         "[\n"
         "  {\n"
         '    "source_id": <id>,\n'
-        '    "extraction": { "<field_name>": {"value": ..., "quote": "verbatim quote"}, ... },\n'
-        '    "flag_check": {"decision": "include" | "exclude" | "uncertain"}\n'
+        '    "extraction": { "<field_name>": {"value": ..., "quote": "verbatim quote or null"}, ... },\n'
+        '    "_flag_check": [\n'
+        '      {"criterion_id": "B1", "verdict": "PASS|FAIL|UNCERTAIN", "reason": "one sentence", "confidence": 1-10, "quote": "verbatim quote or null"}\n'
+        "    ]\n"
         "  }\n"
         "]\n\n"
         "=== PAPER TEXT (begins with source_id) ===\n<paste markdown/text here>"
@@ -89,7 +92,8 @@ Rules:
 - types: string, integer, number, boolean, list, object
 - use snake_case names and give every field a clear one-line description
 - for things a paper can have many of, use type "list" + item_type "object" + item_fields (one entry each)
-- add "enum" only when the answer must be one of a fixed set of options"""
+- add "enum" only when the answer must be one of a fixed set of options
+- do NOT add inclusion/exclusion or "flag check" criteria as fields — the tool re-checks those from your criteria automatically; the schema is data fields only"""
 
 
 def _render_validation_report(report: Any) -> list:
@@ -161,7 +165,8 @@ FIELDS TO EXTRACT
 
 INCLUSION FLAG RE-CHECK
 After extraction, re-verify the paper against the criteria above using the full text.
-For each criterion give: verdict (PASS / FAIL / UNCERTAIN), reason (one sentence), confidence (1-10).
+For each criterion give: verdict (PASS / FAIL / UNCERTAIN), reason (one sentence), confidence (1-10),
+and a verbatim quote from the full text supporting the verdict (or null if not stated).
 """
 
 

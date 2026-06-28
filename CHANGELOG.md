@@ -29,6 +29,8 @@
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
 
 ### Fixed
+- The "Run externally" extraction prompt preview now shows the exact prompt ailr sends (your saved template with {{criteria}} and {{schema_md}} filled in, via the same composer the reviewer uses) and the real output shape (per-field {value, quote} + per-criterion _flag_check with quote), so it's faithfully reproducible in another agent — previously it was a separate hand-written wrapper with an outdated flag-check shape.
+- Extraction exports now include the verbatim quote for every field: the AI-extraction JSON pairs each leaf field as `{value, quote}` and the wide CSV's `<field>_quote` columns are populated (the quote was captured but previously dropped from both exports). The inclusion flag-check also now carries a supporting quote per verdict.
 - Switching tabs no longer silently leaves the page blank when a tab's layout fails to build (e.g. a transient database hiccup) — the error is shown in-page and logged so it can be diagnosed, instead of looking like nothing happened until a refresh.
 - PDF linking no longer mis-assigns a PDF when two DOI-less papers have near-identical titles (e.g. "LAEO-Net" vs "LAEO-Net++"): a tie in title similarity is now broken by publication year, so each paper keeps its own PDF instead of one source being re-linked on every run.
 - Reference-stripping no longer deletes the body of a paper when an early "References" heading appears before the bibliography (e.g. JSTOR cover pages); only a heading in the latter half of the document is treated as the reference list.

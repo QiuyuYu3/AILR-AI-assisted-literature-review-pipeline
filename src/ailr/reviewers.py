@@ -294,6 +294,7 @@ def _add_flag_check_to_schema(tool_schema: ToolSchema) -> ToolSchema:
                 "verdict": {"type": "string", "enum": ["PASS", "FAIL", "UNCERTAIN"]},
                 "reason": {"type": "string", "description": "One sentence."},
                 "confidence": {"type": "integer", "minimum": 1, "maximum": 10},
+                "quote": {"type": ["string", "null"], "description": "Verbatim quote from the full text supporting this verdict, or null if not stated."},
             },
             "required": ["criterion_id", "verdict", "reason"],
         },

@@ -108,7 +108,15 @@ def extraction_table_rows(
         ex_rows = db.list_extractions(src.id, extractor_type=extractor_type)
         if not ex_rows:
             continue
-        ex_by_field = {row["field_name"]: row["value"] for row in ex_rows}
+        # Re-pair each leaf value with its verbatim quote (stored in a separate column) so the
+        # <field>_quote columns are populated; nested fields keep their inner structure.
+        ex_by_field: dict[str, Any] = {}
+        for row in ex_rows:
+            val = row["value"]
+            if isinstance(val, (dict, list)):
+                ex_by_field[row["field_name"]] = val
+            else:
+                ex_by_field[row["field_name"]] = {"value": val, "quote": row.get("source_quote")}
 
         out_row: dict[str, str] = {
             "source_id": str(src.id),
@@ -188,7 +196,15 @@ def extraction_table_json(
         ex_rows = db.list_extractions(src.id, extractor_type=extractor_type)
         if not ex_rows:
             continue
-        fields = {row["field_name"]: row["value"] for row in ex_rows}
+        # Leaf fields store the value and its verbatim quote separately; re-pair them as
+        # {value, quote} so the JSON is self-contained. Nested fields already carry quotes inside.
+        fields: dict[str, Any] = {}
+        for row in ex_rows:
+            val = row["value"]
+            if isinstance(val, (dict, list)):
+                fields[row["field_name"]] = val
+            else:
+                fields[row["field_name"]] = {"value": val, "quote": row.get("source_quote")}
         flag_check = db.get_flag_check(src.id, extractor_type=extractor_type)
         out.append(
             {
