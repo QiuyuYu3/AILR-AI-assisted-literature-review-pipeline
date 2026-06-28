@@ -62,8 +62,19 @@ def _prompt_version_options() -> list[Any]:
     ]
 
 
-def criteria_editor_block(prefix: str, note: str) -> Any:
-    """Editable inclusion/exclusion criteria with save + import-from-file. prefix keeps IDs unique per tab."""
+def criteria_editor_block(prefix: str, note: str, with_import: bool = True) -> Any:
+    """Editable inclusion/exclusion criteria with save (+ optional import-from-file).
+    prefix keeps IDs unique per tab; with_import toggles the file-import row."""
+    import_row = [
+        dbc.InputGroup(
+            [
+                dbc.Input(id=f"{prefix}-criteria-import-path", placeholder="C:/path/to/criteria.md — import overwrites the box above", size="sm"),
+                dbc.Button("Import from file", id=f"{prefix}-criteria-import-run", color="secondary", outline=True, size="sm"),
+            ],
+            className="mt-2",
+        ),
+        html.Div(id=f"{prefix}-criteria-import-status", className="small mt-1"),
+    ] if with_import else []
     return html.Div(
         [
             html.Hr(className="my-2"),
@@ -72,20 +83,13 @@ def criteria_editor_block(prefix: str, note: str) -> Any:
             dbc.Textarea(id=f"{prefix}-criteria", value=_screen_criteria_text(), style={"height": "220px", "fontFamily": "monospace", "fontSize": "0.75rem"}),
             dbc.Button("Save criteria", id=f"{prefix}-criteria-save", color="primary", size="sm", className="mt-1"),
             html.Div(id=f"{prefix}-criteria-feedback", className="small mt-1"),
-            dbc.InputGroup(
-                [
-                    dbc.Input(id=f"{prefix}-criteria-import-path", placeholder="C:/path/to/criteria.md — import overwrites the box above", size="sm"),
-                    dbc.Button("Import from file", id=f"{prefix}-criteria-import-run", color="secondary", outline=True, size="sm"),
-                ],
-                className="mt-2",
-            ),
-            html.Div(id=f"{prefix}-criteria-import-status", className="small mt-1"),
+            *import_row,
         ],
         className="mt-2",
     )
 
 
-def register_criteria_callbacks(app: Any, prefix: str) -> None:
+def register_criteria_callbacks(app: Any, prefix: str, with_import: bool = True) -> None:
     @app.callback(
         Output(f"{prefix}-criteria-feedback", "children"),
         Input(f"{prefix}-criteria-save", "n_clicks"),
@@ -103,6 +107,9 @@ def register_criteria_callbacks(app: Any, prefix: str) -> None:
         except OSError as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
         return dbc.Alert(f"Saved to {p.name}.", color="success", className="mb-0 py-1")
+
+    if not with_import:
+        return
 
     @app.callback(
         Output(f"{prefix}-criteria", "value"),

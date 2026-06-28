@@ -46,9 +46,11 @@ class ExtractionTask:
         prompt_path = self.project.root / config.extraction.prompt
         schema_path = self.project.root / config.extraction.schema_path
         criteria_path = self.project.root / config.screening.criteria
+        additional_path = self.project.root / config.extraction.additional
 
         prompt_template = prompt_path.read_text(encoding="utf-8")
         criteria_text = criteria_path.read_text(encoding="utf-8")
+        additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
         fields = compose_schema(schema_path)
         with_quotes = config.extraction.output_format == "with_quotes"
         flag_check = config.extraction.flag_check
@@ -94,6 +96,7 @@ class ExtractionTask:
                     fields=fields,
                     prompt_template=prompt_template,
                     criteria_text=criteria_text,
+                    additional_text=additional_text,
                     with_quotes=with_quotes,
                     flag_check=flag_check,
                 )

@@ -70,6 +70,7 @@ class ScreeningConfig(BaseModel):
 class ExtractionConfig(BaseModel):
     model_config = ConfigDict(protected_namespaces=(), populate_by_name=True)
     prompt: str = "prompts/extraction.txt"
+    additional: str = "prompts/extraction_additional.txt"
     schema_path: str = "schema.yaml"
     codebook: Optional[str] = "codebook.yaml"
     workflow: Literal["verify", "independent"] = Field(

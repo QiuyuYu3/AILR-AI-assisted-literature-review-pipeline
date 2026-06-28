@@ -9,6 +9,7 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.extraction import (
     _LEGACY_CORE_NAMES,
     FieldSpec,
+    compose_extraction_prompt,
     compose_schema,
     load_core_schema,
     load_user_schema,
@@ -16,7 +17,8 @@ from ailr.extraction import (
     schema_to_markdown,
 )
 from ailr.ingest.schema_import import parse_schema_import
-from ailr.ui._common import compose_prompt, get_project, read_criteria
+from ailr.ui._common import get_project, read_criteria
+from ailr.ui.screen_view import criteria_editor_block, register_criteria_callbacks
 
 
 def _extraction_run_prompt() -> str:
@@ -29,7 +31,9 @@ def _extraction_run_prompt() -> str:
         schema_md = schema_to_markdown(compose_schema(project.root / project.config.extraction.schema_path))
     except Exception:
         schema_md = "(save the template first)"
-    system = compose_prompt(_prompt_text(), criteria=criteria, schema_md=schema_md)
+    system = compose_extraction_prompt(
+        _prompt_text(), criteria=criteria, schema_md=schema_md, additional=_additional_text()
+    )
     return (
         system + "\n\n"
         "=== OUTPUT — return ONLY this JSON, one object per paper ===\n"
@@ -163,6 +167,9 @@ INSTRUCTIONS
 FIELDS TO EXTRACT
 {{schema_md}}
 
+ADDITIONAL INSTRUCTIONS
+{{additional}}
+
 INCLUSION FLAG RE-CHECK
 After extraction, re-verify the paper against the criteria above using the full text.
 For each criterion give: verdict (PASS / FAIL / UNCERTAIN), reason (one sentence), confidence (1-10),
@@ -252,6 +259,30 @@ def _prompt_text() -> str:
         return p.read_text(encoding="utf-8")
     except OSError:
         return _STARTER_PROMPT
+
+
+def _additional_text() -> str:
+    project = get_project()
+    p = project.root / project.config.extraction.additional
+    try:
+        return p.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+_VARIABLES_JSON_NAME = "extraction_variables.json"
+
+
+def _write_variables_json(fields: list[dict]):
+    """Write a re-importable {"fields": [...]} copy of the variables next to the project.
+    Returns the Path on success, None on failure."""
+    project = get_project()
+    p = project.root / _VARIABLES_JSON_NAME
+    try:
+        p.write_text(json.dumps({"fields": fields or []}, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        return None
+    return p
 
 
 def _initial_state() -> dict:
@@ -370,7 +401,7 @@ def layout() -> Any:
                             dbc.Button("Add field", id="tmpl-add", color="secondary", size="sm"),
                             html.Div(id="tmpl-add-feedback", className="small mt-1"),
                             html.Hr(),
-                            dbc.Button("Save template", id="tmpl-save", color="primary"),
+                            dbc.Button("Save template", id="tmpl-save", color="primary", size="sm"),
                             html.Div(id="tmpl-save-feedback", className="small mt-2"),
                         ],
                         width=5,
@@ -408,63 +439,103 @@ def layout() -> Any:
 
     prompt_section = [
         html.Hr(className="my-4"),
-        html.H5("3 · Prompt (how — template)", className="mt-2"),
+        html.H5("3 · Prompt (how)", className="mt-2"),
         dbc.Alert(
             [
-                html.Strong("This is a template — you don't run this box directly. "),
-                "Placeholders ", html.Code("{{criteria}}"), " and ", html.Code("{{schema_md}}"),
-                " (your variables above) are filled in, and the paper text is appended. ",
-                "Two ways to actually run it: ",
-                html.Strong("(1) ailr runs it for you"), " on the AI extraction tab (output JSON enforced); or ",
-                html.Strong("(2) you run it yourself"), " — copy the ready version under ‘Run externally’ into ChatGPT/Claude, then import the JSON back.",
+                html.Strong("You only edit two things here: "),
+                "the inclusion / exclusion criteria and (optionally) some additional instructions. ",
+                "The rest of the prompt — the role, the extraction rules, your variables above, and the "
+                "inclusion re-check — is a fixed template ailr fills in for you. ",
+                "The full prompt that will actually be sent is shown in the preview below.",
             ],
             color="light", className="small py-2",
         ),
-        dbc.Textarea(id="tmpl-prompt", value=_prompt_text(), style={"height": "260px", "fontFamily": "monospace", "fontSize": "0.8rem"}),
+        html.H6("3a · Inclusion / exclusion criteria", className="mt-2"),
+        criteria_editor_block("tmpl", note="Used by both screening and data extraction (fills {{criteria}}).", with_import=False),
+        html.H6("3b · Additional instructions (optional)", className="mt-3"),
+        html.P(
+            "Free-form guidance appended to the prompt — e.g. how to handle tricky fields, domain "
+            "conventions, or what to prioritise. Leave blank if not needed.",
+            className="text-muted small mb-1",
+        ),
+        dbc.Textarea(
+            id="tmpl-additional",
+            value=_additional_text(),
+            placeholder="e.g. When a paper reports multiple studies, extract only Study 1 unless stated otherwise.",
+            style={"height": "140px", "fontFamily": "monospace", "fontSize": "0.8rem"},
+        ),
         html.Div(
-            [
-                dbc.Button("Save prompt", id="tmpl-prompt-save", color="primary", size="sm", className="me-2"),
-                dbc.Button("Load starter template", id="tmpl-prompt-starter", color="secondary", outline=True, size="sm"),
-            ],
+            dbc.Button("Save additional instructions", id="tmpl-additional-save", color="primary", size="sm"),
             className="mt-2",
         ),
-        html.Div(id="tmpl-prompt-feedback", className="small mt-1"),
-        html.Details(
-            [html.Summary("Preview the actual prompt sent to the AI"), html.Div(id="tmpl-prompt-composed")],
-            className="mt-2",
+        html.Div(id="tmpl-additional-feedback", className="small mt-1"),
+        html.H6("Full prompt preview", className="mt-3"),
+        html.P(
+            "The exact prompt sent to the AI, with your criteria, variables, and additional instructions filled in.",
+            className="text-muted small mb-1",
         ),
+        html.Div(id="tmpl-prompt-composed"),
         html.Details(
             [
-                html.Summary("Draft this prompt with your own AI"),
+                html.Summary("Advanced: edit the full prompt template"),
                 html.Div(
                     [
-                        html.P(
-                            "ailr guarantees the structure, so only the prompt wording is worth crafting. Copy your field "
-                            "list, paste the message below into your AI, then paste its reply into the Prompt box above.",
-                            className="text-muted small mb-2 mt-2",
+                        dbc.Alert(
+                            [
+                                html.Strong("Most users don't need this. "),
+                                "This is the fixed scaffold the two parts above plug into. Keep the markers ",
+                                html.Code("{{criteria}}"), ", ", html.Code("{{schema_md}}"), " and ",
+                                html.Code("{{additional}}"), " so ailr can fill them in.",
+                            ],
+                            color="light", className="small py-2 mt-2",
                         ),
+                        dbc.Textarea(id="tmpl-prompt", value=_prompt_text(), style={"height": "260px", "fontFamily": "monospace", "fontSize": "0.8rem"}),
                         html.Div(
                             [
-                                dbc.Label("Copy field list", className="small fw-bold mb-0 me-2"),
-                                dcc.Clipboard(target_id="tmpl-fieldlist", title="Copy field list", style={"display": "inline-block", "cursor": "pointer"}),
+                                dbc.Button("Save prompt", id="tmpl-prompt-save", color="primary", size="sm", className="me-2"),
+                                dbc.Button("Load starter template", id="tmpl-prompt-starter", color="secondary", outline=True, size="sm"),
                             ],
-                            className="d-flex align-items-center",
+                            className="mt-2",
                         ),
-                        dbc.Textarea(id="tmpl-fieldlist", value=_field_list_text(), style={"height": "90px", "fontFamily": "monospace", "fontSize": "0.68rem"}, className="mb-2"),
-                        html.Div(
+                        html.Div(id="tmpl-prompt-feedback", className="small mt-1"),
+                        html.Details(
                             [
-                                dbc.Label("Message to your AI", className="small fw-bold mb-0 me-2"),
-                                dcc.Clipboard(target_id="tmpl-write-msg", title="Copy message", style={"display": "inline-block", "cursor": "pointer"}),
+                                html.Summary("Draft this prompt with your own AI"),
+                                html.Div(
+                                    [
+                                        html.P(
+                                            "ailr guarantees the structure, so only the prompt wording is worth crafting. Copy your field "
+                                            "list, paste the message below into your AI, then paste its reply into the Prompt box above.",
+                                            className="text-muted small mb-2 mt-2",
+                                        ),
+                                        html.Div(
+                                            [
+                                                dbc.Label("Copy field list", className="small fw-bold mb-0 me-2"),
+                                                dcc.Clipboard(target_id="tmpl-fieldlist", title="Copy field list", style={"display": "inline-block", "cursor": "pointer"}),
+                                            ],
+                                            className="d-flex align-items-center",
+                                        ),
+                                        dbc.Textarea(id="tmpl-fieldlist", value=_field_list_text(), style={"height": "90px", "fontFamily": "monospace", "fontSize": "0.68rem"}, className="mb-2"),
+                                        html.Div(
+                                            [
+                                                dbc.Label("Message to your AI", className="small fw-bold mb-0 me-2"),
+                                                dcc.Clipboard(target_id="tmpl-write-msg", title="Copy message", style={"display": "inline-block", "cursor": "pointer"}),
+                                            ],
+                                            className="d-flex align-items-center",
+                                        ),
+                                        dbc.Textarea(id="tmpl-write-msg", value=_AGENT_WRITE_PROMPT_MSG, style={"height": "200px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
+                                        html.Span("Full guide in the handbook (coming soon).", className="text-muted small d-block mt-1"),
+                                    ],
+                                    className="ps-2",
+                                ),
                             ],
-                            className="d-flex align-items-center",
+                            className="mt-2",
                         ),
-                        dbc.Textarea(id="tmpl-write-msg", value=_AGENT_WRITE_PROMPT_MSG, style={"height": "200px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
-                        html.Span("Full guide in the handbook (coming soon).", className="text-muted small d-block mt-1"),
                     ],
                     className="ps-2",
                 ),
             ],
-            className="mt-2",
+            className="mt-3",
         ),
     ]
 
@@ -525,6 +596,8 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
+    register_criteria_callbacks(app, "tmpl", with_import=False)
+
     @app.callback(
         Output("tmpl-template-dl", "data"),
         Input("tmpl-template-dl-btn", "n_clicks"),
@@ -589,22 +662,28 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("tmpl-store", "data", allow_duplicate=True),
-        Output("tmpl-suggested", "value"),
         Output("tmpl-import-report", "children", allow_duplicate=True),
         Output("tmpl-import-load", "disabled", allow_duplicate=True),
         Input("tmpl-import-load", "n_clicks"),
         State("tmpl-import-parsed", "data"),
+        State("tmpl-store", "data"),
         prevent_initial_call=True,
     )
-    def _load_import(n, parsed):
+    def _load_import(n, parsed, store):
+        # Replace the editor's custom fields with the imported ones. We deliberately do NOT
+        # touch the `tmpl-suggested` checklist: writing it would trigger _mutate, which rebuilds
+        # the store from a stale snapshot and clobbers the fields we just loaded. Leaving the
+        # checklist alone keeps it in sync with store["include_suggested"] (untouched here).
         if not n or not parsed:
-            return no_update, no_update, no_update, no_update
-        store = {"include_core": False, "include_suggested": [], "fields": parsed}
+            return no_update, no_update, no_update
+        store = dict(store or {})
+        store["include_core"] = False
+        store["fields"] = parsed
         msg = dbc.Alert(
             f"Loaded {len(parsed)} field(s) into the editor below — review, then Save template.",
             color="success", className="mb-0 py-1",
         )
-        return store, [], msg, True
+        return store, msg, True
 
     @app.callback(
         Output("tmpl-prompt-feedback", "children"),
@@ -625,14 +704,34 @@ def register_callbacks(app: Any) -> None:
         return dbc.Alert(f"Saved to {p.name}.", color="success", className="mb-0 py-1")
 
     @app.callback(
+        Output("tmpl-additional-feedback", "children"),
+        Input("tmpl-additional-save", "n_clicks"),
+        State("tmpl-additional", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_additional(n, text):
+        if not n:
+            return no_update
+        project = get_project()
+        p = project.root / project.config.extraction.additional
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text or "", encoding="utf-8")
+        except OSError as e:
+            return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
+        return dbc.Alert(f"Saved to {p.name}.", color="success", className="mb-0 py-1")
+
+    @app.callback(
         Output("tmpl-prompt-composed", "children"),
         Input("tmpl-prompt", "value"),
+        Input("tmpl-additional", "value"),
+        Input("tmpl-criteria", "value"),
         Input("tmpl-store", "data"),
     )
-    def _composed_prompt(prompt, store):
+    def _composed_prompt(prompt, additional, criteria, store):
         schema_md = schema_to_markdown(_compose(store or {}))
-        composed = compose_prompt(
-            prompt, schema_md=schema_md, schema_json=schema_md, criteria=read_criteria()
+        composed = compose_extraction_prompt(
+            prompt, criteria=criteria or read_criteria(), schema_md=schema_md, additional=additional or ""
         )
         return html.Pre(
             composed + "\n\n--- [THE PAPER'S FULL TEXT IS APPENDED HERE AUTOMATICALLY] ---",
@@ -850,7 +949,11 @@ def register_callbacks(app: Any) -> None:
             save_user_schema(path, store["include_core"], store["include_suggested"], store["fields"], skip_verify=skip_verify or [])
         except Exception as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
-        return dbc.Alert(f"Saved to {path.name}. Extraction will use it on the next run.", color="success", className="mb-0 py-1")
+        _write_variables_json(store.get("fields", []))  # also write a re-importable JSON archive
+        return dbc.Alert(
+            f"Saved to {path.name} (+ {_VARIABLES_JSON_NAME} archive). Extraction will use it on the next run.",
+            color="success", className="mb-0 py-1",
+        )
 
 
 def _compose(store: dict) -> list[FieldSpec]:

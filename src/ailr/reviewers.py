@@ -10,6 +10,7 @@ from ailr.exceptions import LLMError
 from ailr.extraction import (
     FieldSpec,
     build_extraction_tool_schema,
+    compose_extraction_prompt,
     compose_prompt,
     schema_to_markdown,
 )
@@ -94,6 +95,7 @@ class Reviewer(ABC):
         prompt_template: str,
         criteria_text: str,
         *,
+        additional_text: str = "",
         with_quotes: bool = True,
         flag_check: bool = True,
     ) -> SourceExtraction:
@@ -208,6 +210,7 @@ class LLMReviewer(Reviewer):
         prompt_template: str,
         criteria_text: str,
         *,
+        additional_text: str = "",
         with_quotes: bool = True,
         flag_check: bool = True,
     ) -> SourceExtraction:
@@ -222,8 +225,8 @@ class LLMReviewer(Reviewer):
 
         schema_md = schema_to_markdown(fields)
         # The paper text is sent as a separate user message, so {{paper_text}} is intentionally dropped.
-        system_prompt = compose_prompt(
-            prompt_template, schema_md=schema_md, schema_json=schema_md, criteria=criteria_text
+        system_prompt = compose_extraction_prompt(
+            prompt_template, criteria=criteria_text, schema_md=schema_md, additional=additional_text
         )
 
         user_message = _format_paper_message(source, paper_text)

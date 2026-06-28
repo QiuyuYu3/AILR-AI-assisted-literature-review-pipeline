@@ -11,7 +11,7 @@ When the app runs the AI, it assembles **one request** from both, plus the paper
 
 | Part of the request | Comes from | Job |
 |---|---|---|
-| system prompt | your prompt, with `{{criteria}}` and `{{schema_md}}` filled in | tells the AI *how* to extract |
+| system prompt | the scaffold, with `{{criteria}}`, `{{schema_md}}` and `{{additional}}` filled in | tells the AI *how* to extract |
 | tool definition | your schema, compiled to a JSON Schema | the **fillable form** the answer must match |
 | paper text | the markdown | the source material |
 
@@ -70,6 +70,53 @@ When the app runs the model, the "fill in the form" rule is automatic, so the st
 
 For the full step-by-step a single extraction takes — and a troubleshooting table — see [The extraction engine](extraction-engine.md).
 
+## The template, in three parts
+
+The full prompt the AI receives is assembled from a **fixed scaffold** (role, extraction rules, the inclusion re-check, and the output contract) plus three pieces you control. You only ever edit the three pieces — the scaffold is filled in for you, and the **Full prompt preview** on the Template page always shows the finished result.
+
+| You edit | Where on the Template page | Goes into | Fills the marker |
+|---|---|---|---|
+| **Variables** — the fields to extract | 1 · Variables | `schema.yaml` | `{{schema_md}}` |
+| **Criteria** — inclusion / exclusion rules | 3a · Inclusion / exclusion criteria | `inclusion_criteria.md` | `{{criteria}}` |
+| **Additional instructions** — optional free-form tips | 3b · Additional instructions | `prompts/extraction_additional.txt` | `{{additional}}` |
+
+The scaffold itself lives in `prompts/extraction.txt` and is tucked behind **Advanced: edit the full prompt template** — most people never open it. The three markers (`{{schema_md}}`, `{{criteria}}`, `{{additional}}`) are where your pieces get slotted in; keep them intact if you ever do edit the scaffold.
+
+> **One source of truth for criteria.** The criteria box on the Template page is the *same* file used by screening — edit it here or on the Screening / Settings page, it is the same criteria. That is why the inclusion re-check at extraction time and the screening decision always agree.
+
+## Step-by-step: set up an extraction
+
+**Before you start, have ready:** a one-sentence description of your review, a rough idea of the variables you want from each paper (a draft codebook is ideal but a bullet list is enough), your inclusion/exclusion criteria, and access to any chat AI (ChatGPT, Claude, …) to do the drafting.
+
+### Step 1 — Draft the variables with any AI, then import
+
+You do not build fields one by one. You let a chat AI write them as a JSON file, then import that file.
+
+1. On the **Template** page, open **Import variable definitions from your AI** and click **copy** on the message there. That message is a ready-made instruction that already spells out the exact JSON shape the tool expects — you don't have to know the format.
+2. Paste it into your chat AI, add your review topic and the variables you want (or paste your draft codebook), and let it return a JSON list of fields.
+3. Paste that JSON back into the box, click **Validate** (it checks the structure and flags problems), then **Load into editor**.
+4. Review the fields in the editor — fix names, tighten descriptions, set options/enums, mark any as required — and click **Save template**. *Nothing is written to `schema.yaml` until you Save.*
+
+**Save template** also writes a re-importable copy of your variables to `extraction_variables.json` in the project, so you always have a portable JSON to archive, share, or paste back into the import box later. (The variables the app actually runs on are in `schema.yaml`; this JSON is just a mirror.)
+
+The descriptions matter most: the AI reads each one as the label for what to put in that field, so a precise description beats a long prompt. See [Define your variables with your own AI](#define-your-variables-with-your-own-ai) for the details.
+
+### Step 2 — Fill in the criteria
+
+In **3a · Inclusion / exclusion criteria**, type (or paste) your criteria directly, then click **Save criteria**. Give each criterion a short id (e.g. `B1`, `B2`) — the AI re-checks the paper against them after extraction and reports a PASS/FAIL/UNCERTAIN per id under `_flag_check`. (The same criteria editor on the Settings page also offers **Import from file** if you'd rather load them from a `.md`/`.txt`.)
+
+This is the content that fills `{{criteria}}` in the scaffold. (If your scaffold has criteria written *into* it by hand instead of using the `{{criteria}}` marker, the box here won't change anything — move that text into this box and put `{{criteria}}` back in the scaffold so the two stop competing.)
+
+### Step 3 — Add any extra instructions, then check the preview
+
+In **3b · Additional instructions** (optional), add free-form guidance that isn't a field and isn't a criterion — e.g. "when a paper reports multiple studies, extract only Study 1 unless stated otherwise", or domain conventions for ambiguous terms. Click **Save additional instructions**.
+
+Now read the **Full prompt preview**: it shows the exact prompt that will be sent — scaffold + your variables + your criteria + your additional instructions, with the paper text appended at the end. This is the moment to confirm everything reads the way you intend.
+
+### Step 4 — Test on a few papers, then run
+
+Use **Calibration → Quick test** on a handful of papers first. If a value lands in the wrong field, tighten that **field's description** (Step 1); if the AI misreads a rule, adjust the **additional instructions** (Step 3) or the **criteria** (Step 2). When it looks right, run the extraction normally — the app enforces the structure on every paper.
+
 ## Define your variables with your own AI
 
 Instead of building the extraction fields one by one, let your own ChatGPT/Claude draft them and import the result.
@@ -81,9 +128,9 @@ Instead of building the extraction fields one by one, let your own ChatGPT/Claud
 
 Nothing is written until you Save, so the import is just a starting point you adjust. The descriptions matter most: the AI reads each one as the label for what to put in that field (explained above). The JSON it expects is an object `{"fields": [ ... ]}`, each field `{name, type, description, ...}` — but the in-app message already spells this out, so you don't have to.
 
-## Use your own AI to write the extraction prompt
+## Rewriting the whole scaffold (advanced)
 
-The app guarantees the *structure* of every extraction (explained above), so the only thing worth crafting is the prompt's *wording* — and you can let your own ChatGPT/Claude draft it.
+Most reviews never need this — the three-part workflow above (variables + criteria + additional instructions) covers normal customization, and the scaffold is filled in for you. Open this only if you want to rewrite the fixed scaffold itself, under **Advanced: edit the full prompt template** on the Template page. The app still guarantees the *structure* of every extraction, so even here the only thing worth crafting is the *wording*, and you can let your own ChatGPT/Claude draft it.
 
 1. First define your fields on the **Template** page — names, types, and a clear description for each. This is where extraction quality is really set.
 2. Open your own AI and ask it to write the prompt. A message that works:
@@ -97,7 +144,7 @@ The app guarantees the *structure* of every extraction (explained above), so the
    [paste your field list from the Template editor]
 
    Please write a high-quality extraction instruction that:
-   - keeps the markers {{criteria}} and {{schema_md}} exactly as-is (my tool fills them in)
+   - keeps the markers {{criteria}}, {{schema_md}} and {{additional}} exactly as-is (my tool fills them in)
    - does NOT re-list the fields (they are injected automatically) — only describe how to extract well
    - says: use only what the paper states, leave unknown fields null, never infer
    - gives clear rules for fields that are easy to confuse
@@ -105,11 +152,11 @@ The app guarantees the *structure* of every extraction (explained above), so the
    Return just the prompt text, no explanation.
    ```
 
-3. Paste the result into the **Template → prompt** box and save.
+3. Paste the result into the **Advanced: edit the full prompt template** box and **Save prompt**.
 4. Use **Calibration → Quick test** on a few papers. If a value lands in the wrong field, tighten that **field's description**; if items are missed or not split, adjust the **prompt**.
 5. Run the extraction normally — the app enforces the structure.
 
-This is the recommended way to customize, because the prompt never leaves the app's structure guarantee.
+Keep all three markers (`{{criteria}}`, `{{schema_md}}`, `{{additional}}`) in place so your criteria and additional instructions still flow in — otherwise the boxes in 3a/3b stop affecting the prompt.
 
 ## Run the AI externally and import
 

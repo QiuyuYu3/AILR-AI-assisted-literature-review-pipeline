@@ -168,6 +168,28 @@ def compose_prompt(template: str, **values: str) -> str:
     return _PROMPT_LEFTOVER.sub("", composed)
 
 
+def compose_extraction_prompt(
+    template: str,
+    *,
+    criteria: str = "",
+    schema_md: str = "",
+    additional: str = "",
+) -> str:
+    """Compose the full extraction system prompt from the fixed scaffold + the two user-edited
+    parts (criteria, additional). Shared by the reviewer and the UI preview so they never drift.
+
+    If the scaffold has no {{additional}} marker (older projects), non-empty additional
+    instructions are appended at the end so they still take effect.
+    """
+    has_marker = "{{additional}}" in (template or "")
+    composed = compose_prompt(
+        template, criteria=criteria, schema_md=schema_md, schema_json=schema_md, additional=additional
+    )
+    if additional and additional.strip() and not has_marker:
+        composed = composed.rstrip() + "\n\n# ADDITIONAL INSTRUCTIONS\n\n" + additional.strip()
+    return composed
+
+
 def _render_field_md(field: FieldSpec, lines: list[str], indent: int) -> None:
     prefix = "  " * indent + "- "
     req = " (required)" if field.required else ""
@@ -184,7 +206,8 @@ def _render_field_md(field: FieldSpec, lines: list[str], indent: int) -> None:
                 _render_field_md(sub, lines, indent + 1)
         else:
             inner = field.item_type or "string"
-            lines.append(f"{prefix}**{field.name}** (list of {inner}{req}){desc}")
+            enum_str = f" [{' | '.join(field.enum)}]" if field.enum else ""
+            lines.append(f"{prefix}**{field.name}** (list of {inner}{req}){enum_str}{desc}")
     else:
         enum_str = ""
         if field.enum:
@@ -252,6 +275,8 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool) -> dict[str, A
                 item_schema["required"] = item_required
         else:
             item_schema = dict(_BASIC_TYPES.get(field.item_type or "string", {"type": "string"}))
+            if field.enum:  # constrain each list item to a fixed set (multi-select from options)
+                item_schema["enum"] = field.enum
 
         arr: dict[str, Any] = {"type": "array", "items": item_schema}
         if field.description:
