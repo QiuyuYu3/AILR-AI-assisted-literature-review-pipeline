@@ -11,7 +11,7 @@
 - Screening filter: "All fields" search now also matches DOI, PMID, year, and source database.
 - PDF→markdown conversion now runs PDFs in parallel (configurable "Parallel workers" on the full-text Workflow tab, default 4; the marker backend always uses 1).
 - Full-text: per-card "Re-convert PDF" button, "Force re-convert all" and "Re-convert low-text / failed" buttons plus a backend selector (pymupdf/marker) on the Workflow tab, and a "Low-text / failed" filter that surfaces papers whose converted markdown is empty or too short.
-- Sources: "Edit metadata" of the selected row (DOI, title, year, journal) via a confirm dialog, plus a missing-DOI reminder on the Sources tab, after import, and when exporting the includes RIS — DOI is what keeps de-duplication and PDF linking reliable.
+- Sources: edit a paper's metadata (DOI, title, authors, year, journal, source database, abstract) — select a row and click "Edit metadata" to open a confirm dialog — plus a missing-DOI reminder on the Sources tab, after import, and when exporting the includes RIS, since DOI is what keeps de-duplication and PDF linking reliable.
 
 ### Changed
 - PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.

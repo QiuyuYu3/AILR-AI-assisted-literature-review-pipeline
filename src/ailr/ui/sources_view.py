@@ -128,6 +128,8 @@ def _edit_modal() -> Any:
                     dbc.Input(id="sources-edit-doi", placeholder="e.g. 10.1109/TPAMI.2020.3048482", className="mb-2"),
                     dbc.Label("Title", className="small fw-bold"),
                     dbc.Textarea(id="sources-edit-title-input", style={"height": "70px"}, className="mb-2"),
+                    dbc.Label("Authors (one per line)", className="small fw-bold"),
+                    dbc.Textarea(id="sources-edit-authors", style={"height": "90px"}, className="mb-2"),
                     dbc.Row(
                         [
                             dbc.Col([dbc.Label("Year", className="small fw-bold"), dbc.Input(id="sources-edit-year", type="number")], width=4),
@@ -135,6 +137,10 @@ def _edit_modal() -> Any:
                         ],
                         className="g-2",
                     ),
+                    dbc.Label("Source database", className="small fw-bold mt-2"),
+                    dbc.Input(id="sources-edit-source-db", className="mb-2"),
+                    dbc.Label("Abstract", className="small fw-bold"),
+                    dbc.Textarea(id="sources-edit-abstract", style={"height": "140px"}, className="mb-2"),
                     html.Div(id="sources-edit-modal-feedback", className="mt-2"),
                 ]
             ),
@@ -399,8 +405,11 @@ def register_callbacks(app: Any) -> None:
         Output("sources-edit-id", "data"),
         Output("sources-edit-doi", "value"),
         Output("sources-edit-title-input", "value"),
+        Output("sources-edit-authors", "value"),
         Output("sources-edit-year", "value"),
         Output("sources-edit-journal", "value"),
+        Output("sources-edit-source-db", "value"),
+        Output("sources-edit-abstract", "value"),
         Output("sources-edit-modal-feedback", "children"),
         Output("sources-edit-feedback", "children", allow_duplicate=True),
         Input("sources-edit-open", "n_clicks"),
@@ -409,15 +418,17 @@ def register_callbacks(app: Any) -> None:
     )
     def _open_edit(_n, selected):
         if not selected:
-            return (no_update,) * 8 + (dbc.Alert("Select a row first (checkbox in the ID column).", color="warning", className="py-1 mb-0"),)
+            return (no_update,) * 11 + (dbc.Alert("Select a row first (checkbox in the ID column).", color="warning", className="py-1 mb-0"),)
         sid = selected[0].get("id")
         if sid is None:
-            return (no_update,) * 9
+            return (no_update,) * 12
         src = get_project().db.get_source(int(sid))
         if src is None:
-            return (no_update,) * 8 + (dbc.Alert(f"Source #{sid} not found.", color="danger", className="py-1 mb-0"),)
+            return (no_update,) * 11 + (dbc.Alert(f"Source #{sid} not found.", color="danger", className="py-1 mb-0"),)
+        authors_text = "\n".join(src.authors) if src.authors else ""
         return (True, f"Edit metadata — #{sid}", {"sid": int(sid)},
-                src.doi or "", src.title or "", src.year, src.journal or "", "", "")
+                src.doi or "", src.title or "", authors_text, src.year, src.journal or "",
+                src.source_database or "", src.abstract or "", "", "")
 
     @app.callback(
         Output("sources-edit-modal", "is_open", allow_duplicate=True),
@@ -427,11 +438,14 @@ def register_callbacks(app: Any) -> None:
         State("sources-edit-id", "data"),
         State("sources-edit-doi", "value"),
         State("sources-edit-title-input", "value"),
+        State("sources-edit-authors", "value"),
         State("sources-edit-year", "value"),
         State("sources-edit-journal", "value"),
+        State("sources-edit-source-db", "value"),
+        State("sources-edit-abstract", "value"),
         prevent_initial_call=True,
     )
-    def _save_edit(_n, iddata, doi, title, year, journal):
+    def _save_edit(_n, iddata, doi, title, authors, year, journal, source_db, abstract):
         if not iddata or "sid" not in iddata:
             return no_update, no_update, no_update
         if not title or not str(title).strip():
@@ -442,8 +456,12 @@ def register_callbacks(app: Any) -> None:
                 yr = int(year)
             except (TypeError, ValueError):
                 return no_update, no_update, dbc.Alert("Year must be a number.", color="danger", className="py-1 mb-0")
+        author_list = [a.strip() for a in (authors or "").splitlines() if a.strip()]
         sid = int(iddata["sid"])
-        get_project().db.update_source(sid, {"doi": doi, "title": title, "year": yr, "journal": journal})
+        get_project().db.update_source(sid, {
+            "doi": doi, "title": title, "authors": author_list, "year": yr,
+            "journal": journal, "source_database": source_db, "abstract": abstract,
+        })
         return False, dbc.Alert(f"#{sid} updated.", color="success", className="py-1 mb-0"), ""
 
     @app.callback(

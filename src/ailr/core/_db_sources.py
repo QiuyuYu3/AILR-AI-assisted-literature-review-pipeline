@@ -15,7 +15,7 @@ _INSERT_SOURCE_COLS = (
 )
 _INSERT_SOURCE_SQL = _INSERT_SOURCE_COLS + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
-_EDITABLE_SOURCE_COLUMNS = {"doi", "title", "year", "journal"}
+_EDITABLE_SOURCE_COLUMNS = {"doi", "title", "year", "journal", "authors", "abstract", "source_database"}
 
 
 def _source_params(source: "Source") -> tuple:
@@ -135,7 +135,14 @@ class SourcesMixin:
         cols = {k: v for k, v in fields.items() if k in _EDITABLE_SOURCE_COLUMNS}
         if not cols:
             return
-        clean = {k: (v if k == "year" else ((str(v).strip() or None) if v is not None else None)) for k, v in cols.items()}
+        clean = {}
+        for k, v in cols.items():
+            if k == "authors":
+                clean[k] = json.dumps(v) if v else None  # v is a list of author strings
+            elif k == "year":
+                clean[k] = v
+            else:
+                clean[k] = (str(v).strip() or None) if v is not None else None
         set_sql = ", ".join(f"{c} = ?" for c in clean)
         try:
             self._conn.execute(f"UPDATE sources SET {set_sql} WHERE id = ?", list(clean.values()) + [source_id])

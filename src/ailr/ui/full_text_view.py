@@ -86,7 +86,13 @@ def pdf_tools_panel() -> list[Any]:
         # ── Step 3 (optional) — import converted .md instead ─────────────────
         html.Hr(className="my-3"),
         dbc.Label("Step 3 (optional) — …or import converted .md", className="fw-bold"),
-        html.P("Use this instead of Step 2 if you converted the PDFs to markdown elsewhere.", className="text-muted small mb-1"),
+        html.P(
+            "Use this instead of Step 2 if you converted the PDFs to markdown elsewhere. The paper must already "
+            "have a linked PDF (do Step 1 first). Each .md is matched to a paper by name — either give it the same "
+            "filename as the PDF (Smith 2020.pdf → Smith 2020.md), or name it by the Zotero attachment number "
+            "(1234.md, or a 1234/ subfolder). Subfolders are searched; matches are copied to data/markdown/.",
+            className="text-muted small mb-1",
+        ),
         dbc.Input(id="ft-md-folder", placeholder="Paste a folder path of .md files", size="sm", className="mb-1"),
         dbc.Button("Import markdown from folder", id="ft-md-import", color="secondary", outline=True, size="sm"),
         html.Div(id="ft-md-import-status", className="small mt-2"),
