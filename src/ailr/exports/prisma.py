@@ -24,9 +24,7 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     reports_retrieved = db.count_screening_includes_with_markdown(pid, stage="abstract")
     full_text_assessed = sum(full_text.values())
 
-    sources_extracted = sum(
-        1 for s in db.list_sources(pid) if db.has_extraction(s.id, "ai")
-    )
+    sources_extracted = db.count_sources_with_extraction(pid, "ai")
 
     return {
         "project_name": project.config.project.name,

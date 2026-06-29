@@ -22,8 +22,7 @@ def _confusion_block(pairs: list) -> Any:
     return dbc.Table([head, body], bordered=True, size="sm", style={"maxWidth": "440px"})
 
 
-def _api_block(db: Any, pid: int) -> Any:
-    rows = db.api_call_summary(pid)
+def _api_block(rows: list) -> Any:
     if not rows:
         return html.Small("(no API calls logged — Mock runs aren't billed)", className="text-muted")
     head = html.Thead(html.Tr([html.Th(h) for h in ["Provider / Model", "Calls", "Input tok", "Output tok", "Avg latency (ms)"]]))
@@ -131,10 +130,7 @@ def _identification_box(c: dict) -> Any:
     return html.Div(children, style=_MAIN_BOX)
 
 
-def _prisma_diagram(db: Any, pid: int) -> Any:
-    from ailr.exports.prisma import prisma_counts
-
-    c = prisma_counts(get_project())
+def _prisma_diagram(db: Any, pid: int, c: dict) -> Any:
     ft_excl_counts = db.full_text_exclusion_counts(pid)
 
     dup_side = _box(f"{c['duplicates_removed']}", "duplicates removed before screening", _SIDE_BOX) if c["duplicates_removed"] else None
@@ -169,15 +165,18 @@ def layout() -> Any:
     pid = project.project_id
 
     from ailr.exports.methods import build_methods_skeleton
+    from ailr.exports.prisma import prisma_counts
 
-    methods_text = build_methods_skeleton(project)
+    counts = prisma_counts(project)
     paired = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
+    api_summary = db.api_call_summary(pid)
+    methods_text = build_methods_skeleton(project, counts=counts, api_summary=api_summary, pairs=paired)
 
     return html.Div(
         [
             html.H4("PRISMA flow"),
             html.P("Auto-generated from your decisions. AI and human reviewers are reported separately.", className="text-muted small"),
-            _prisma_diagram(db, pid),
+            _prisma_diagram(db, pid, counts),
             html.Div(
                 dbc.ButtonGroup(
                     [
@@ -206,7 +205,7 @@ def layout() -> Any:
             html.Hr(className="my-4"),
             html.H4("API usage"),
             html.P("Per provider/model token + cost + latency. Mock runs are not billed.", className="text-muted small"),
-            _api_block(db, pid),
+            _api_block(api_summary),
             html.Hr(className="my-4"),
             html.H4("Data exports"),
             dbc.ButtonGroup(

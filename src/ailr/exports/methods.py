@@ -5,15 +5,20 @@ from ailr.exports.prisma import prisma_counts
 from ailr.metrics import cohen_kappa, percent_agreement
 
 
-def build_methods_skeleton(project: Project) -> str:
+def build_methods_skeleton(
+    project: Project,
+    counts: dict | None = None,
+    api_summary: list | None = None,
+    pairs: list | None = None,
+) -> str:
     db = project.db
     pid = project.project_id
     cfg = project.config
 
-    counts = prisma_counts(project)
-    api_summary = db.api_call_summary(pid)
-    pairs_raw = db.paired_screening_decisions(pid)
-    pairs = [(p["ai_decision"], p["human_decision"]) for p in pairs_raw]
+    counts = counts if counts is not None else prisma_counts(project)
+    api_summary = api_summary if api_summary is not None else db.api_call_summary(pid)
+    if pairs is None:
+        pairs = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
     kappa = cohen_kappa(pairs, categories=["include", "exclude", "uncertain"])
     agreement = percent_agreement(pairs)
 

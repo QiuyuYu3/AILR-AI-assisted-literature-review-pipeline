@@ -3,6 +3,9 @@
 ---
 ## [Unreleased]
 
+### Changed
+- Reports: faster load — `prisma_counts`/paired-decisions/API-summary computed once and reused, and the "studies extracted" count is a single query instead of one per source.
+
 ---
 ## [0.21.0] – 2026-06-28
 

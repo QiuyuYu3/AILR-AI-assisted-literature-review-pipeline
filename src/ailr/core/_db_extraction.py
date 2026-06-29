@@ -149,6 +149,17 @@ class ExtractionMixin:
         ).fetchall()
         return {r["source_id"] for r in rows}
 
+    def count_sources_with_extraction(self, project_id: int, extractor_type: str = "ai") -> int:
+        return self._conn.execute(
+            """
+            SELECT COUNT(DISTINCT e.source_id) AS n FROM extractions e
+            JOIN sources s ON s.id = e.source_id
+            WHERE s.project_id = ? AND e.extractor_type = ?
+              AND e.field_name NOT IN ('_flag_check', '_submitted')
+            """,
+            (project_id, extractor_type),
+        ).fetchone()["n"]
+
     # ── Extraction "submitted" marker (reserved field_name '_submitted') ──────────────
     # Save writes only field rows (draft); Submit additionally writes a '_submitted' marker.
     # All "extracted / by whom / done" logic keys off the marker, not the presence of fields.
