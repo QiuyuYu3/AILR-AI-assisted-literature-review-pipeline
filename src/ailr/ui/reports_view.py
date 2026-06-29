@@ -172,51 +172,69 @@ def layout() -> Any:
     api_summary = db.api_call_summary(pid)
     methods_text = build_methods_skeleton(project, counts=counts, api_summary=api_summary, pairs=paired)
 
-    return html.Div(
-        [
-            html.H4("PRISMA flow"),
-            html.P("Auto-generated from your decisions. AI and human reviewers are reported separately.", className="text-muted small"),
-            _prisma_diagram(db, pid, counts),
-            html.Div(
-                dbc.ButtonGroup(
-                    [
-                        dbc.Button("Download PRISMA (MD)", id="report-dl-prisma", color="primary", outline=True, size="sm"),
-                        dbc.Button("Download PRISMA (SVG)", id="report-dl-svg", color="primary", outline=True, size="sm"),
-                    ]
-                ),
-                className="mt-3",
-            ),
-            html.Hr(className="my-4"),
-            html.H4("Methods skeleton"),
-            html.P("Draft methods paragraph — edit to fit your journal.", className="text-muted small"),
-            html.Div(
-                dcc.Markdown(methods_text),
-                style={"maxHeight": "300px", "overflow": "auto", "border": "1px solid #eee", "borderRadius": "6px", "padding": "12px"},
-            ),
-            html.Div(
-                dbc.Button("Download methods (MD)", id="report-dl-methods", color="primary", outline=True, size="sm"),
-                className="mt-2",
-            ),
-            html.Hr(className="my-4"),
-            html.H4("Inter-rater reliability (screening: AI vs human)"),
-            _reliability_block(_reliability(paired)),
-            html.H6("Confusion matrix", className="mt-3"),
-            _confusion_block(paired),
-            html.Hr(className="my-4"),
-            html.H4("API usage"),
-            html.P("Per provider/model token + cost + latency. Mock runs are not billed.", className="text-muted small"),
-            _api_block(api_summary),
-            html.Hr(className="my-4"),
-            html.H4("Data exports"),
+    prisma_block = [
+        html.H4("PRISMA flow"),
+        html.P("Auto-generated from your decisions. AI and human reviewers are reported separately.", className="text-muted small"),
+        _prisma_diagram(db, pid, counts),
+        html.Div(
             dbc.ButtonGroup(
                 [
-                    dbc.Button("Extraction — AI (CSV)", id="report-dl-csv", color="primary", outline=True),
-                    dbc.Button("Extraction — final (CSV)", id="report-dl-csv-human", color="primary", outline=True),
-                    dbc.Button("Extraction — AI (JSON)", id="report-dl-json", color="primary", outline=True),
-                    dbc.Button("RIS of includes", id="report-dl-ris", color="primary", outline=True),
-                    dbc.Button("Screening metrics (JSON)", id="report-dl-metrics", color="primary", outline=True),
+                    dbc.Button("Download PRISMA (MD)", id="report-dl-prisma", color="primary", outline=True, size="sm"),
+                    dbc.Button("Download PRISMA (SVG)", id="report-dl-svg", color="primary", outline=True, size="sm"),
                 ]
             ),
+            className="mt-3",
+        ),
+        html.Hr(className="my-4"),
+        html.H4("Methods skeleton"),
+        html.P("Draft methods paragraph — edit to fit your journal.", className="text-muted small"),
+        html.Div(
+            dcc.Markdown(methods_text),
+            style={"maxHeight": "300px", "overflow": "auto", "border": "1px solid #eee", "borderRadius": "6px", "padding": "12px"},
+        ),
+        html.Div(
+            dbc.Button("Download methods (MD)", id="report-dl-methods", color="primary", outline=True, size="sm"),
+            className="mt-2",
+        ),
+    ]
+
+    metrics_block = [
+        html.H4("Inter-rater reliability (screening: AI vs human)"),
+        _reliability_block(_reliability(paired)),
+        html.H6("Confusion matrix", className="mt-3"),
+        _confusion_block(paired),
+        html.Hr(className="my-4"),
+        html.H4("API usage"),
+        html.P("Per provider/model token + cost + latency. Mock runs are not billed.", className="text-muted small"),
+        _api_block(api_summary),
+    ]
+
+    exports_block = [
+        html.H4("Data exports"),
+        dbc.ButtonGroup(
+            [
+                dbc.Button("Extraction — AI (CSV)", id="report-dl-csv", color="primary", outline=True),
+                dbc.Button("Extraction — final (CSV)", id="report-dl-csv-human", color="primary", outline=True),
+                dbc.Button("Extraction — AI (JSON)", id="report-dl-json", color="primary", outline=True),
+                dbc.Button("RIS of includes", id="report-dl-ris", color="primary", outline=True),
+                dbc.Button("Screening metrics (JSON)", id="report-dl-metrics", color="primary", outline=True),
+            ]
+        ),
+    ]
+
+    tabs = dbc.Tabs(
+        [
+            dbc.Tab(html.Div(prisma_block, className="mt-3"), label="PRISMA & methods", tab_id="report-tab-prisma"),
+            dbc.Tab(html.Div(metrics_block, className="mt-3"), label="Reliability & API", tab_id="report-tab-metrics"),
+            dbc.Tab(html.Div(exports_block, className="mt-3"), label="Data exports", tab_id="report-tab-exports"),
+        ],
+        active_tab="report-tab-prisma",
+        className="mt-2",
+    )
+    return html.Div(
+        [
+            html.H4("Reports"),
+            tabs,
             html.Div(id="report-dl-feedback", className="small text-muted mt-2"),
             dcc.Download(id="report-download"),
         ]

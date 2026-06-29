@@ -24,7 +24,6 @@ def layout(section: str = "abstract") -> Any:
         from ailr.ui.full_text_view import pdf_tools_panel
 
         workflow_tab = [
-            html.H4("Workflow"),
             html.P(
                 "Full-text screening uses the shared screening workflow (set on Abstract → Workflow). "
                 "Here: how data extraction is done, plus PDF preparation.",
@@ -37,7 +36,7 @@ def layout(section: str = "abstract") -> Any:
             *pdf_tools_panel(),
         ]
         extraction_tab = [
-            html.P("Run AI extraction on included papers, or import results you ran externally (the Template tab has the prompt + JSON template).", className="text-muted small"),
+            html.P("Run AI extraction on included papers, or import results you ran externally (use 'Run externally' under Import to copy the prompt and download the JSON template).", className="text-muted small"),
             *ai_extraction_panel(),
         ]
         return dbc.Tabs(
@@ -50,10 +49,9 @@ def layout(section: str = "abstract") -> Any:
             active_tab="wf-settings",
         )
 
-    from ailr.ui.screen_view import ai_screening_panel
+    from ailr.ui.screen_view import ai_screening_panel, screening_prompt_panel
 
     workflow_tab = [
-        html.H4("Workflow"),
         html.P(
             "Who screens and how (AI + 1 human, or 2 humans). This collaboration mode is shared by "
             "abstract and full-text screening. What each stage reads (abstract vs. full text) and "
@@ -72,14 +70,18 @@ def layout(section: str = "abstract") -> Any:
         html.Div(dbc.Button("Save", id="workflow-save", color="primary", size="sm"), className="mt-1"),
         html.Div(id="workflow-feedback", className="small mt-2"),
     ]
+    prompt_tab = [
+        html.P("Edit the screening prompt and additional instructions. The criteria are shared with extraction and edited on Settings.", className="text-muted small"),
+        *screening_prompt_panel(),
+    ]
     ai_tab = [
-        html.H5("AI screening", className="mb-2"),
-        html.P("Run AI on the abstracts, or import results you ran yourself; edit the criteria and screening prompt.", className="text-muted small"),
+        html.P("Run AI on the abstracts, or import results you ran yourself.", className="text-muted small"),
         *ai_screening_panel(),
     ]
     return dbc.Tabs(
         [
             dbc.Tab(html.Div(workflow_tab, className="pt-3"), label="Workflow", tab_id="wf-settings"),
+            dbc.Tab(html.Div(prompt_tab, className="pt-3"), label="Prompt", tab_id="wf-prompt"),
             dbc.Tab(html.Div(ai_tab, className="pt-3"), label="AI screening", tab_id="wf-ai"),
             dbc.Tab(html.Div(calibration_view.layout("abstract"), className="pt-3"), label="Calibration", tab_id="wf-cal"),
         ],

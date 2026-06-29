@@ -4,6 +4,12 @@
 ## [Unreleased]
 
 ### Changed
+- Template tab reorganised: Variables / Prompt split into two sub-tabs; the add-field form now shows only the inputs relevant to the chosen type, and the preview can be expanded (cleaner, less scrolling).
+- Settings split into Project / Models / Prompts / Danger zone sub-tabs.
+- Reports split into PRISMA & methods / Reliability & API / Data exports sub-tabs.
+- "Run externally" (copy prompt + download JSON template) moved from the Template tab to the AI extraction tab, next to Import — generate and import now live together (mirrors screening).
+- Dropped sub-tab headings that duplicated the tab name (Workflow, AI screening); some long descriptions tucked into a hover "?" icon.
+- Abstract workflow aligned with full-text: prompt editing split into its own "Prompt" sub-tab, leaving run + import on "AI screening".
 - Reports load faster (shared counts; "studies extracted" is one query, not one per source).
 - Inclusion/exclusion criteria edited only in Settings now, shared by screening + extraction (Template shows it read-only).
 
@@ -14,7 +20,7 @@
 - Prompt versioning now covers extraction too and snapshots the fully-resolved prompt (new `composed` column), so any criteria/schema/additional change cuts a new version; version view shows the exact prompt sent.
 
 ### Fixed
-- Blank page when switching between tabs (tab content keyed per tab to force a clean remount).
+- Blank page when switching between tabs: an async `dcc.Markdown` could error mid-teardown during the swap; tab content is now keyed per tab to force a clean remount.
 
 ---
 ## [0.21.0] – 2026-06-28

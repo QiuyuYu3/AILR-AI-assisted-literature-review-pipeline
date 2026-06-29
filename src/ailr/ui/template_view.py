@@ -17,7 +17,7 @@ from ailr.extraction import (
     schema_to_markdown,
 )
 from ailr.ingest.schema_import import parse_schema_import
-from ailr.ui._common import get_project, read_criteria
+from ailr.ui._common import get_project, read_criteria, with_help
 
 
 def _extraction_run_prompt() -> str:
@@ -133,6 +133,15 @@ _TYPES = [
 ]
 
 _SCALAR_TYPES = {"string", "integer", "number", "boolean"}
+
+
+def _mono(height: int, size: float = 0.72) -> dict:
+    return {"height": f"{height}px", "fontFamily": "monospace", "fontSize": f"{size}rem"}
+
+
+_PREVIEW_BOX = {"border": "1px solid #eee", "borderRadius": "6px", "padding": "12px"}
+_PREVIEW_COLLAPSED = {**_PREVIEW_BOX, "maxHeight": "75vh", "overflow": "auto"}
+_PREVIEW_EXPANDED = {**_PREVIEW_BOX, "overflow": "visible"}
 
 
 def _parse_subfields(text: str) -> list[dict]:
@@ -323,13 +332,11 @@ def layout() -> Any:
     suggested = _suggested_names()
     field_names = [f.name for f in _compose(state)]
 
-    variables_section = [
+    header = [
         html.H4("Extraction template"),
-        html.P(
-            "Define the variables (what gets extracted) and the prompt (how). Both saved to your project.",
-            className="text-muted small",
-        ),
-        html.H5("1 · Variables (what to extract)", className="mt-2"),
+    ]
+
+    variables_section = [
         html.Div(
             [
                 dbc.Button("Load scoping preset", id="tmpl-preset-load", color="secondary", outline=True, size="sm"),
@@ -354,9 +361,9 @@ def layout() -> Any:
                             ],
                             className="d-flex align-items-center",
                         ),
-                        dbc.Textarea(id="tmpl-schema-msg", value=_AGENT_SCHEMA_MSG, style={"height": "150px", "fontFamily": "monospace", "fontSize": "0.68rem"}, className="mb-2"),
+                        dbc.Textarea(id="tmpl-schema-msg", value=_AGENT_SCHEMA_MSG, style=_mono(150), className="mb-2"),
                         dbc.Label("Paste the JSON your AI returned", className="small fw-bold mb-0"),
-                        dbc.Textarea(id="tmpl-import-json", placeholder='{ "fields": [ ... ] }', style={"height": "120px", "fontFamily": "monospace", "fontSize": "0.7rem"}, className="mb-2"),
+                        dbc.Textarea(id="tmpl-import-json", placeholder='{ "fields": [ ... ] }', style=_mono(120), className="mb-2"),
                         html.Div(
                             [
                                 dbc.Button("Validate", id="tmpl-import-validate", color="secondary", outline=True, size="sm", className="me-2"),
@@ -390,26 +397,37 @@ def layout() -> Any:
                         html.H6("Add a field"),
                             dbc.Input(id="tmpl-f-name", placeholder="Field name (e.g. study_aim)", size="sm", className="mb-1"),
                             dbc.Select(id="tmpl-f-type", options=_TYPES, value="string", size="sm", className="mb-1"),
-                            dbc.Select(
-                                id="tmpl-f-itemtype",
-                                options=[{"label": f"items: {t['label']}", "value": t["value"]} for t in _TYPES if t["value"] != "list"],
-                                value="string",
-                                size="sm",
-                                className="mb-1",
+                            html.Div(
+                                dbc.Select(
+                                    id="tmpl-f-itemtype",
+                                    options=[{"label": f"items: {t['label']}", "value": t["value"]} for t in _TYPES if t["value"] != "list"],
+                                    value="string",
+                                    size="sm",
+                                    className="mb-1",
+                                ),
+                                id="tmpl-f-itemtype-wrap",
+                                style={"display": "none"},
                             ),
                             dbc.Input(id="tmpl-f-desc", placeholder="Description (shown to AI + reviewers)", size="sm", className="mb-1"),
-                            dbc.Input(id="tmpl-f-enum", placeholder="Options, comma-separated (optional)", size="sm", className="mb-1"),
-                            dbc.Textarea(
-                                id="tmpl-f-subfields",
-                                placeholder=(
-                                    "For Group / Nested object — one sub-field per line:\n"
-                                    "feature_name: text\n"
-                                    "category: text | options: Vocal, Visual, Verbal\n"
-                                    "performance: text"
+                            html.Div(
+                                dbc.Input(id="tmpl-f-enum", placeholder="Options, comma-separated (optional)", size="sm", className="mb-1"),
+                                id="tmpl-f-enum-wrap",
+                            ),
+                            html.Div(
+                                dbc.Textarea(
+                                    id="tmpl-f-subfields",
+                                    placeholder=(
+                                        "For Group / Nested object — one sub-field per line:\n"
+                                        "feature_name: text\n"
+                                        "category: text | options: Vocal, Visual, Verbal\n"
+                                        "performance: text"
+                                    ),
+                                    size="sm",
+                                    className="mb-1",
+                                    style=_mono(90),
                                 ),
-                                size="sm",
-                                className="mb-1",
-                                style={"height": "90px", "fontFamily": "monospace", "fontSize": "0.75rem"},
+                                id="tmpl-f-subfields-wrap",
+                                style={"display": "none"},
                             ),
                             dbc.Switch(id="tmpl-f-required", label="Required", value=False, className="mb-1"),
                             dbc.Button("Add field", id="tmpl-add", color="secondary", size="sm"),
@@ -422,10 +440,16 @@ def layout() -> Any:
                     ),
                     dbc.Col(
                         [
-                            html.H6("Preview"),
+                            html.Div(
+                                [
+                                    html.H6("Preview", className="mb-0"),
+                                    dbc.Button("Collapse", id="tmpl-preview-expand", color="link", size="sm", className="p-0"),
+                                ],
+                                className="d-flex justify-content-between align-items-center",
+                            ),
                             html.Div(
                                 id="tmpl-preview",
-                                style={"border": "1px solid #eee", "borderRadius": "6px", "padding": "12px", "maxHeight": "75vh", "overflow": "auto"},
+                                style=_PREVIEW_EXPANDED,
                             ),
                         ],
                         width=7,
@@ -436,11 +460,12 @@ def layout() -> Any:
 
     verify_section = [
         html.Hr(className="my-4"),
-        html.H5("2 · Human verification", className="mt-2"),
-        html.P(
+        with_help(
+            html.H5("Human verification", className="mb-0 me-1"),
             "Which extracted fields a human must check on the Extraction page. By default every field "
             "is verified; pick fields here to accept the AI value as-is (no review).",
-            className="text-muted small",
+            "tmpl-verify-help",
+            className="mt-0",
         ),
         dcc.Dropdown(
             id="tmpl-skipverify",
@@ -452,8 +477,6 @@ def layout() -> Any:
     ]
 
     prompt_section = [
-        html.Hr(className="my-4"),
-        html.H5("3 · Prompt (how)", className="mt-2"),
         dbc.Alert(
             [
                 html.Strong("You only edit two things here: "),
@@ -464,44 +487,46 @@ def layout() -> Any:
             ],
             color="light", className="small py-2",
         ),
-        html.H6("3a · Inclusion / exclusion criteria", className="mt-2"),
-        html.P(
-            "One shared criteria for the whole review (abstract screening + extraction both use it). "
-            "View only here — edit it on the Settings page.",
-            className="text-muted small mb-1",
+        with_help(
+            html.H6("Inclusion / exclusion criteria", className="mb-0 me-1"),
+            "One shared criteria for the whole review (abstract screening + extraction both use it). View only here — edit it on the Settings page.",
+            "tmpl-criteria-help",
+            className="mt-2",
         ),
         html.Pre(
             read_criteria(),
             style={"whiteSpace": "pre-wrap", "fontSize": "0.75rem", "maxHeight": "220px", "overflow": "auto",
                    "border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"},
         ),
-        html.H6("3b · Additional instructions (optional)", className="mt-3"),
-        html.P(
-            "Free-form guidance appended to the prompt — e.g. how to handle tricky fields, domain "
-            "conventions, or what to prioritise. Leave blank if not needed.",
-            className="text-muted small mb-1",
+        with_help(
+            html.H6("Additional instructions (optional)", className="mb-0 me-1"),
+            "Free-form guidance appended to the prompt — e.g. how to handle tricky fields, domain conventions, or what to prioritise. Leave blank if not needed.",
+            "tmpl-additional-help",
         ),
         dbc.Textarea(
             id="tmpl-additional",
             value=_additional_text(),
             placeholder="e.g. When a paper reports multiple studies, extract only Study 1 unless stated otherwise.",
-            style={"height": "140px", "fontFamily": "monospace", "fontSize": "0.8rem"},
+            style=_mono(140, 0.8),
         ),
         html.Div(
             dbc.Button("Save additional instructions", id="tmpl-additional-save", color="primary", size="sm"),
             className="mt-2",
         ),
         html.Div(id="tmpl-additional-feedback", className="small mt-1"),
-        html.H6("Full prompt preview", className="mt-3"),
-        html.P(
+        with_help(
+            html.H6("Full prompt preview", className="mb-0 me-1"),
             "The exact prompt sent to the AI, with your criteria, variables, and additional instructions filled in.",
-            className="text-muted small mb-1",
+            "tmpl-preview-help",
         ),
         html.Div(id="tmpl-prompt-composed"),
-        html.Details(
+        html.Div(
             [
-                html.Summary("Version history — see the exact prompt sent for each run"),
-                html.P("A version is saved automatically when you run AI extraction (only if the prompt, criteria, schema, or additional instructions changed). Each extracted field is tagged with it, and the full resolved prompt is stored for reproducibility.", className="text-muted small mb-1 mt-2"),
+                with_help(
+                    html.H6("Version history", className="mb-0 me-1"),
+                    "A version is saved automatically when you run AI extraction (only if the prompt, criteria, schema, or additional instructions changed). Each extracted field is tagged with it, and the full resolved prompt is stored for reproducibility.",
+                    "tmpl-ver-help",
+                ),
                 html.Div(id="tmpl-prompt-ver-feedback", className="small mb-1"),
                 dbc.InputGroup(
                     [
@@ -528,7 +553,7 @@ def layout() -> Any:
                             ],
                             color="light", className="small py-2 mt-2",
                         ),
-                        dbc.Textarea(id="tmpl-prompt", value=_prompt_text(), style={"height": "260px", "fontFamily": "monospace", "fontSize": "0.8rem"}),
+                        dbc.Textarea(id="tmpl-prompt", value=_prompt_text(), style=_mono(260, 0.8)),
                         html.Div(
                             [
                                 dbc.Button("Save prompt", id="tmpl-prompt-save", color="primary", size="sm", className="me-2"),
@@ -554,7 +579,7 @@ def layout() -> Any:
                                             ],
                                             className="d-flex align-items-center",
                                         ),
-                                        dbc.Textarea(id="tmpl-fieldlist", value=_field_list_text(), style={"height": "90px", "fontFamily": "monospace", "fontSize": "0.68rem"}, className="mb-2"),
+                                        dbc.Textarea(id="tmpl-fieldlist", value=_field_list_text(), style=_mono(90), className="mb-2"),
                                         html.Div(
                                             [
                                                 dbc.Label("Message to your AI", className="small fw-bold mb-0 me-2"),
@@ -562,7 +587,7 @@ def layout() -> Any:
                                             ],
                                             className="d-flex align-items-center",
                                         ),
-                                        dbc.Textarea(id="tmpl-write-msg", value=_AGENT_WRITE_PROMPT_MSG, style={"height": "200px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
+                                        dbc.Textarea(id="tmpl-write-msg", value=_AGENT_WRITE_PROMPT_MSG, style=_mono(200)),
                                         html.Span("Full guide in the handbook (coming soon).", className="text-muted small d-block mt-1"),
                                     ],
                                     className="ps-2",
@@ -578,34 +603,6 @@ def layout() -> Any:
         ),
     ]
 
-    external_section = [
-        html.Hr(className="my-4"),
-        html.H5("4 · Run externally (optional)", className="mt-2"),
-        html.P(
-            "Run the model entirely outside ailr (cost, a batch job, a specific model) and import the JSON back. There is "
-            "no structure guarantee here, so keep the field names exactly and check them on import. Save the template "
-            "first so the prompt and JSON reflect your current fields.",
-            className="text-muted small mb-2",
-        ),
-        html.Div(
-            [
-                dbc.Button("Download JSON template (per paper)", id="tmpl-template-dl-btn", color="secondary", outline=True, size="sm"),
-                html.Span(" — empty skeleton (source_id + your fields) to fill in, then import on the AI extraction tab.", className="text-muted small ms-2"),
-            ],
-            className="mb-2",
-        ),
-        dcc.Download(id="tmpl-template-dl"),
-        html.Div(
-            [
-                dbc.Label("Copy-paste prompt", className="small fw-bold mb-0 me-2"),
-                dcc.Clipboard(target_id="tmpl-runprompt", title="Copy prompt", style={"display": "inline-block", "cursor": "pointer"}),
-            ],
-            className="d-flex align-items-center",
-        ),
-        dbc.Textarea(id="tmpl-runprompt", value=_extraction_run_prompt(), style={"height": "150px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
-        html.Span("Full guide in the handbook (coming soon).", className="text-muted small d-block mt-1"),
-    ]
-
     tail = [
         dcc.Store(id="tmpl-store", data=state),
         dbc.Modal(
@@ -614,7 +611,7 @@ def layout() -> Any:
                 dbc.ModalBody(
                     [
                         html.P("One sub-field per line: name: type | options: a, b, c", className="text-muted small"),
-                        dbc.Textarea(id="tmpl-subedit-text", style={"height": "220px", "fontFamily": "monospace", "fontSize": "0.8rem"}),
+                        dbc.Textarea(id="tmpl-subedit-text", style=_mono(220, 0.8)),
                         html.Div(id="tmpl-subedit-feedback", className="small mt-1"),
                     ]
                 ),
@@ -631,26 +628,41 @@ def layout() -> Any:
         dcc.Store(id="tmpl-subedit-idx", data=None),
     ]
 
-    return html.Div(variables_section + verify_section + prompt_section + external_section + tail)
+    tabs = dbc.Tabs(
+        [
+            dbc.Tab(html.Div(variables_section + verify_section, className="mt-3"), label="Variables", tab_id="tmpl-tab-vars"),
+            dbc.Tab(html.Div(prompt_section, className="mt-3"), label="Prompt", tab_id="tmpl-tab-prompt"),
+        ],
+        active_tab="tmpl-tab-vars",
+        className="mt-2",
+    )
+    return html.Div(header + [tabs] + tail)
 
 
 def register_callbacks(app: Any) -> None:
     @app.callback(
-        Output("tmpl-template-dl", "data"),
-        Input("tmpl-template-dl-btn", "n_clicks"),
-        prevent_initial_call=True,
+        Output("tmpl-f-itemtype-wrap", "style"),
+        Output("tmpl-f-enum-wrap", "style"),
+        Output("tmpl-f-subfields-wrap", "style"),
+        Input("tmpl-f-type", "value"),
     )
-    def _download_template(n):
-        if not n:
-            return no_update
-        project = get_project()
-        fields = compose_schema(project.root / project.config.extraction.schema_path)
-        skeleton = {f.name: {"value": None, "quote": None} for f in fields}
-        recs = [
-            {"source_id": s.id, "_title": s.title, "extraction": dict(skeleton), "flag_check": {"decision": ""}}
-            for s in project.db.list_full_text_includes_with_markdown(project.project_id)
-        ]
-        return dict(content=json.dumps(recs, indent=2, ensure_ascii=False), filename="extraction_import_template.json")
+    def _toggle_field_inputs(ftype):
+        hide = {"display": "none"}
+        is_group_obj = ftype in ("group", "object")
+        return (
+            {} if ftype == "list" else hide,       # item type: only for lists
+            hide if is_group_obj else {},          # options: not for group/object
+            {} if is_group_obj else hide,          # sub-fields: only for group/object
+        )
+
+    @app.callback(
+        Output("tmpl-preview", "style"),
+        Output("tmpl-preview-expand", "children"),
+        Input("tmpl-preview-expand", "n_clicks"),
+    )
+    def _toggle_preview(n):
+        collapsed = bool(n) and n % 2 == 1
+        return (_PREVIEW_COLLAPSED, "Expand") if collapsed else (_PREVIEW_EXPANDED, "Collapse")
 
     @app.callback(
         Output("tmpl-prompt", "value"),

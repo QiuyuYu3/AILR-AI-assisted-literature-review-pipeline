@@ -5,13 +5,33 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from dash import ctx
+import dash_bootstrap_components as dbc
+from dash import ctx, html
 
 from ailr.core import pdf_paths
 from ailr.core.project import Project
 from ailr.extraction import compose_prompt  # noqa: F401  (re-exported for UI callers)
 
 _project: Optional[Project] = None
+
+
+def help_icon(text: str, target_id: str):
+    """A small '?' badge revealing `text` on hover — for tucking away non-critical explanations."""
+    return html.Span(
+        [
+            dbc.Badge("?", id=target_id, color="light", text_color="secondary", pill=True, className="ms-1 border", style={"cursor": "help"}),
+            dbc.Tooltip(text, target=target_id),
+        ],
+        className="d-inline-block",
+    )
+
+
+def with_help(heading, help_text: str, target_id: str, className: str = "mt-3"):
+    """A heading/label with a '?' help icon beside it; `help_text` shows on hover."""
+    return html.Div(
+        [heading, help_icon(help_text, target_id)],
+        className=f"d-flex align-items-center {className} mb-1",
+    )
 
 
 def triggered_click_id() -> Optional[dict]:

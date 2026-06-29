@@ -312,7 +312,7 @@ def build_app() -> Dash:
         # swallowed and leave the content blank ("nothing happens until I refresh"); surface it instead.
         try:
             layout = _tab_layout(tab, reviewer)
-            # Key by tab so switching forces a clean remount (avoids stale-callback render races that blank the page).
+            # Key by tab so switching forces a clean remount — avoids an async dcc.Markdown / Suspense teardown race that blanks the page.
             return html.Div(layout, key=f"tab-{tab}")
         except Exception as e:
             import traceback

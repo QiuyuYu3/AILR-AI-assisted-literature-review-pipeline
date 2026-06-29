@@ -176,3 +176,8 @@ hr {
   border-color: var(--ailr-border);
   opacity: 1;
 }
+
+/* Breathing room at the bottom of every page */
+#tab-content {
+  padding-bottom: 3rem;
+}

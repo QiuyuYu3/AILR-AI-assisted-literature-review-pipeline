@@ -45,6 +45,8 @@ def extraction_workflow_block() -> list[Any]:
 
 def ai_extraction_panel() -> list[Any]:
     """Run AI extraction + import externally-run results. Rendered on the AI extraction tab."""
+    from ailr.ui.template_view import _extraction_run_prompt
+
     return [
         dbc.Label("AI extraction", className="fw-bold"),
         dbc.Switch(id="extract-ai-mock", label="Mock (no API cost)", value=True, className="small"),
@@ -62,7 +64,7 @@ def ai_extraction_panel() -> list[Any]:
         html.Details(
             [
                 html.Summary("Import AI extraction results (ran it yourself)", className="small"),
-                html.P("Path to a results .json (list / one record) or a FOLDER of per-paper .json. Keys are fixed reserved names. Generate a matching template/prompt on the Template tab.", className="text-muted small mb-1"),
+                html.P("Path to a results .json (list / one record) or a FOLDER of per-paper .json. Keys are fixed reserved names. Use 'Run externally' below to copy the prompt and download a matching template.", className="text-muted small mb-1"),
                 html.Ul(
                     [
                         html.Li([html.Code("source_id"), " or ", html.Code("doi"), " — which paper (else the filename is used)."], className="small"),
@@ -70,6 +72,22 @@ def ai_extraction_panel() -> list[Any]:
                         html.Li([html.Code("flag_check.decision"), " — optional full-text decision (", html.Code("include / exclude / uncertain"), ")."], className="small"),
                     ],
                     className="mb-1",
+                ),
+                html.Details(
+                    [
+                        html.Summary("Run externally — copy prompt / download template", className="small"),
+                        html.Div(
+                            [
+                                dcc.Clipboard(target_id="extract-runprompt", title="Copy prompt", style={"display": "inline-block", "marginRight": "6px", "cursor": "pointer"}),
+                                html.Span("Copy → paste into ChatGPT/Claude with the paper text → paste the JSON it returns into the box below.", className="text-muted small"),
+                            ],
+                            className="mb-1",
+                        ),
+                        dbc.Textarea(id="extract-runprompt", value=_extraction_run_prompt(), style={"height": "150px", "fontFamily": "monospace", "fontSize": "0.68rem"}),
+                        dbc.Button("Download JSON template (per paper)", id="extract-template-dl-btn", color="link", size="sm", className="p-0 mt-1"),
+                        dcc.Download(id="extract-template-dl"),
+                    ],
+                    className="mt-1",
                 ),
                 dbc.InputGroup(
                     [
@@ -183,6 +201,23 @@ def register_callbacks(app: Any) -> None:
         save_stage_workflow(project.root, "extraction", value)
         reload_project()
         return f"saved: extraction.workflow = {value}"
+
+    @app.callback(
+        Output("extract-template-dl", "data"),
+        Input("extract-template-dl-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _download_extract_template(n):
+        if not n:
+            return no_update
+        project = get_project()
+        fields = compose_schema(project.root / project.config.extraction.schema_path)
+        skeleton = {f.name: {"value": None, "quote": None} for f in fields}
+        recs = [
+            {"source_id": s.id, "_title": s.title, "extraction": dict(skeleton), "flag_check": {"decision": ""}}
+            for s in project.db.list_full_text_includes_with_markdown(project.project_id)
+        ]
+        return dict(content=json.dumps(recs, indent=2, ensure_ascii=False), filename="extraction_import_template.json")
 
     @app.callback(
         Output("extract-importai-status", "children"),

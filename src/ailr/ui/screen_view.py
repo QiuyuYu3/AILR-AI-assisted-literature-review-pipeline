@@ -15,6 +15,7 @@ from ailr.ui import ai_runner
 from ailr.ui._common import (
     _short_author_year,
     get_project,
+    help_icon,
     read_criteria,
     read_screening_additional,
     read_screening_prompt,
@@ -163,12 +164,11 @@ _WITHIN_OPTIONS = [
 ]
 
 
-def ai_screening_panel() -> list[Any]:
-    """AI-screening tools as clear steps: 1) prompt → 2) run → 3) optional import.
-    Rendered on the abstract Workflow tab."""
+def screening_prompt_panel() -> list[Any]:
+    """Screening prompt editing (prompt + additional instructions + preview + versions).
+    Rendered on the abstract Prompt tab."""
     return [
-        # ── Step 1 — Screening prompt ────────────────────────────────────────
-        dbc.Label("Step 1 — Screening prompt", className="fw-bold"),
+        dbc.Label("Screening prompt", className="fw-bold"),
         dbc.Alert(
             [
                 html.Strong("You usually only edit the additional instructions below. "),
@@ -178,23 +178,30 @@ def ai_screening_panel() -> list[Any]:
             ],
             color="light", className="small py-2",
         ),
-        dbc.Label("Additional instructions (optional)", className="fw-bold"),
-        html.P(
+        with_help(
+            dbc.Label("Additional instructions (optional)", className="fw-bold mb-0 me-1"),
             "Free-form guidance appended to the screening prompt — e.g. at the abstract stage be "
             "lenient and exclude only on clear violations, leaving borderline cases for full text. "
             "The criteria stay the same across stages; stage-specific judgement goes here.",
-            className="text-muted small mb-1",
+            "screen-additional-help",
+            className="mt-0",
         ),
         dbc.Textarea(id="screen-additional", value=_screen_additional_text(), style={"height": "120px", "fontFamily": "monospace", "fontSize": "0.75rem"}),
         dbc.Button("Save additional instructions", id="screen-additional-save", color="primary", size="sm", className="mt-1"),
         html.Div(id="screen-additional-feedback", className="small mt-1"),
-        html.H6("Full prompt preview", className="mt-3"),
-        html.P("The exact prompt sent to the AI, with your criteria and additional instructions filled in.", className="text-muted small mb-1"),
+        with_help(
+            html.H6("Full prompt preview", className="mb-0 me-1"),
+            "The exact prompt sent to the AI, with your criteria and additional instructions filled in.",
+            "screen-preview-help",
+        ),
         html.Div(id="screen-prompt-composed"),
-        html.Details(
+        html.Div(
             [
-                html.Summary("Version history — see the exact prompt sent for each run"),
-                html.P("A version is saved automatically when you run AI screening (only if the prompt, criteria, or additional instructions changed). AI decisions are tagged with it, and the full resolved prompt is stored for reproducibility.", className="text-muted small mb-1 mt-2"),
+                with_help(
+                    html.H6("Version history", className="mb-0 me-1"),
+                    "A version is saved automatically when you run AI screening (only if the prompt, criteria, or additional instructions changed). AI decisions are tagged with it, and the full resolved prompt is stored for reproducibility.",
+                    "screen-ver-help",
+                ),
                 html.Div(id="screen-prompt-ver-feedback", className="small mb-1"),
                 dbc.InputGroup(
                     [
@@ -230,10 +237,14 @@ def ai_screening_panel() -> list[Any]:
             ],
             className="mt-3",
         ),
-        # ── Step 2 — Run AI screening ────────────────────────────────────────
-        html.Hr(className="my-3"),
-        dbc.Label("Step 2 — Run AI screening", className="fw-bold"),
-        html.P("Runs AI on the abstracts and records its decisions (the prompt above is snapshotted as a version).", className="text-muted small mb-1"),
+    ]
+
+
+def ai_screening_panel() -> list[Any]:
+    """Run AI screening + import externally-run results. Rendered on the abstract AI screening tab."""
+    return [
+        dbc.Label("Run AI screening", className="fw-bold"),
+        html.P("Runs AI on the abstracts and records its decisions (the prompt is snapshotted as a version).", className="text-muted small mb-1"),
         dbc.Switch(id="screen-ai-mock", label="Mock (no API cost)", value=True, className="small"),
         dbc.Button("Run AI screening", id="screen-ai-run", color="primary", outline=True, size="sm"),
         html.Div(id="screen-ai-status", className="small mt-2"),
@@ -244,11 +255,10 @@ def ai_screening_panel() -> list[Any]:
             message="Delete all MOCK AI screening decisions in this project? Real AI and human decisions are kept.",
         ),
         html.Div(id="screen-clear-mock-status", className="small mt-1"),
-        # ── Step 3 (optional) — Import AI results run elsewhere ───────────────
         html.Hr(className="my-3"),
         html.Details(
             [
-                html.Summary("Step 3 (optional) — Import AI results run elsewhere", className="fw-bold"),
+                html.Summary("Import AI results run elsewhere (optional)", className="fw-bold"),
                 html.P("Only needed if you ran the AI outside ailr (e.g. ChatGPT/Claude). Path to a .json (list / one record) or a FOLDER of per-paper .json. Keys are fixed reserved names — anything else is ignored.", className="text-muted small mb-1 mt-2"),
                 html.Ul(
                     [
