@@ -196,6 +196,11 @@ def read_screening_prompt(fallback: str = "(screening prompt file not found)") -
     return read_text_or(project.root / project.config.screening.prompt, fallback)
 
 
+def read_screening_additional(fallback: str = "") -> str:
+    project = get_project()
+    return read_text_or(project.root / project.config.screening.additional, fallback)
+
+
 def _short_author_year(src) -> str:
     if not src.authors:
         return f"({src.year})" if src.year else ""

@@ -56,6 +56,8 @@ class QuickTestTask:
         prompt_path = self.project.root / self.project.config.screening.prompt
         criteria_text = criteria_path.read_text(encoding="utf-8")
         prompt_template = prompt_path.read_text(encoding="utf-8")
+        additional_path = self.project.root / self.project.config.screening.additional
+        additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
 
         run_id = self.project.db.create_test_run(
             project_id=self.project.project_id,
@@ -78,7 +80,7 @@ class QuickTestTask:
 
         for idx, source in enumerate(sample, 1):
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template)
+                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text)
                 self.project.db.insert_test_decision(
                     run_id=run_id,
                     source_id=source.id,
@@ -347,6 +349,8 @@ class CalibrationTask:
         prompt_path = self.project.root / self.project.config.screening.prompt
         criteria_text = criteria_path.read_text(encoding="utf-8")
         prompt_template = prompt_path.read_text(encoding="utf-8")
+        additional_path = self.project.root / self.project.config.screening.additional
+        additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
 
         for idx, source in enumerate(sample, 1):
             existing_ai = self._existing_ai_decision(source.id)
@@ -357,7 +361,7 @@ class CalibrationTask:
                 continue
 
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template)
+                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text)
                 decision.source_id = source.id
                 self.project.db.insert_screening_decision(decision)
                 summary.ai_counts[decision.decision] += 1

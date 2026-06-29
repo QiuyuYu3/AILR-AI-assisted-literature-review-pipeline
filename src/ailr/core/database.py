@@ -93,6 +93,10 @@ class Database(
         if "full_record_json" not in existing:
             with self._engine.begin() as conn:
                 conn.exec_driver_sql("ALTER TABLE duplicates ADD COLUMN full_record_json TEXT")
+        pv_cols = {c["name"] for c in inspect(self._engine).get_columns("prompt_versions")}
+        if "composed" not in pv_cols:
+            with self._engine.begin() as conn:
+                conn.exec_driver_sql("ALTER TABLE prompt_versions ADD COLUMN composed TEXT")
         # composite index speeds the screening list / status filters / vote locks (existing DBs only;
         # fresh ones get it from create_all). CREATE INDEX IF NOT EXISTS works on SQLite + PostgreSQL.
         with self._engine.begin() as conn:

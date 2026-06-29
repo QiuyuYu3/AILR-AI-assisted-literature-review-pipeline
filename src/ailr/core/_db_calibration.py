@@ -209,8 +209,11 @@ class CalibrationMixin:
         prompt_type: str,
         content: str,
         notes: Optional[str] = None,
+        composed: Optional[str] = None,
     ) -> str:
-        """Snapshot the current prompt into prompt_versions. Auto-numbers v1, v2, ... per type."""
+        """Snapshot the current prompt into prompt_versions. Auto-numbers v1, v2, ... per type.
+        content is the editable template (for restore); composed is the fully-resolved prompt
+        (criteria + additional filled in) kept for reproducibility."""
         with self._lock, self._conn.transaction():
             n = self._conn.execute(
                 "SELECT COUNT(*) AS c FROM prompt_versions WHERE project_id = ? AND prompt_type = ?",
@@ -218,8 +221,8 @@ class CalibrationMixin:
             ).fetchone()["c"]
             version = f"v{n + 1}"
             self._conn.execute(
-                "INSERT INTO prompt_versions (project_id, version, prompt_type, content, notes) VALUES (?, ?, ?, ?, ?)",
-                (project_id, version, prompt_type, content, notes),
+                "INSERT INTO prompt_versions (project_id, version, prompt_type, content, composed, notes) VALUES (?, ?, ?, ?, ?, ?)",
+                (project_id, version, prompt_type, content, composed, notes),
             )
             self._conn.commit()
             return version
@@ -227,7 +230,7 @@ class CalibrationMixin:
     def list_prompt_versions(self, project_id: int, prompt_type: str) -> list[dict]:
         rows = self._conn.execute(
             """
-            SELECT version, content, notes, created_at FROM prompt_versions
+            SELECT version, content, composed, notes, created_at FROM prompt_versions
             WHERE project_id = ? AND prompt_type = ?
             ORDER BY created_at DESC, version DESC
             """,
@@ -237,7 +240,7 @@ class CalibrationMixin:
 
     def get_prompt_version(self, project_id: int, prompt_type: str, version: str) -> Optional[dict]:
         row = self._conn.execute(
-            "SELECT version, content, notes, created_at FROM prompt_versions WHERE project_id = ? AND prompt_type = ? AND version = ?",
+            "SELECT version, content, composed, notes, created_at FROM prompt_versions WHERE project_id = ? AND prompt_type = ? AND version = ?",
             (project_id, prompt_type, version),
         ).fetchone()
         return dict(row) if row else None

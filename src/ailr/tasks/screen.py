@@ -55,6 +55,8 @@ class ScreeningTask:
 
         prompt_template = prompt_path.read_text(encoding="utf-8")
         criteria_text = criteria_path.read_text(encoding="utf-8")
+        additional_path = self.project.root / config.screening.additional
+        additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
 
         un_screened = self.project.db.list_unscreened(
             project_id=self.project.project_id,
@@ -94,7 +96,7 @@ class ScreeningTask:
                 continue
 
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template)
+                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text)
                 decision.source_id = source.id
                 _save(decision)
                 summary.add_decision(decision)

@@ -125,6 +125,7 @@ def build_app() -> Dash:
                     dbc.Col(html.Div(id="tab-content"), id="content-col", width=10, className="ps-4"),
                 ],
             ),
+            dcc.Location(id="settings-redirect", refresh=True),
             dcc.Store(id="tabs", data="dashboard", storage_type="session"),
             dcc.Store(id="screen-store", data={"idx": 0}),
             dcc.Store(id="extract-store", data={"sid": None}, storage_type="session"),
@@ -310,7 +311,9 @@ def build_app() -> Dash:
         # A failure while building a tab's layout (e.g. a transient DB hiccup) would otherwise be
         # swallowed and leave the content blank ("nothing happens until I refresh"); surface it instead.
         try:
-            return _tab_layout(tab, reviewer)
+            layout = _tab_layout(tab, reviewer)
+            # Key by tab so switching forces a clean remount (avoids stale-callback render races that blank the page).
+            return html.Div(layout, key=f"tab-{tab}")
         except Exception as e:
             import traceback
             traceback.print_exc()

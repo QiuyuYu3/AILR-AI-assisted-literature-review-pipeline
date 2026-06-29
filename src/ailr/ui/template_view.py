@@ -18,7 +18,6 @@ from ailr.extraction import (
 )
 from ailr.ingest.schema_import import parse_schema_import
 from ailr.ui._common import get_project, read_criteria
-from ailr.ui.screen_view import criteria_editor_block, register_criteria_callbacks
 
 
 def _extraction_run_prompt() -> str:
@@ -275,6 +274,16 @@ def _additional_text() -> str:
         return ""
 
 
+def _extraction_prompt_version_options() -> list[Any]:
+    project = get_project()
+    vers = project.db.list_prompt_versions(project.project_id, "extraction")
+    return [
+        {"label": f"{v['version']} • {v['created_at']}" + (f" • {v['notes']}" if v.get("notes") else ""),
+         "value": v["version"]}
+        for v in vers
+    ]
+
+
 _VARIABLES_JSON_NAME = "extraction_variables.json"
 
 
@@ -456,7 +465,16 @@ def layout() -> Any:
             color="light", className="small py-2",
         ),
         html.H6("3a · Inclusion / exclusion criteria", className="mt-2"),
-        criteria_editor_block("tmpl", note="Used by both screening and data extraction (fills {{criteria}}).", with_import=False),
+        html.P(
+            "One shared criteria for the whole review (abstract screening + extraction both use it). "
+            "View only here — edit it on the Settings page.",
+            className="text-muted small mb-1",
+        ),
+        html.Pre(
+            read_criteria(),
+            style={"whiteSpace": "pre-wrap", "fontSize": "0.75rem", "maxHeight": "220px", "overflow": "auto",
+                   "border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"},
+        ),
         html.H6("3b · Additional instructions (optional)", className="mt-3"),
         html.P(
             "Free-form guidance appended to the prompt — e.g. how to handle tricky fields, domain "
@@ -480,6 +498,22 @@ def layout() -> Any:
             className="text-muted small mb-1",
         ),
         html.Div(id="tmpl-prompt-composed"),
+        html.Details(
+            [
+                html.Summary("Version history — see the exact prompt sent for each run"),
+                html.P("A version is saved automatically when you run AI extraction (only if the prompt, criteria, schema, or additional instructions changed). Each extracted field is tagged with it, and the full resolved prompt is stored for reproducibility.", className="text-muted small mb-1 mt-2"),
+                html.Div(id="tmpl-prompt-ver-feedback", className="small mb-1"),
+                dbc.InputGroup(
+                    [
+                        dbc.Select(id="tmpl-prompt-ver-select", options=_extraction_prompt_version_options(), size="sm"),
+                        dbc.Button("Restore to editor", id="tmpl-prompt-ver-restore", color="secondary", outline=True, size="sm"),
+                    ],
+                    className="mb-1",
+                ),
+                html.Div(id="tmpl-prompt-ver-view", className="small text-muted"),
+            ],
+            className="mt-3",
+        ),
         html.Details(
             [
                 html.Summary("Advanced: edit the full prompt template"),
@@ -601,8 +635,6 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
-    register_criteria_callbacks(app, "tmpl", with_import=False)
-
     @app.callback(
         Output("tmpl-template-dl", "data"),
         Input("tmpl-template-dl-btn", "n_clicks"),
@@ -627,6 +659,53 @@ def register_callbacks(app: Any) -> None:
     )
     def _load_starter(n):
         return _STARTER_PROMPT if n else no_update
+
+    @app.callback(
+        Output("tmpl-prompt", "value", allow_duplicate=True),
+        Output("tmpl-prompt-ver-feedback", "children"),
+        Input("tmpl-prompt-ver-restore", "n_clicks"),
+        State("tmpl-prompt-ver-select", "value"),
+        prevent_initial_call=True,
+    )
+    def _restore_extraction_prompt_version(n, version):
+        if not n or not version:
+            return no_update, no_update
+        project = get_project()
+        v = project.db.get_prompt_version(project.project_id, "extraction", version)
+        if not v:
+            return no_update, dbc.Alert("Version not found.", color="warning", className="mb-0 py-1")
+        return v["content"], dbc.Alert(f"Loaded {version} into the editor (under Advanced). Click ‘Save prompt’ to write it to the file.", color="info", className="mb-0 py-1")
+
+    @app.callback(
+        Output("tmpl-prompt-ver-view", "children"),
+        Input("tmpl-prompt-ver-select", "value"),
+    )
+    def _view_extraction_prompt_version(version):
+        if not version:
+            return ""
+        project = get_project()
+        v = project.db.get_prompt_version(project.project_id, "extraction", version)
+        if not v:
+            return ""
+        bits = [f"{version} · {v['created_at']}"]
+        if v.get("notes"):
+            bits.append(v["notes"])
+        header = " — ".join(bits)
+        composed = v.get("composed")
+        if not composed:
+            return header
+        return html.Div(
+            [
+                html.Div(header),
+                html.Details(
+                    [
+                        html.Summary("Exact prompt sent (criteria + schema + additional resolved)", className="small"),
+                        html.Pre(composed, style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "maxHeight": "300px", "overflow": "auto"}),
+                    ],
+                    className="mt-1",
+                ),
+            ]
+        )
 
     @app.callback(
         Output("tmpl-preset-feedback", "children"),
@@ -730,13 +809,12 @@ def register_callbacks(app: Any) -> None:
         Output("tmpl-prompt-composed", "children"),
         Input("tmpl-prompt", "value"),
         Input("tmpl-additional", "value"),
-        Input("tmpl-criteria", "value"),
         Input("tmpl-store", "data"),
     )
-    def _composed_prompt(prompt, additional, criteria, store):
+    def _composed_prompt(prompt, additional, store):
         schema_md = schema_to_markdown(_compose(store or {}))
         composed = compose_extraction_prompt(
-            prompt, criteria=criteria or read_criteria(), schema_md=schema_md, additional=additional or ""
+            prompt, criteria=read_criteria(), schema_md=schema_md, additional=additional or ""
         )
         return html.Pre(
             composed + "\n\n--- [THE PAPER'S FULL TEXT IS APPENDED HERE AUTOMATICALLY] ---",

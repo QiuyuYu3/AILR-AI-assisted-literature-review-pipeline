@@ -4,7 +4,17 @@
 ## [Unreleased]
 
 ### Changed
-- Reports: faster load — `prisma_counts`/paired-decisions/API-summary computed once and reused, and the "studies extracted" count is a single query instead of one per source.
+- Reports load faster (shared counts; "studies extracted" is one query, not one per source).
+- Inclusion/exclusion criteria edited only in Settings now, shared by screening + extraction (Template shows it read-only).
+
+### Added
+- Screening: optional "Additional instructions" box for stage-specific guidance.
+- Screening panel reorganised like the Template tab (additional + live preview up front, full editor under "Advanced").
+- Settings shows the prompts as actually sent (criteria/schema/additional filled in).
+- Prompt versioning now covers extraction too and snapshots the fully-resolved prompt (new `composed` column), so any criteria/schema/additional change cuts a new version; version view shows the exact prompt sent.
+
+### Fixed
+- Blank page when switching between tabs (tab content keyed per tab to force a clean remount).
 
 ---
 ## [0.21.0] – 2026-06-28

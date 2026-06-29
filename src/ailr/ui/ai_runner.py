@@ -11,7 +11,13 @@ from ailr.llm.factory import make_llm_client
 from ailr.reviewers import LLMReviewer
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.screen import ScreeningTask
-from ailr.ui._common import read_screening_prompt
+from ailr.extraction import (
+    compose_extraction_prompt,
+    compose_schema,
+    compose_screening_prompt,
+    schema_to_markdown,
+)
+from ailr.ui._common import read_criteria, read_screening_additional, read_screening_prompt
 
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -119,14 +125,18 @@ def _screening_prompt_version(project: Any) -> str:
     db = project.db
     pid = project.project_id
     content = read_screening_prompt("")
+    composed = compose_screening_prompt(
+        content, criteria=read_criteria(""), additional=read_screening_additional()
+    )
     latest = db.latest_prompt_version(pid, "screening")
     if latest is not None:
         prev = db.get_prompt_version(pid, "screening", latest)
-        if prev and prev["content"] == content:
+        # Bump on any change to the resolved prompt (template, criteria, or additional).
+        if prev and prev.get("composed") == composed:
             return latest
-    if not content.strip() and latest is None:
+    if not composed.strip() and latest is None:
         return "unversioned"
-    return db.save_prompt_version(pid, "screening", content, None)
+    return db.save_prompt_version(pid, "screening", content, None, composed=composed)
 
 
 def _run_screening(key: str, project: Any, mock: bool) -> None:
@@ -202,12 +212,42 @@ def _run_calibration(key: str, project: Any, mock: bool, n: int) -> None:
             _jobs[key].update({"running": False, "error": str(e)})
 
 
+def _extraction_prompt_version(project: Any) -> str:
+    db = project.db
+    pid = project.project_id
+    cfg = project.config
+
+    def _read(rel: str) -> str:
+        try:
+            return (project.root / rel).read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+    template = _read(cfg.extraction.prompt)
+    additional = _read(cfg.extraction.additional)
+    try:
+        schema_md = schema_to_markdown(compose_schema(project.root / cfg.extraction.schema_path))
+    except Exception:
+        schema_md = ""
+    composed = compose_extraction_prompt(template, criteria=read_criteria(""), schema_md=schema_md, additional=additional)
+    latest = db.latest_prompt_version(pid, "extraction")
+    if latest is not None:
+        prev = db.get_prompt_version(pid, "extraction", latest)
+        # Bump on any change to the resolved prompt (template, criteria, schema, or additional).
+        if prev and prev.get("composed") == composed:
+            return latest
+    if not composed.strip() and latest is None:
+        return "unversioned"
+    return db.save_prompt_version(pid, "extraction", template, None, composed=composed)
+
+
 def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> None:
     try:
         # A real run supersedes earlier mock results: clear them first so they don't block re-extraction.
         replaced = project.db.clear_mock_ai_extractions(project.project_id) if not mock else 0
         client = _make_client(project, "extract", mock)
-        summary = ExtractionTask(project, LLMReviewer(client)).run(
+        reviewer = LLMReviewer(client, prompt_version=_extraction_prompt_version(project))
+        summary = ExtractionTask(project, reviewer).run(
             only_includes=not all_sources, force=force, on_progress=_progress_cb(key), batch=mock
         )
         text = (

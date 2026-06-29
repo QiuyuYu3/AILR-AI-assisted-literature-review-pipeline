@@ -8,10 +8,18 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
 from ailr.core.config import resolve_stage_llm, save_stage_llm_config
+from ailr.extraction import (
+    compose_extraction_prompt,
+    compose_schema,
+    compose_screening_prompt,
+    schema_to_markdown,
+)
 from ailr.ui._common import (
     clear_current_project_data,
     delete_current_project,
     get_project,
+    read_criteria,
+    read_screening_additional,
     reload_project,
 )
 from ailr.ui.screen_view import criteria_editor_block, register_criteria_callbacks
@@ -33,6 +41,25 @@ def _read_file(project_root: Path, rel: str) -> str:
         return p.read_text(encoding="utf-8")
     except OSError:
         return f"(not found: {rel})"
+
+
+def _resolved_screening_prompt(project: Any) -> str:
+    """The exact screening system prompt sent to the AI — template with criteria + additional filled in."""
+    template = _read_file(project.root, project.config.screening.prompt)
+    return compose_screening_prompt(template, criteria=read_criteria(""), additional=read_screening_additional())
+
+
+def _resolved_extraction_prompt(project: Any) -> str:
+    """The exact extraction system prompt — template with criteria, schema, and additional filled in."""
+    template = _read_file(project.root, project.config.extraction.prompt)
+    additional = _read_file(project.root, project.config.extraction.additional)
+    if additional.startswith("(not found:"):
+        additional = ""
+    try:
+        schema_md = schema_to_markdown(compose_schema(project.root / project.config.extraction.schema_path))
+    except Exception:
+        schema_md = "(schema not set — see the Template tab)"
+    return compose_extraction_prompt(template, criteria=read_criteria(""), schema_md=schema_md, additional=additional)
 
 
 def layout() -> Any:
@@ -160,19 +187,19 @@ def layout() -> Any:
 
             html.Hr(className="my-4"),
             html.H6("Prompts & criteria"),
-            html.P("What the AI is actually given. The inclusion/exclusion criteria (used by both screening and extraction) is edited here; prompts are view-only — edit them on the Workflow pages or in the files.", className="text-muted small"),
+            html.P("What the AI is actually given. The inclusion/exclusion criteria (used by both screening and extraction) is edited here; the prompts below are view-only and show the exact text sent — criteria, schema, and additional instructions already filled in. Edit the prompts on the Workflow pages.", className="text-muted small"),
             criteria_editor_block("settings", note="Used by both screening and data extraction (fills {{criteria}})."),
             html.Hr(className="my-3"),
             html.Details(
                 [
-                    html.Summary("Screening prompt"),
-                    html.Pre(_read_file(project.root, project.config.screening.prompt), style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"}),
+                    html.Summary("Screening prompt (as sent)"),
+                    html.Pre(_resolved_screening_prompt(project), style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"}),
                 ]
             ),
             html.Details(
                 [
-                    html.Summary("Extraction prompt"),
-                    html.Pre(_read_file(project.root, project.config.extraction.prompt), style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"}),
+                    html.Summary("Extraction prompt (as sent)"),
+                    html.Pre(_resolved_extraction_prompt(project), style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"}),
                 ]
             ),
             html.Small("The extraction field list (schema) is set in the Template tab.", className="text-muted"),
@@ -208,7 +235,6 @@ def layout() -> Any:
                 style={"maxWidth": "480px"},
             ),
             html.Div(id="settings-delproj-feedback", className="small mt-2"),
-            dcc.Location(id="settings-redirect", refresh=True),
         ]
     )
 

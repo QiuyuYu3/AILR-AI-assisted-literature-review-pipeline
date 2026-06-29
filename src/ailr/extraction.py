@@ -168,6 +168,18 @@ def compose_prompt(template: str, **values: str) -> str:
     return _PROMPT_LEFTOVER.sub("", composed)
 
 
+def compose_screening_prompt(template: str, *, criteria: str = "", additional: str = "") -> str:
+    """Compose the screening system prompt: fixed template + shared {{criteria}} + optional
+    {{additional}}. Same {{additional}} handling as extraction (appended if the template has no
+    marker, so older projects still pick it up). Output format is enforced via the tool schema, not
+    text, so it never appears here."""
+    has_marker = "{{additional}}" in (template or "")
+    composed = compose_prompt(template, criteria=criteria, additional=additional)
+    if additional and additional.strip() and not has_marker:
+        composed = composed.rstrip() + "\n\n# ADDITIONAL INSTRUCTIONS\n\n" + additional.strip()
+    return composed
+
+
 def compose_extraction_prompt(
     template: str,
     *,

@@ -11,7 +11,7 @@ from ailr.extraction import (
     FieldSpec,
     build_extraction_tool_schema,
     compose_extraction_prompt,
-    compose_prompt,
+    compose_screening_prompt,
     schema_to_markdown,
 )
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
@@ -83,6 +83,7 @@ class Reviewer(ABC):
         source: Source,
         criteria_text: str,
         prompt_template: str,
+        additional_text: str = "",
     ) -> ScreeningDecision:
         """Make a screening decision for one source. Caller fills source_id afterward."""
 
@@ -167,8 +168,9 @@ class LLMReviewer(Reviewer):
         source: Source,
         criteria_text: str,
         prompt_template: str,
+        additional_text: str = "",
     ) -> ScreeningDecision:
-        system_prompt = _render_system_prompt(prompt_template, criteria_text)
+        system_prompt = compose_screening_prompt(prompt_template, criteria=criteria_text, additional=additional_text)
         user_message = _format_source_message(source)
 
         output, metadata = self._client.complete_structured(
@@ -267,10 +269,6 @@ class LLMReviewer(Reviewer):
             flag_check=output.get("_flag_check") if flag_check else None,
             raw_output=output,
         )
-
-
-def _render_system_prompt(template: str, criteria_text: str) -> str:
-    return compose_prompt(template, criteria=criteria_text)
 
 
 def _format_paper_message(source: Source, paper_text: str) -> str:

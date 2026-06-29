@@ -9,13 +9,14 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.core.source import Source
+from ailr.extraction import compose_screening_prompt
 from ailr.reviewers import ScreeningDecision
 from ailr.ui import ai_runner
 from ailr.ui._common import (
     _short_author_year,
-    compose_prompt,
     get_project,
     read_criteria,
+    read_screening_additional,
     read_screening_prompt,
     triggered_click_id,
 )
@@ -23,6 +24,10 @@ from ailr.ui._common import (
 
 def _screen_prompt_text() -> str:
     return read_screening_prompt()
+
+
+def _screen_additional_text() -> str:
+    return read_screening_additional()
 
 
 def _screen_criteria_text() -> str:
@@ -164,15 +169,32 @@ def ai_screening_panel() -> list[Any]:
     return [
         # ── Step 1 — Screening prompt ────────────────────────────────────────
         dbc.Label("Step 1 — Screening prompt", className="fw-bold"),
-        html.P(["Use ", html.Code("{{criteria}}"), " for the criteria. Output (decision / reasoning / confidence / matched_criteria / quotes) is enforced automatically."], className="text-muted small mb-1"),
-        dbc.Textarea(id="screen-prompt", value=_screen_prompt_text(), style={"height": "220px", "fontFamily": "monospace", "fontSize": "0.75rem"}),
-        dbc.Button("Save prompt", id="screen-prompt-save", color="primary", size="sm", className="mt-1"),
-        html.Div(id="screen-prompt-feedback", className="small mt-1"),
-        html.Details([html.Summary("Preview composed", className="small"), html.Div(id="screen-prompt-composed")], className="mt-1"),
+        dbc.Alert(
+            [
+                html.Strong("You usually only edit the additional instructions below. "),
+                "The criteria are shared with extraction and edited on the Settings page; the output "
+                "(decision / reasoning / confidence / matched_criteria / quotes) is enforced automatically. "
+                "The full screening prompt is a ready-made template you rarely need to touch (see Advanced).",
+            ],
+            color="light", className="small py-2",
+        ),
+        dbc.Label("Additional instructions (optional)", className="fw-bold"),
+        html.P(
+            "Free-form guidance appended to the screening prompt — e.g. at the abstract stage be "
+            "lenient and exclude only on clear violations, leaving borderline cases for full text. "
+            "The criteria stay the same across stages; stage-specific judgement goes here.",
+            className="text-muted small mb-1",
+        ),
+        dbc.Textarea(id="screen-additional", value=_screen_additional_text(), style={"height": "120px", "fontFamily": "monospace", "fontSize": "0.75rem"}),
+        dbc.Button("Save additional instructions", id="screen-additional-save", color="primary", size="sm", className="mt-1"),
+        html.Div(id="screen-additional-feedback", className="small mt-1"),
+        html.H6("Full prompt preview", className="mt-3"),
+        html.P("The exact prompt sent to the AI, with your criteria and additional instructions filled in.", className="text-muted small mb-1"),
+        html.Div(id="screen-prompt-composed"),
         html.Details(
             [
-                html.Summary("Version history", className="small"),
-                html.P("A version is saved automatically when you run AI screening (only if the prompt changed). AI decisions are tagged with it for reproducibility.", className="text-muted small mb-1 mt-2"),
+                html.Summary("Version history — see the exact prompt sent for each run"),
+                html.P("A version is saved automatically when you run AI screening (only if the prompt, criteria, or additional instructions changed). AI decisions are tagged with it, and the full resolved prompt is stored for reproducibility.", className="text-muted small mb-1 mt-2"),
                 html.Div(id="screen-prompt-ver-feedback", className="small mb-1"),
                 dbc.InputGroup(
                     [
@@ -183,7 +205,30 @@ def ai_screening_panel() -> list[Any]:
                 ),
                 html.Div(id="screen-prompt-ver-view", className="small text-muted"),
             ],
-            className="mt-2",
+            className="mt-3",
+        ),
+        html.Details(
+            [
+                html.Summary("Advanced: edit the full screening prompt"),
+                html.Div(
+                    [
+                        dbc.Alert(
+                            [
+                                html.Strong("Most users don't need this. "),
+                                "This is the fixed template the parts above plug into. Keep the markers ",
+                                html.Code("{{criteria}}"), " and ", html.Code("{{additional}}"),
+                                " so ailr can fill them in. The output format is enforced separately.",
+                            ],
+                            color="light", className="small py-2 mt-2",
+                        ),
+                        dbc.Textarea(id="screen-prompt", value=_screen_prompt_text(), style={"height": "220px", "fontFamily": "monospace", "fontSize": "0.75rem"}),
+                        dbc.Button("Save prompt", id="screen-prompt-save", color="primary", size="sm", className="mt-1"),
+                        html.Div(id="screen-prompt-feedback", className="small mt-1"),
+                    ],
+                    className="ps-2",
+                ),
+            ],
+            className="mt-3",
         ),
         # ── Step 2 — Run AI screening ────────────────────────────────────────
         html.Hr(className="my-3"),
@@ -509,14 +554,48 @@ def register_callbacks(app: Any) -> None:
         bits = [f"{version} · {v['created_at']}"]
         if v.get("notes"):
             bits.append(v["notes"])
-        return " — ".join(bits)
+        header = " — ".join(bits)
+        composed = v.get("composed")
+        if not composed:
+            return header
+        return html.Div(
+            [
+                html.Div(header),
+                html.Details(
+                    [
+                        html.Summary("Exact prompt sent (criteria + additional resolved)", className="small"),
+                        html.Pre(composed, style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "maxHeight": "300px", "overflow": "auto"}),
+                    ],
+                    className="mt-1",
+                ),
+            ]
+        )
+
+    @app.callback(
+        Output("screen-additional-feedback", "children"),
+        Input("screen-additional-save", "n_clicks"),
+        State("screen-additional", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_screen_additional(n, text):
+        if not n:
+            return no_update
+        project = get_project()
+        p = project.root / project.config.screening.additional
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text or "", encoding="utf-8")
+        except OSError as e:
+            return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
+        return dbc.Alert(f"Saved to {p.name}.", color="success", className="mb-0 py-1")
 
     @app.callback(
         Output("screen-prompt-composed", "children"),
         Input("screen-prompt", "value"),
+        Input("screen-additional", "value"),
     )
-    def _composed_screen_prompt(text):
-        composed = compose_prompt(text, criteria=read_criteria())
+    def _composed_screen_prompt(text, additional):
+        composed = compose_screening_prompt(text, criteria=read_criteria(), additional=additional or "")
         return html.Pre(
             composed + "\n\n--- [THE ABSTRACT IS APPENDED HERE AUTOMATICALLY] ---",
             style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "maxHeight": "300px", "overflow": "auto"},

@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS prompt_versions (
     version TEXT NOT NULL,
     prompt_type TEXT NOT NULL,
     content TEXT NOT NULL,
+    composed TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     notes TEXT,
     PRIMARY KEY (project_id, version, prompt_type)
@@ -352,6 +353,7 @@ Table(
     Column("version", Text, nullable=False),
     Column("prompt_type", Text, nullable=False),
     Column("content", Text, nullable=False),
+    Column("composed", Text),
     Column("created_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     Column("notes", Text),
     PrimaryKeyConstraint("project_id", "version", "prompt_type"),
