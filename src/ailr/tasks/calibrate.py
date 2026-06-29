@@ -39,14 +39,18 @@ class QuickTestTask:
         self,
         *,
         n: int = 5,
+        source_ids: Optional[list[int]] = None,
         seed: Optional[int] = None,
         note: Optional[str] = None,
         on_progress: Optional[ProgressCallback] = None,
     ) -> QuickTestSummary:
         all_sources = self.project.db.list_sources(self.project.project_id)
         candidates = [s for s in all_sources if s.abstract]
+        if source_ids:
+            idset = set(source_ids)
+            candidates = [s for s in candidates if s.id in idset]
         candidates_available = len(candidates)
-        sample_size = min(n, candidates_available)
+        sample_size = candidates_available if source_ids else min(n, candidates_available)
 
         criteria_path = self.project.root / self.project.config.screening.criteria
         prompt_path = self.project.root / self.project.config.screening.prompt
@@ -66,8 +70,11 @@ class QuickTestTask:
         if sample_size == 0:
             return summary
 
-        rng = random.Random(seed if seed is not None else self.project.config.llm.seed or 0)
-        sample = rng.sample(candidates, k=sample_size)
+        if source_ids:
+            sample = candidates
+        else:
+            rng = random.Random(seed if seed is not None else self.project.config.llm.seed or 0)
+            sample = rng.sample(candidates, k=sample_size)
 
         for idx, source in enumerate(sample, 1):
             try:
@@ -181,6 +188,7 @@ class ExtractionQuickTestTask:
         self,
         *,
         n: int = 3,
+        source_ids: Optional[list[int]] = None,
         seed: Optional[int] = None,
         note: Optional[str] = None,
         on_progress: Optional[ProgressCallback] = None,
@@ -200,8 +208,11 @@ class ExtractionQuickTestTask:
             s for s in self.project.db.list_sources_with_markdown(self.project.project_id)
             if s.markdown_path
         ]
+        if source_ids:
+            idset = set(source_ids)
+            candidates = [s for s in candidates if s.id in idset]
         candidates_available = len(candidates)
-        sample_size = min(n, candidates_available)
+        sample_size = candidates_available if source_ids else min(n, candidates_available)
 
         run_id = self.project.db.create_test_run(
             project_id=self.project.project_id,
@@ -215,8 +226,11 @@ class ExtractionQuickTestTask:
         if sample_size == 0:
             return summary
 
-        rng = random.Random(seed if seed is not None else self.project.config.llm.seed or 0)
-        sample = rng.sample(candidates, k=sample_size)
+        if source_ids:
+            sample = candidates
+        else:
+            rng = random.Random(seed if seed is not None else self.project.config.llm.seed or 0)
+            sample = rng.sample(candidates, k=sample_size)
 
         for idx, source in enumerate(sample, 1):
             md_path = Path(source.markdown_path)

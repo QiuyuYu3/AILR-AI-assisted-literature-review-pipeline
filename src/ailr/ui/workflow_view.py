@@ -44,8 +44,8 @@ def layout(section: str = "abstract") -> Any:
             [
                 dbc.Tab(html.Div(workflow_tab, className="pt-3"), label="Workflow", tab_id="wf-settings"),
                 dbc.Tab(html.Div(template_view.layout(), className="pt-3"), label="Template", tab_id="wf-template"),
-                dbc.Tab(html.Div(extraction_tab, className="pt-3"), label="AI extraction", tab_id="wf-extract"),
                 dbc.Tab(html.Div(calibration_view.layout("extraction"), className="pt-3"), label="Calibration", tab_id="wf-cal"),
+                dbc.Tab(html.Div(extraction_tab, className="pt-3"), label="AI extraction", tab_id="wf-extract"),
             ],
             active_tab="wf-settings",
         )

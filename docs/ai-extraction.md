@@ -66,7 +66,7 @@ The app stores one row per top-level field, then the verify queue renders them b
 
 ## Why this matters for running the AI yourself
 
-When the app runs the model, the "fill in the form" rule is automatic, so the structure is always right. An outside tool (your own ChatGPT/Claude) has **no such rule** unless you spell it out — which is why running externally needs the exact structure written into your instructions and a check on import. The most reliable approach is to use your own AI only to *write the prompt*, then paste that prompt back into the app and let the app run it. See [Use your own AI to write the prompt](#use-your-own-ai-to-write-the-extraction-prompt) and [Run the AI externally](#run-the-ai-externally-and-import) below.
+When the app runs the model, the "fill in the form" rule is automatic, so the structure is always right. An outside tool (your own ChatGPT/Claude) has **no such rule** unless you spell it out — which is why running externally needs the exact structure written into your instructions and a check on import. The most reliable approach is to use your own AI only to *draft the wording* — the variables and (if needed) the prompt scaffold — then let the app run it. See [Rewriting the whole scaffold (advanced)](#rewriting-the-whole-scaffold-advanced) and [Run the AI externally](#run-the-ai-externally-and-import) below.
 
 For the full step-by-step a single extraction takes — and a troubleshooting table — see [The extraction engine](extraction-engine.md).
 

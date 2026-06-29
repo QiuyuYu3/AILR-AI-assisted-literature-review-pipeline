@@ -77,8 +77,8 @@ def start_screening(project: Any, mock: bool) -> bool:
     return _start("screening", _run_screening, project, mock)
 
 
-def start_quick_test(project: Any, n: int, mock: bool, stage: str = "abstract") -> bool:
-    return _start(f"quicktest-{stage}", _run_quick_test, project, mock, n, stage)
+def start_quick_test(project: Any, n: int, mock: bool, stage: str = "abstract", source_ids=None) -> bool:
+    return _start(f"quicktest-{stage}", _run_quick_test, project, mock, n, stage, source_ids)
 
 
 def start_calibration(project: Any, n: int, mock: bool) -> bool:
@@ -149,13 +149,13 @@ def _run_screening(key: str, project: Any, mock: bool) -> None:
             _jobs[key].update({"running": False, "error": str(e)})
 
 
-def _run_quick_test(key: str, project: Any, mock: bool, n: int, stage: str) -> None:
+def _run_quick_test(key: str, project: Any, mock: bool, n: int, stage: str, source_ids=None) -> None:
     try:
         if stage == "extraction":
             from ailr.tasks.calibrate import ExtractionQuickTestTask
 
             client = _make_client(project, "extract", mock)
-            summary = ExtractionQuickTestTask(project, LLMReviewer(client)).run(n=n, on_progress=_progress_cb(key))
+            summary = ExtractionQuickTestTask(project, LLMReviewer(client)).run(n=n, source_ids=source_ids, on_progress=_progress_cb(key))
             c = summary.decision_counts
             text = (
                 f"Tested {summary.sample_size} (of {summary.candidates_available} with markdown) — "
@@ -166,7 +166,7 @@ def _run_quick_test(key: str, project: Any, mock: bool, n: int, stage: str) -> N
             from ailr.tasks.calibrate import QuickTestTask
 
             client = _make_client(project, "screen", mock)
-            summary = QuickTestTask(project, LLMReviewer(client)).run(n=n, on_progress=_progress_cb(key))
+            summary = QuickTestTask(project, LLMReviewer(client)).run(n=n, source_ids=source_ids, on_progress=_progress_cb(key))
             text = (
                 f"Tested {summary.sample_size} (of {summary.candidates_available} available) — "
                 f"include {summary.ai_counts['include']}, exclude {summary.ai_counts['exclude']}, "

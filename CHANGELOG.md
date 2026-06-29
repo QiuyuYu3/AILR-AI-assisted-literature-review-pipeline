@@ -15,16 +15,16 @@
 - A real AI screening/extraction run now first clears earlier mock results, so it runs over them instead of skipping sources that were only mock-screened (the run summary reports how many mock rows it replaced).
 - Mock AI runs are much faster on a shared PostgreSQL database: results are written in a few batched multi-row INSERTs at the end instead of one round trip per row. Real runs keep the per-row, per-commit path for durability.
 - Sources: edit a paper's metadata (DOI, title, authors, year, journal, source database, abstract) — select a row and click "Edit metadata" to open a confirm dialog — plus a missing-DOI reminder on the Sources tab, after import, and when exporting the includes RIS, since DOI is what keeps de-duplication and PDF linking reliable.
-
-### Added
 - Template: "Save template" also writes a re-importable JSON copy of your variables to `extraction_variables.json` (the app still runs on `schema.yaml`; the JSON is a portable mirror).
 - Template: the "draft variables with your AI" message now asks for descriptions that fully define each field — including what each option of an enum means, and preserving any codebook/prompt wording you paste — so imported field descriptions carry the per-option guidance the model needs (the model only ever sees name + description + options).
 - Schema: list (multi-select) fields now honour `enum`, so each item is constrained to a fixed option set (e.g. a "modality" field limited to Audio / Video / Text / Sensor) in both the enforced tool schema and the codebook/preview.
+- Calibration quick test (screening and extraction) can now run on specific papers you pick — a searchable multi-select (by author / title / DOI / id) — instead of only a random sample of N; choose "Random sample" or "Pick specific papers". Full calibration still uses a random draw (κ needs a representative sample).
 
 ### Fixed
 - Template: importing variable definitions and clicking "Save template" now actually persists to `schema.yaml` — a callback race was overwriting the just-loaded fields with the previous (default) ones before save.
 
 ### Changed
+- Full-text Workflow tabs reordered so Calibration comes before AI extraction (AI extraction is the last step).
 - Template → Prompt section now exposes only the two parts worth editing — inclusion/exclusion criteria and free-form "additional instructions" (new `{{additional}}` placeholder, saved to `prompts/extraction_additional.txt`) — with the fixed scaffold moved into an "Advanced" collapsible and a live full-prompt preview; older scaffolds without the marker get additional instructions appended automatically.
 - PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.
 - Title deduplication now keeps the more complete record (DOI first, then authors, then other fields) instead of always keeping the first-imported one, and the fuzzy-title match threshold was raised from 90 to 95 to cut false-positive merges.

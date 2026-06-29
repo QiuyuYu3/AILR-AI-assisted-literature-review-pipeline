@@ -40,6 +40,45 @@ def _run_options(stage_table: str) -> list[dict]:
     ]
 
 
+def _author_year_src(s: Any) -> str:
+    ay = s.authors[0].split(",")[0].strip() if getattr(s, "authors", None) else ""
+    return f"{ay} {s.year}".strip() if getattr(s, "year", None) else ay
+
+
+def _pick_options(test_stage: str) -> list[dict]:
+    """Candidate papers for the 'pick specific papers' dropdown, searchable by the label text
+    (author / year / title / id / doi)."""
+    project = get_project()
+    if test_stage == "extraction":
+        sources = [s for s in project.db.list_sources_with_markdown(project.project_id) if s.markdown_path]
+    else:
+        sources = [s for s in project.db.list_sources(project.project_id) if s.abstract]
+    options = []
+    for s in sources:
+        doi = getattr(s, "doi", None)
+        label = f"{_author_year_src(s)} — {s.title or '(untitled)'} (#{s.id})" + (f" · {doi}" if doi else "")
+        options.append({"label": label, "value": s.id})
+    return options
+
+
+def _picked_ids(picked: Any) -> list[int]:
+    out: list[int] = []
+    for x in (picked or []):
+        try:
+            out.append(int(x))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _running_alert(started: bool) -> Any:
+    return dbc.Alert("Running…" if started else "Already running…", color="info", className="py-1 mb-0")
+
+
+def _bad_n_alert() -> Any:
+    return dbc.Alert("Enter a valid sample size.", color="warning", className="py-1 mb-0")
+
+
 def layout(stage: str = "abstract") -> Any:
     p = _prefix(stage)
     project = get_project()
@@ -66,10 +105,38 @@ def layout(stage: str = "abstract") -> Any:
         [
             html.P(intro, className="text-muted small"),
             *mode_block,
+            html.Div(
+                dbc.RadioItems(
+                    id=f"{p}-selmode",
+                    options=[
+                        {"label": "Random sample", "value": "random"},
+                        {"label": "Pick specific papers", "value": "pick"},
+                    ],
+                    value="random",
+                    inline=True,
+                ),
+                id=f"{p}-selmode-wrap",
+                className="small mt-1",
+            ),
+            html.Div(
+                [
+                    dbc.Label("Papers — search by author / title / DOI / id", className="small fw-bold"),
+                    dcc.Dropdown(
+                        id=f"{p}-pick",
+                        options=_pick_options(_test_stage(stage)),
+                        multi=True,
+                        placeholder="Type to search; pick one or more papers…",
+                    ),
+                ],
+                id=f"{p}-pick-col",
+                style={"display": "none"},
+                className="mt-1",
+            ),
             dbc.Row(
                 [
                     dbc.Col([dbc.Label("Sample size (N)", className="small fw-bold"),
-                             dbc.Input(id=f"{p}-n", type="number", min=1, step=1, value=default_n, size="sm")], width=3),
+                             dbc.Input(id=f"{p}-n", type="number", min=1, step=1, value=default_n, size="sm")],
+                            id=f"{p}-n-col", width=3),
                     dbc.Col([dbc.Label(" ", className="small d-block"),
                              dbc.Switch(id=f"{p}-mock", label="Mock (no API cost)", value=True, className="small")], width=3),
                     dbc.Col([dbc.Label(" ", className="small d-block"),
@@ -104,26 +171,50 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
 
     if stage == "abstract":
         @app.callback(
+            Output(f"{p}-pick-col", "style"),
+            Output(f"{p}-n-col", "style"),
+            Output(f"{p}-selmode-wrap", "style"),
+            Input(f"{p}-mode", "value"),
+            Input(f"{p}-selmode", "value"),
+        )
+        def _toggle_sel(mode, selmode):
+            # Full calibration always uses a random sample (κ needs a representative draw),
+            # so the pick controls are hidden there.
+            if mode == "full":
+                return {"display": "none"}, {}, {"display": "none"}
+            if selmode == "pick":
+                return {}, {"display": "none"}, {}
+            return {"display": "none"}, {}, {}
+
+        @app.callback(
             Output(f"{p}-poll", "disabled"),
             Output(f"{p}-status", "children"),
             Input(f"{p}-run", "n_clicks"),
             State(f"{p}-mode", "value"),
             State(f"{p}-n", "value"),
             State(f"{p}-mock", "value"),
+            State(f"{p}-selmode", "value"),
+            State(f"{p}-pick", "value"),
             prevent_initial_call=True,
         )
-        def _run(n, mode, sample_n, mock):
+        def _run(n, mode, sample_n, mock, selmode, picked):
             if not n:
                 return no_update, no_update
+            if mode != "full" and selmode == "pick":
+                ids = _picked_ids(picked)
+                if not ids:
+                    return no_update, dbc.Alert("Pick at least one paper.", color="warning", className="py-1 mb-0")
+                started = ai_runner.start_quick_test(get_project(), 0, bool(mock), stage="abstract", source_ids=ids)
+                return False, _running_alert(started)
             try:
                 sample_n = max(1, int(sample_n))
             except (TypeError, ValueError):
-                return no_update, dbc.Alert("Enter a valid sample size.", color="warning", className="py-1 mb-0")
+                return no_update, _bad_n_alert()
             if mode == "full":
                 started = ai_runner.start_calibration(get_project(), sample_n, bool(mock))
             else:
                 started = ai_runner.start_quick_test(get_project(), sample_n, bool(mock), stage="abstract")
-            return False, dbc.Alert("Running…" if started else "Already running…", color="info", className="py-1 mb-0")
+            return False, _running_alert(started)
 
         @app.callback(
             Output(f"{p}-status", "children", allow_duplicate=True),
@@ -150,22 +241,40 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
             return {}, _render_quick_screening(run_value)
     else:
         @app.callback(
+            Output(f"{p}-pick-col", "style"),
+            Output(f"{p}-n-col", "style"),
+            Input(f"{p}-selmode", "value"),
+        )
+        def _toggle_sel(selmode):
+            if selmode == "pick":
+                return {}, {"display": "none"}
+            return {"display": "none"}, {}
+
+        @app.callback(
             Output(f"{p}-poll", "disabled"),
             Output(f"{p}-status", "children"),
             Input(f"{p}-run", "n_clicks"),
             State(f"{p}-n", "value"),
             State(f"{p}-mock", "value"),
+            State(f"{p}-selmode", "value"),
+            State(f"{p}-pick", "value"),
             prevent_initial_call=True,
         )
-        def _run(n, sample_n, mock):
+        def _run(n, sample_n, mock, selmode, picked):
             if not n:
                 return no_update, no_update
+            if selmode == "pick":
+                ids = _picked_ids(picked)
+                if not ids:
+                    return no_update, dbc.Alert("Pick at least one paper.", color="warning", className="py-1 mb-0")
+                started = ai_runner.start_quick_test(get_project(), 0, bool(mock), stage="extraction", source_ids=ids)
+                return False, _running_alert(started)
             try:
                 sample_n = max(1, int(sample_n))
             except (TypeError, ValueError):
-                return no_update, dbc.Alert("Enter a valid sample size.", color="warning", className="py-1 mb-0")
+                return no_update, _bad_n_alert()
             started = ai_runner.start_quick_test(get_project(), sample_n, bool(mock), stage="extraction")
-            return False, dbc.Alert("Running…" if started else "Already running…", color="info", className="py-1 mb-0")
+            return False, _running_alert(started)
 
         @app.callback(
             Output(f"{p}-status", "children", allow_duplicate=True),

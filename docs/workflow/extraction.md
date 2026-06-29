@@ -1,19 +1,19 @@
 # Data extraction
 
-Pull structured data out of the included full texts — the step that turns a pile of papers into a dataset you can analyse. The setup lives in tabs on the **Full text → Workflow** page — **Template** (define what to extract), **AI extraction** (run it), and **Calibration** — while the **Extraction** sidebar page is the per-paper verify queue.
+Pull structured data out of the included full texts — the step that turns a pile of papers into a dataset you can analyse. The setup lives in tabs on the **Full text → Workflow** page, in the order you use them — **Template** (define what to extract), **Calibration** (test on a few papers), and **AI extraction** (run it last) — while the **Extraction** sidebar page is the per-paper verify queue.
 
 ## 1. Define the template
 
-On the **Template** tab you set up *what* gets extracted:
+On the **Template** tab you set up *what* gets extracted and *how*:
 
 - the **variables** to extract (the schema, `schema.yaml`)
-- the **extraction prompt**
+- the **prompt**, broken into the two parts worth editing — the **inclusion/exclusion criteria** and free-form **additional instructions**; the rest is a fixed scaffold ailr fills in (editable under "Advanced")
 - which fields a **human must verify**
 - optional value definitions (`codebook.yaml`)
 
-You can build the variables by hand, or **import** them — paste a JSON list of field definitions (e.g. one your own AI drafted), **validate** it (the app checks the structure and flags warnings), and load it into the editor to review before saving.
+You can build the variables by hand, or **import** them — paste a JSON list of field definitions (e.g. one your own AI drafted), **validate** it (the app checks the structure and flags warnings), and load it into the editor to review before saving. Saving the template also writes a re-importable `extraction_variables.json` copy.
 
-The schema sets the *structure* (which fields exist and their types) and the prompt sets the *quality* (how to read the paper) — these are independent, and understanding why is worth a few minutes: see [How AI extraction works](../ai-extraction.md). You can let your own AI draft the **variables** ([Define your variables with your own AI](../ai-extraction.md#define-your-variables-with-your-own-ai)) or the **prompt** ([Use your own AI to write the prompt](../ai-extraction.md#use-your-own-ai-to-write-the-extraction-prompt)), or **download a JSON template** / **copy the extraction prompt** to run the model entirely outside the app ([Run the AI externally](../ai-extraction.md#run-the-ai-externally-and-import)).
+The schema sets the *structure* (which fields exist and their types) and the prompt sets the *quality* (how to read the paper) — these are independent, and understanding why is worth a few minutes: see [How AI extraction works](../ai-extraction.md). You can let your own AI draft the **variables** ([Define your variables with your own AI](../ai-extraction.md#define-your-variables-with-your-own-ai)) or, for the fixed scaffold, [rewrite it with your own AI](../ai-extraction.md#rewriting-the-whole-scaffold-advanced); or **download a JSON template** / **copy the extraction prompt** to run the model entirely outside the app ([Run the AI externally](../ai-extraction.md#run-the-ai-externally-and-import)).
 
 ![template editor](../figures/ft_template1.png)
 
@@ -34,7 +34,7 @@ See [workflow modes](../concepts.md#workflow-modes).
 
 ### Calibrate extraction
 
-Like screening, extraction has a **Calibration** tab — run the AI on a small sample and compare against a human pass before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them.
+Like screening, extraction has a **Calibration** tab — run the AI on a few papers and eyeball the output before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them. Choose **Random sample** (N papers) or **Pick specific papers** — a searchable multi-select by author / title / DOI / id — to test on cases you care about.
 
 ![extraction calibration](../figures/ft_ca.png)
 

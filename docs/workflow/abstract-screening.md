@@ -20,7 +20,7 @@ The **Workflow** page (abstract) has three tabs — **Workflow**, **AI screening
 
 Calibration tests the prompt on a small sample so you trust it before spending tokens — and trust on the whole library:
 
-- **Quick test** — run the prompt on a small isolated sample and read the AI's reasoning, *without* touching your real decisions. Use this while you are still editing the wording.
+- **Quick test** — run the prompt on a few abstracts and read the AI's reasoning, *without* touching your real decisions. Use this while you are still editing the wording. Choose **Random sample** (N) or **Pick specific papers** (search by author / title / DOI / id) to test on cases you care about.
 - **Full calibration** — run on a calibration sample and compute **Cohen's κ vs. human** to measure agreement against the target (`target_kappa`, default 0.7). κ near or above the target means the AI is tracking your judgement closely enough to act as a real second reviewer.
 
 Iterate the prompt until agreement is acceptable. Each run snapshots a **prompt version**, so every later decision can be traced back to the exact wording that produced it — you never lose track of which prompt screened which papers.
