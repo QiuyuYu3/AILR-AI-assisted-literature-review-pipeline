@@ -138,6 +138,7 @@ def switch_project(path: Path) -> Project:
     """Point the running app at a different project folder (UI project switcher)."""
     global _project
     _project = Project.load(Path(path))
+    os.environ["AILR_PROJECT"] = str(_project.root)  # so get_project() can reload in any thread
     add_recent_project(_project.root)
     return _project
 
@@ -167,6 +168,7 @@ def create_project(
         data.setdefault("storage", {})["database_url"] = database_url.strip()
         cfg_path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
     _project = Project.load(root)
+    os.environ["AILR_PROJECT"] = str(root)  # so get_project() can reload in any thread
     add_recent_project(root)
     return _project
 

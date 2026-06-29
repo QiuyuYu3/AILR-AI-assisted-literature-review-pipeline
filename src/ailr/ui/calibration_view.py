@@ -406,19 +406,13 @@ def _render_quick_extraction(run_value: Any) -> Any:
     cards = []
     for ex in extractions:
         dec = ex.get("full_text_decision")
-        field_rows = []
-        for f in ex.get("fields", []):
-            val = f.get("value")
-            quote = f.get("quote")
-            field_rows.append(
-                html.Tr([
-                    html.Td(f.get("field"), className="fw-bold small", style={"whiteSpace": "nowrap"}),
-                    html.Td([
-                        html.Div(str(val) if val is not None else "—", className="small"),
-                        html.Div(f"“{quote}”", className="text-muted small fst-italic") if quote else None,
-                    ]),
-                ])
-            )
+        field_rows = [
+            html.Tr([
+                html.Td(f.get("field"), className="fw-bold small", style={"whiteSpace": "nowrap", "verticalAlign": "top"}),
+                html.Td(_value_block(f.get("value"), f.get("quote"))),
+            ])
+            for f in ex.get("fields", [])
+        ]
         body = dbc.Table([html.Tbody(field_rows)], borderless=True, size="sm") if field_rows else html.P("(no fields)", className="text-muted small")
         cards.append(
             dbc.Card(
@@ -431,11 +425,72 @@ def _render_quick_extraction(run_value: Any) -> Any:
                     ], className="mb-1"),
                     html.Div(ex.get("title") or "", className="small text-muted mb-2"),
                     body,
+                    _flag_check_block(ex.get("flag_check") or []),
                 ]),
                 className="mb-2",
             )
         )
     return html.Div(cards)
+
+
+def _scalar_str(v: Any) -> str:
+    if v is None:
+        return "—"
+    if isinstance(v, (dict, list)):
+        import json as _json
+        return _json.dumps(v, ensure_ascii=False)
+    return str(v)
+
+
+def _quote_line(q: Any) -> Any:
+    return html.Div(f"“{q}”", className="text-muted small fst-italic") if q else None
+
+
+def _value_block(val: Any, quote: Any) -> Any:
+    """Render a field's value + quote. Expands a repeating group (list of objects) into per-item
+    sub-fields, each with its own value and grey quote underneath."""
+    # repeating group / list of objects: each leaf sub-field is {value, quote}
+    if isinstance(val, list) and val and all(isinstance(x, dict) for x in val):
+        items = []
+        for i, obj in enumerate(val, 1):
+            sub = []
+            for k, raw in obj.items():
+                sval, squote = (raw.get("value"), raw.get("quote")) if isinstance(raw, dict) and "value" in raw else (raw, None)
+                sub.append(html.Div([
+                    html.Span(f"{k}: ", className="fw-bold small"),
+                    html.Span(_scalar_str(sval), className="small"),
+                    _quote_line(squote),
+                ], className="mb-1"))
+            items.append(html.Div(
+                [html.Div(f"item {i}", className="text-muted small fst-italic mb-1"), *sub],
+                className="ps-2 mb-2 border-start",
+            ))
+        return html.Div(items)
+    # simple list of scalars (e.g. modality)
+    if isinstance(val, list):
+        return html.Div([html.Div(", ".join(_scalar_str(x) for x in val) if val else "—", className="small"), _quote_line(quote)])
+    # scalar
+    return html.Div([html.Div(_scalar_str(val), className="small"), _quote_line(quote)])
+
+
+def _flag_check_block(flag_check: list) -> Any:
+    if not flag_check:
+        return None
+    verdict_color = {"PASS": "success", "FAIL": "danger", "UNCERTAIN": "warning"}
+    rows = []
+    for it in flag_check:
+        verdict = (it.get("verdict") or "").upper()
+        conf = it.get("confidence")
+        rows.append(html.Div([
+            html.Div([
+                dbc.Badge(verdict or "?", color=verdict_color.get(verdict, "secondary"), className="me-2"),
+                html.Span(it.get("criterion_id") or "", className="fw-bold small me-2"),
+                html.Span(f"conf {conf}" if conf is not None else "", className="text-muted small"),
+            ]),
+            html.Div(it.get("reason") or "", className="small"),
+            _quote_line(it.get("quote")),
+        ], className="mb-2"))
+    return html.Div([html.Hr(className="my-2"), html.Div("Inclusion flag check", className="fw-bold small mb-1"), *rows])
 
 
 def _render_full() -> Any:

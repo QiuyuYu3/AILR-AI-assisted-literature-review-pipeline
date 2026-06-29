@@ -19,6 +19,7 @@
 - Template: the "draft variables with your AI" message now asks for descriptions that fully define each field — including what each option of an enum means, and preserving any codebook/prompt wording you paste — so imported field descriptions carry the per-option guidance the model needs (the model only ever sees name + description + options).
 - Schema: list (multi-select) fields now honour `enum`, so each item is constrained to a fixed option set (e.g. a "modality" field limited to Audio / Video / Text / Sensor) in both the enforced tool schema and the codebook/preview.
 - Calibration quick test (screening and extraction) can now run on specific papers you pick — a searchable multi-select (by author / title / DOI / id) — instead of only a random sample of N; choose "Random sample" or "Pick specific papers". Full calibration still uses a random draw (κ needs a representative sample).
+- Calibration extraction quick test now shows the full AI output: every field's value with its verbatim quote underneath, repeating groups (e.g. dyadic features) expanded per item with per-sub-field quotes, and the inclusion flag-check (per-criterion verdict / confidence / reason / quote) — so a test run shows exactly what and how the AI extracted and judged.
 
 ### Fixed
 - Template: importing variable definitions and clicking "Save template" now actually persists to `schema.yaml` — a callback race was overwriting the just-loaded fields with the previous (default) ones before save.
