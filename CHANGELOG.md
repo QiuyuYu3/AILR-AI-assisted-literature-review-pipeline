@@ -3,56 +3,81 @@
 ---
 ## [Unreleased]
 
+---
+## [0.21.0] – 2026-06-28
+
+Extraction template, schema, prompt, and calibration overhaul.
+
 ### Added
 - Template: import variable definitions drafted by your own AI — paste JSON, validate (structure + warnings), and load into the editor to review before saving.
-- Search strategy archiving: record each database's search query / date / limits at import (with record counts), listed on the Import page and emitted in the methods export.
-- Duplicates: "Removed at import" records can now be restored as sources (select + Restore) — the full record is stored at import so a wrongly-dropped paper comes back complete.
-- Settings → Danger zone: clear all of a project's data, or delete the project entirely (data + row, files on disk kept), each guarded by a type-the-name confirmation.
-- Screening filter: "All fields" search now also matches DOI, PMID, year, and source database.
-- PDF→markdown conversion now runs PDFs in parallel (configurable "Parallel workers" on the full-text Workflow tab, default 4; the marker backend always uses 1).
-- Full-text: per-card "Re-convert PDF" button, "Force re-convert all" and "Re-convert low-text / failed" buttons plus a backend selector (pymupdf/marker) on the Workflow tab, and a "Low-text / failed" filter that surfaces papers whose converted markdown is empty or too short.
-- "Clear mock AI results" buttons on the Screening and Extraction pages remove only mock-provider AI rows (real AI and human decisions/extractions are kept), so runs done with the Mock toggle don't linger in the real data.
-- A real AI screening/extraction run now first clears earlier mock results, so it runs over them instead of skipping sources that were only mock-screened (the run summary reports how many mock rows it replaced).
-- Mock AI runs are much faster on a shared PostgreSQL database: results are written in a few batched multi-row INSERTs at the end instead of one round trip per row. Real runs keep the per-row, per-commit path for durability.
-- Sources: edit a paper's metadata (DOI, title, authors, year, journal, source database, abstract) — select a row and click "Edit metadata" to open a confirm dialog — plus a missing-DOI reminder on the Sources tab, after import, and when exporting the includes RIS, since DOI is what keeps de-duplication and PDF linking reliable.
 - Template: "Save template" also writes a re-importable JSON copy of your variables to `extraction_variables.json` (the app still runs on `schema.yaml`; the JSON is a portable mirror).
 - Template: the "draft variables with your AI" message now asks for descriptions that fully define each field — including what each option of an enum means, and preserving any codebook/prompt wording you paste — so imported field descriptions carry the per-option guidance the model needs (the model only ever sees name + description + options).
 - Schema: list (multi-select) fields now honour `enum`, so each item is constrained to a fixed option set (e.g. a "modality" field limited to Audio / Video / Text / Sensor) in both the enforced tool schema and the codebook/preview.
 - Calibration quick test (screening and extraction) can now run on specific papers you pick — a searchable multi-select (by author / title / DOI / id) — instead of only a random sample of N; choose "Random sample" or "Pick specific papers". Full calibration still uses a random draw (κ needs a representative sample).
 - Calibration extraction quick test now shows the full AI output: every field's value with its verbatim quote underneath, repeating groups (e.g. dyadic features) expanded per item with per-sub-field quotes, and the inclusion flag-check (per-criterion verdict / confidence / reason / quote) — so a test run shows exactly what and how the AI extracted and judged.
 
-### Fixed
-- Template: importing variable definitions and clicking "Save template" now actually persists to `schema.yaml` — a callback race was overwriting the just-loaded fields with the previous (default) ones before save.
-
 ### Changed
 - Full-text Workflow tabs reordered so Calibration comes before AI extraction (AI extraction is the last step).
 - Template → Prompt section now exposes only the two parts worth editing — inclusion/exclusion criteria and free-form "additional instructions" (new `{{additional}}` placeholder, saved to `prompts/extraction_additional.txt`) — with the fixed scaffold moved into an "Advanced" collapsible and a live full-prompt preview; older scaffolds without the marker get additional instructions appended automatically.
-- PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.
-- Title deduplication now keeps the more complete record (DOI first, then authors, then other fields) instead of always keeping the first-imported one, and the fuzzy-title match threshold was raised from 90 to 95 to cut false-positive merges.
-- Imports are much faster on a shared PostgreSQL database: records are inserted in batched transactions and existing DOIs are loaded in one query instead of one per record.
-- Screening and full-text review stay fast at thousands of records: the lists now filter/sort/paginate in SQL (only the visible page is fetched, not the whole table), votes commit in one transaction, a composite index speeds the status filters and vote locks, and the Sources overview query was rewritten to avoid a per-row subquery scan.
 
-### Changed (docs/UI)
-- The shared-database hints (new-project form, Settings, config template, db-migrate `--to`) now say to paste the Neon/Postgres URL as-is (`postgresql://` or `postgres://`) — no need to rewrite the prefix, the driver is set automatically.
+### Fixed
+- Template: importing variable definitions and clicking "Save template" now actually persists to `schema.yaml` — a callback race was overwriting the just-loaded fields with the previous (default) ones before save.
+- Opening or switching a project in the UI now sets `AILR_PROJECT`, so background actions (e.g. calibration runs) no longer fail with "AILR_PROJECT environment variable is not set".
+- A unique index on screening decisions (source + reviewer + stage + reviewer type) now prevents duplicate votes at the database level, backing up the click-time vote lock.
+- The "Run externally" extraction prompt preview now shows the exact prompt ailr sends (your saved template with {{criteria}} and {{schema_md}} filled in, via the same composer the reviewer uses) and the real output shape (per-field {value, quote} + per-criterion _flag_check with quote), so it's faithfully reproducible in another agent — previously it was a separate hand-written wrapper with an outdated flag-check shape.
+- Extraction exports now include the verbatim quote for every field: the AI-extraction JSON pairs each leaf field as `{value, quote}` and the wide CSV's `<field>_quote` columns are populated (the quote was captured but previously dropped from both exports). The inclusion flag-check also now carries a supporting quote per verdict.
 
 ### Docs
 - New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
 
+---
+## [0.20.0] – 2026-06-28
+
+Full-text / PDF preparation, mock-run handling, and tab-switch stability.
+
+### Added
+- PDF→markdown conversion now runs PDFs in parallel (configurable "Parallel workers" on the full-text Workflow tab, default 4; the marker backend always uses 1).
+- Full-text: per-card "Re-convert PDF" button, "Force re-convert all" and "Re-convert low-text / failed" buttons plus a backend selector (pymupdf/marker) on the Workflow tab, and a "Low-text / failed" filter that surfaces papers whose converted markdown is empty or too short.
+- "Clear mock AI results" buttons on the Screening and Extraction pages remove only mock-provider AI rows (real AI and human decisions/extractions are kept), so runs done with the Mock toggle don't linger in the real data.
+- A real AI screening/extraction run now first clears earlier mock results, so it runs over them instead of skipping sources that were only mock-screened (the run summary reports how many mock rows it replaced).
+- Mock AI runs are much faster on a shared PostgreSQL database: results are written in a few batched multi-row INSERTs at the end instead of one round trip per row. Real runs keep the per-row, per-commit path for durability.
+
+### Changed
+- PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.
+
 ### Fixed
-- The "Run externally" extraction prompt preview now shows the exact prompt ailr sends (your saved template with {{criteria}} and {{schema_md}} filled in, via the same composer the reviewer uses) and the real output shape (per-field {value, quote} + per-criterion _flag_check with quote), so it's faithfully reproducible in another agent — previously it was a separate hand-written wrapper with an outdated flag-check shape.
-- Extraction exports now include the verbatim quote for every field: the AI-extraction JSON pairs each leaf field as `{value, quote}` and the wide CSV's `<field>_quote` columns are populated (the quote was captured but previously dropped from both exports). The inclusion flag-check also now carries a supporting quote per verdict.
 - Switching tabs no longer silently leaves the page blank when a tab's layout fails to build (e.g. a transient database hiccup) — the error is shown in-page and logged so it can be diagnosed, instead of looking like nothing happened until a refresh.
 - PDF linking no longer mis-assigns a PDF when two DOI-less papers have near-identical titles (e.g. "LAEO-Net" vs "LAEO-Net++"): a tie in title similarity is now broken by publication year, so each paper keeps its own PDF instead of one source being re-linked on every run.
 - Reference-stripping no longer deletes the body of a paper when an early "References" heading appears before the bibliography (e.g. JSTOR cover pages); only a heading in the latter half of the document is treated as the reference list.
+
+### Internal
+- Code cleanup / refactor (no behavior change).
+
+---
+## [0.19.0] – 2026-06-28
+
+Import, sources, conflicts, and large-corpus performance.
+
+### Added
+- Search strategy archiving: record each database's search query / date / limits at import (with record counts), listed on the Import page and emitted in the methods export.
+- Duplicates: "Removed at import" records can now be restored as sources (select + Restore) — the full record is stored at import so a wrongly-dropped paper comes back complete.
+- Settings → Danger zone: clear all of a project's data, or delete the project entirely (data + row, files on disk kept), each guarded by a type-the-name confirmation.
+- Screening filter: "All fields" search now also matches DOI, PMID, year, and source database.
+- Sources: edit a paper's metadata (DOI, title, authors, year, journal, source database, abstract) — select a row and click "Edit metadata" to open a confirm dialog — plus a missing-DOI reminder on the Sources tab, after import, and when exporting the includes RIS, since DOI is what keeps de-duplication and PDF linking reliable.
+
+### Changed
+- Title deduplication now keeps the more complete record (DOI first, then authors, then other fields) instead of always keeping the first-imported one, and the fuzzy-title match threshold was raised from 90 to 95 to cut false-positive merges.
+- Imports are much faster on a shared PostgreSQL database: records are inserted in batched transactions and existing DOIs are loaded in one query instead of one per record.
+- Screening and full-text review stay fast at thousands of records: the lists now filter/sort/paginate in SQL (only the visible page is fetched, not the whole table), votes commit in one transaction, a composite index speeds the status filters and vote locks, and the Sources overview query was rewritten to avoid a per-row subquery scan.
+- The shared-database hints (new-project form, Settings, config template, db-migrate `--to`) now say to paste the Neon/Postgres URL as-is (`postgresql://` or `postgres://`) — no need to rewrite the prefix, the driver is set automatically.
+
+### Fixed
 - Conflicts page "Recently resolved" list for abstract screening was always empty (queried the wrong stage label).
 - Records with a blank (empty-string) DOI failed to import on PostgreSQL (unique-key collision); blank DOIs are now stored as NULL. Import failures now list the offending title and error in the UI.
 - PostgreSQL URLs work with any common prefix (`postgresql://`, `postgres://`, `postgresql+psycopg2://`) — they are normalized to the psycopg driver automatically.
 - Clicking include/exclude (and the tag/note/duplicate/conflict-resolve actions) now always acts on the clicked card; previously, when the list re-rendered at the same moment, an action could land on a different paper.
 - Vote locking: a rapid double-click no longer records a duplicate of your own vote, and the team cap (1 human + AI in assisted, 2 humans in independent) now blocks a third reviewer in both modes (independent previously had no lock).
 - Conflicts: two reviewers both voting "uncertain" (AI + human in assisted, or both humans in independent) are now flagged for adjudication instead of silently disappearing — at both the abstract and full-text stages — and the dashboard conflict count uses the same rule as the Conflicts tab for each mode.
-
-### Internal
-- Code cleanup / refactor (no behavior change).
 
 ---
 ## [0.18.0] – 2026-06-10

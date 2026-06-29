@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS screening_decisions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_screening_source ON screening_decisions(source_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_screening_unique ON screening_decisions(source_id, reviewer_id, stage, reviewer_type);
 
 CREATE TABLE IF NOT EXISTS extractions (
     id INTEGER PRIMARY KEY,
