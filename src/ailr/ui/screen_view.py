@@ -125,13 +125,9 @@ def screening_prompt_panel() -> list[Any]:
             "screen-preview-help",
         ),
         html.Div(id="screen-prompt-composed"),
-        html.Div(
+        html.Details(
             [
-                with_help(
-                    html.H6("Version history", className="mb-0 me-1"),
-                    "A version is saved automatically when you run AI screening (only if the prompt, criteria, or additional instructions changed). AI decisions are tagged with it, and the full resolved prompt is stored for reproducibility.",
-                    "screen-ver-help",
-                ),
+                html.Summary("Version history & diff"),
                 html.Div(id="screen-prompt-ver-feedback", className="small mb-1"),
                 dbc.InputGroup(
                     [

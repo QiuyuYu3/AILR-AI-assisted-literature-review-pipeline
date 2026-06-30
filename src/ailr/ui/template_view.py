@@ -235,6 +235,54 @@ def _field_summary(f: dict) -> str:
     return f"({t}{' • ' + ', '.join(enum) if enum else ''})"
 
 
+def _build_field(name, ftype, itemtype, desc, enum, subfields, required) -> tuple:
+    """Construct a field dict from the add/edit form inputs. Returns (field, error_message)."""
+    if not name or not name.strip():
+        return None, "Field name required."
+    f: dict = {"name": name.strip()}
+    if desc and desc.strip():
+        f["description"] = desc.strip()
+    if required:
+        f["required"] = True
+    if ftype == "group":  # repeating group = list of objects
+        f["type"] = "list"
+        f["item_type"] = "object"
+        f["item_fields"] = _parse_subfields(subfields)
+    elif ftype == "object":  # nested object
+        f["type"] = "object"
+        f["fields"] = _parse_subfields(subfields)
+    else:
+        f["type"] = ftype or "string"
+        if enum and enum.strip():
+            f["enum"] = [x.strip() for x in enum.split(",") if x.strip()]
+        if ftype == "list":
+            f["item_type"] = itemtype or "string"
+    if ftype in ("group", "object") and not f.get("item_fields") and not f.get("fields"):
+        return None, "Add at least one sub-field (one per line)."
+    try:
+        FieldSpec(**f)
+    except Exception as e:
+        return None, f"Invalid field: {e}"
+    return f, None
+
+
+def _field_to_form(f: dict) -> dict:
+    """Inverse of _build_field: a stored field -> the edit-form input values."""
+    t = f.get("type")
+    if t == "list" and f.get("item_type") == "object":
+        ftype, subs = "group", f.get("item_fields", [])
+    elif t == "object":
+        ftype, subs = "object", f.get("fields", [])
+    else:
+        ftype, subs = (t or "string"), []
+    return {
+        "ftype": ftype,
+        "itemtype": f.get("item_type", "string") if ftype == "list" else "string",
+        "subfields": _serialize_subfields(subs),
+        "enum": ", ".join(f.get("enum", []) or []),
+    }
+
+
 def _suggested_names() -> list[str]:
     return [f.name for f in load_core_schema() if not f.core]
 
@@ -462,6 +510,49 @@ def variables_layout() -> Any:
             is_open=False,
         ),
         dcc.Store(id="tmpl-subedit-idx", data=None),
+        dbc.Modal(
+            [
+                dbc.ModalHeader(dbc.ModalTitle(id="tmpl-fe-title")),
+                dbc.ModalBody(
+                    [
+                        dbc.Label("Name", className="small fw-bold mb-0"),
+                        dbc.Input(id="tmpl-fe-name", size="sm", className="mb-2"),
+                        dbc.Label("Type", className="small fw-bold mb-0"),
+                        dbc.Select(id="tmpl-fe-type", options=_TYPES, value="string", size="sm", className="mb-2"),
+                        html.Div(
+                            dbc.Select(
+                                id="tmpl-fe-itemtype",
+                                options=[{"label": f"items: {t['label']}", "value": t["value"]} for t in _TYPES if t["value"] != "list"],
+                                value="string", size="sm", className="mb-2",
+                            ),
+                            id="tmpl-fe-itemtype-wrap", style={"display": "none"},
+                        ),
+                        dbc.Label("Description (shown to AI + reviewers)", className="small fw-bold mb-0"),
+                        dbc.Input(id="tmpl-fe-desc", size="sm", className="mb-2"),
+                        html.Div(
+                            [
+                                dbc.Label("Options, comma-separated (optional)", className="small fw-bold mb-0"),
+                                dbc.Input(id="tmpl-fe-enum", size="sm", className="mb-2"),
+                            ],
+                            id="tmpl-fe-enum-wrap",
+                        ),
+                        html.Div(
+                            [
+                                dbc.Label("Sub-fields (one per line: name: type | options: a, b)", className="small fw-bold mb-0"),
+                                dbc.Textarea(id="tmpl-fe-subfields", style=_mono(90), className="mb-2"),
+                            ],
+                            id="tmpl-fe-subfields-wrap", style={"display": "none"},
+                        ),
+                        dbc.Switch(id="tmpl-fe-required", label="Required", value=False),
+                        html.Div(id="tmpl-fe-feedback", className="small mt-1"),
+                    ]
+                ),
+                dbc.ModalFooter([dbc.Button("Cancel", id="tmpl-fe-cancel", color="link"), dbc.Button("Save", id="tmpl-fe-save", color="primary")]),
+            ],
+            id="tmpl-fieldedit-modal",
+            is_open=False,
+        ),
+        dcc.Store(id="tmpl-fe-idx"),
     ]
 
     version_section = [version_ui.history_layout("tmplv", _VARS_KIND)]
@@ -479,17 +570,6 @@ def prompt_layout() -> Any:
                 "The full prompt that will actually be sent is shown in the preview below.",
             ],
             color="light", className="small py-2",
-        ),
-        with_help(
-            html.H6("Inclusion / exclusion criteria", className="mb-0 me-1"),
-            "One shared criteria for the whole review (abstract screening + extraction both use it). View only here — edit it on the Settings page.",
-            "tmpl-criteria-help",
-            className="mt-2",
-        ),
-        html.Pre(
-            read_criteria(),
-            style={"whiteSpace": "pre-wrap", "fontSize": "0.75rem", "maxHeight": "220px", "overflow": "auto",
-                   "border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"},
         ),
         with_help(
             html.H6("Additional instructions (optional)", className="mb-0 me-1"),
@@ -513,13 +593,9 @@ def prompt_layout() -> Any:
             "tmpl-preview-help",
         ),
         html.Div(id="tmpl-prompt-composed"),
-        html.Div(
+        html.Details(
             [
-                with_help(
-                    html.H6("Version history", className="mb-0 me-1"),
-                    "A version is saved automatically when you run AI extraction (only if the prompt, criteria, schema, or additional instructions changed). Each extracted field is tagged with it, and the full resolved prompt is stored for reproducibility.",
-                    "tmpl-ver-help",
-                ),
+                html.Summary("Version history & diff"),
                 html.Div(id="tmpl-prompt-ver-feedback", className="small mb-1"),
                 dbc.InputGroup(
                     [
@@ -818,37 +894,13 @@ def register_callbacks(app: Any) -> None:
             elif any(f.get("name") == name.strip() for f in fields):
                 feedback = dbc.Alert("A field with that name already exists.", color="warning", className="mb-0 py-1")
             else:
-                f: dict = {"name": name.strip()}
-                if desc and desc.strip():
-                    f["description"] = desc.strip()
-                if required:
-                    f["required"] = True
-
-                if ftype == "group":  # repeating group = list of objects
-                    f["type"] = "list"
-                    f["item_type"] = "object"
-                    f["item_fields"] = _parse_subfields(subfields)
-                elif ftype == "object":  # nested object
-                    f["type"] = "object"
-                    f["fields"] = _parse_subfields(subfields)
+                f, err = _build_field(name, ftype, itemtype, desc, enum, subfields, required)
+                if err:
+                    feedback = dbc.Alert(err, color="danger" if err.startswith("Invalid") else "warning", className="mb-0 py-1")
                 else:
-                    f["type"] = ftype or "string"
-                    if enum and enum.strip():
-                        f["enum"] = [x.strip() for x in enum.split(",") if x.strip()]
-                    if ftype == "list":
-                        f["item_type"] = itemtype or "string"
-
-                if ftype in ("group", "object") and not f.get("item_fields") and not f.get("fields"):
-                    feedback = dbc.Alert("Add at least one sub-field (one per line).", color="warning", className="mb-0 py-1")
-                else:
-                    try:
-                        FieldSpec(**f)  # validate before adding
-                    except Exception as e:
-                        feedback = dbc.Alert(f"Invalid field: {e}", color="danger", className="mb-0 py-1")
-                    else:
-                        fields.append(f)
-                        feedback = dbc.Alert(f"Added '{f['name']}'.", color="success", className="mb-0 py-1")
-                        name_out = ""
+                    fields.append(f)
+                    feedback = dbc.Alert(f"Added '{f['name']}'.", color="success", className="mb-0 py-1")
+                    name_out = ""
         elif isinstance(trig, dict) and trig.get("type") in ("tmpl-remove", "tmpl-moveup", "tmpl-movedown"):
             if any(c.get("value") for c in (ctx.triggered or [])):
                 idx = trig.get("idx")
@@ -924,6 +976,82 @@ def register_callbacks(app: Any) -> None:
         return store, False, ""
 
     @app.callback(
+        Output("tmpl-fe-itemtype-wrap", "style"),
+        Output("tmpl-fe-enum-wrap", "style"),
+        Output("tmpl-fe-subfields-wrap", "style"),
+        Input("tmpl-fe-type", "value"),
+    )
+    def _toggle_fe_inputs(ftype):
+        hide = {"display": "none"}
+        is_group_obj = ftype in ("group", "object")
+        return ({} if ftype == "list" else hide, hide if is_group_obj else {}, {} if is_group_obj else hide)
+
+    @app.callback(
+        Output("tmpl-fieldedit-modal", "is_open"),
+        Output("tmpl-fe-idx", "data"),
+        Output("tmpl-fe-name", "value"),
+        Output("tmpl-fe-type", "value"),
+        Output("tmpl-fe-itemtype", "value"),
+        Output("tmpl-fe-desc", "value"),
+        Output("tmpl-fe-enum", "value"),
+        Output("tmpl-fe-subfields", "value"),
+        Output("tmpl-fe-required", "value"),
+        Output("tmpl-fe-title", "children"),
+        Output("tmpl-fe-feedback", "children"),
+        Input({"type": "tmpl-editfield", "idx": ALL}, "n_clicks"),
+        Input("tmpl-fe-cancel", "n_clicks"),
+        State("tmpl-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _open_fieldedit(_edits, _cancel, store):
+        trig = ctx.triggered_id
+        if trig == "tmpl-fe-cancel":
+            return (False,) + (no_update,) * 10
+        if not isinstance(trig, dict) or not any(c.get("value") for c in (ctx.triggered or [])):
+            return (no_update,) * 11
+        idx = trig.get("idx")
+        fields = (store or {}).get("fields", [])
+        if not (isinstance(idx, int) and 0 <= idx < len(fields)):
+            return (no_update,) * 11
+        f = fields[idx]
+        form = _field_to_form(f)
+        return (True, {"idx": idx}, f.get("name", ""), form["ftype"], form["itemtype"], f.get("description", ""),
+                form["enum"], form["subfields"], bool(f.get("required")), f"Edit '{f.get('name')}'", "")
+
+    @app.callback(
+        Output("tmpl-store", "data", allow_duplicate=True),
+        Output("tmpl-fieldedit-modal", "is_open", allow_duplicate=True),
+        Output("tmpl-fe-feedback", "children", allow_duplicate=True),
+        Input("tmpl-fe-save", "n_clicks"),
+        State("tmpl-fe-idx", "data"),
+        State("tmpl-fe-name", "value"),
+        State("tmpl-fe-type", "value"),
+        State("tmpl-fe-itemtype", "value"),
+        State("tmpl-fe-desc", "value"),
+        State("tmpl-fe-enum", "value"),
+        State("tmpl-fe-subfields", "value"),
+        State("tmpl-fe-required", "value"),
+        State("tmpl-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _save_fieldedit(n, idxdata, name, ftype, itemtype, desc, enum, subfields, required, store):
+        if not n or not idxdata:
+            return no_update, no_update, no_update
+        store = dict(store or {})
+        fields = list(store.get("fields", []))
+        idx = idxdata.get("idx")
+        if not (isinstance(idx, int) and 0 <= idx < len(fields)):
+            return no_update, no_update, no_update
+        if any(j != idx and g.get("name") == (name or "").strip() for j, g in enumerate(fields)):
+            return no_update, no_update, dbc.Alert("Another field already has that name.", color="warning", className="mb-0 py-1")
+        f, err = _build_field(name, ftype, itemtype, desc, enum, subfields, required)
+        if err:
+            return no_update, no_update, dbc.Alert(err, color="danger" if err.startswith("Invalid") else "warning", className="mb-0 py-1")
+        fields[idx] = f
+        store["fields"] = fields
+        return store, False, ""
+
+    @app.callback(
         Output("tmpl-fields-list", "children"),
         Output("tmpl-preview", "children"),
         Output("tmpl-skipverify", "options"),
@@ -943,6 +1071,7 @@ def register_callbacks(app: Any) -> None:
                         dbc.Button("↓", id={"type": "tmpl-movedown", "idx": i}, size="sm", color="link", className="p-0 me-2"),
                         html.Span(f"{f['name']} ", className="fw-bold"),
                         html.Small(_field_summary(f), className="text-muted me-2"),
+                        dbc.Button("Edit", id={"type": "tmpl-editfield", "idx": i}, size="sm", color="link", className="p-0 me-2"),
                         (
                             dbc.Button("Edit sub-fields", id={"type": "tmpl-editsub", "idx": i}, size="sm", color="link", className="p-0 me-2")
                             if _subkey(f) else None
