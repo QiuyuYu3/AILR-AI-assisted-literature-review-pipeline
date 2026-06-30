@@ -76,27 +76,27 @@ def _to_text(content: str) -> str:
     return render_criteria_markdown(CriteriaSet(criteria=_specs(rows)))
 
 
-def _short(text: str, n: int = 60) -> str:
-    text = (text or "").strip().replace("\n", " ")
-    return text if len(text) <= n else text[: n - 1] + "…"
-
-
 def _list_item(i: int, c: dict) -> Any:
-    summ = []
-    if c.get("pass_if", "").strip():
-        summ.append("PASS: " + _short(c["pass_if"], 50))
-    if c.get("fail_if", "").strip():
-        summ.append("FAIL: " + _short(c["fail_if"], 50))
+    rules = []
+    for label, key in (("PASS", "pass_if"), ("FAIL", "fail_if"), ("UNCERTAIN", "uncertain_if")):
+        v = c.get(key, "").strip()
+        if v:
+            rules.append(html.Div([html.Span(f"{label}: ", className="fw-bold"), v], className="text-muted small ms-4"))
     return html.Div(
         [
-            dbc.Button("↑", id={"type": "crit-moveup", "idx": i}, size="sm", color="link", className="p-0 me-1"),
-            dbc.Button("↓", id={"type": "crit-movedown", "idx": i}, size="sm", color="link", className="p-0 me-2"),
-            html.Span(c.get("name") or "(unnamed)", className="fw-bold"),
-            dbc.Button("Edit", id={"type": "crit-edit", "idx": i}, size="sm", color="link", className="p-0 ms-2"),
-            dbc.Button("Remove", id={"type": "crit-remove", "idx": i}, size="sm", color="link", className="p-0 ms-2 text-danger"),
-            html.Div(" · ".join(summ), className="text-muted small ms-4") if summ else None,
+            html.Div(
+                [
+                    dbc.Button("↑", id={"type": "crit-moveup", "idx": i}, size="sm", color="link", className="p-0 me-1"),
+                    dbc.Button("↓", id={"type": "crit-movedown", "idx": i}, size="sm", color="link", className="p-0 me-2"),
+                    html.Span(c.get("name") or "(unnamed)", className="fw-bold"),
+                    dbc.Button("Edit", id={"type": "crit-edit", "idx": i}, size="sm", color="link", className="p-0 ms-2"),
+                    dbc.Button("Remove", id={"type": "crit-remove", "idx": i}, size="sm", color="link", className="p-0 ms-2 text-danger"),
+                ]
+            ),
+            *rules,
         ],
-        className="mb-2",
+        className="mb-2 pb-2",
+        style={"borderBottom": "1px solid #f0f0f0"},
     )
 
 
@@ -219,7 +219,7 @@ def layout() -> Any:
     rows = _initial_rows()
     return html.Div(
         [
-            dbc.Row([dbc.Col(_editor_column(rows), width=7), dbc.Col(_preview_column(), width=5)]),
+            dbc.Row([dbc.Col(_editor_column(rows), width=6), dbc.Col(_preview_column(), width=6)]),
             dbc.Modal(
                 [
                     dbc.ModalHeader(dbc.ModalTitle("Edit criterion")),

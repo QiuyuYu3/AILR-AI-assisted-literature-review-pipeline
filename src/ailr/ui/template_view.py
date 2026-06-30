@@ -563,10 +563,10 @@ def prompt_layout() -> Any:
     prompt_section = [
         dbc.Alert(
             [
-                html.Strong("You only edit two things here: "),
-                "the inclusion / exclusion criteria and (optionally) some additional instructions. ",
-                "The rest of the prompt — the role, the extraction rules, your variables above, and the "
-                "inclusion re-check — is a fixed template ailr fills in for you. ",
+                html.Strong("You only edit the additional instructions here "),
+                "(and, under Advanced, the prompt template). The criteria and variables are shared definitions, "
+                "edited on the Protocol page. The rest of the prompt — the role, the extraction rules, your "
+                "variables, and the inclusion re-check — is a fixed template ailr fills in for you. ",
                 "The full prompt that will actually be sent is shown in the preview below.",
             ],
             color="light", className="small py-2",

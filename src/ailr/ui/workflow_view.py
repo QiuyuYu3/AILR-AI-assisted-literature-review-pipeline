@@ -90,8 +90,8 @@ def layout(section: str = "abstract") -> Any:
         [
             dbc.Tab(html.Div(workflow_tab, className="pt-3"), label="Workflow", tab_id="wf-settings"),
             dbc.Tab(html.Div(prompt_tab, className="pt-3"), label="Prompt", tab_id="wf-prompt"),
-            dbc.Tab(html.Div(ai_tab, className="pt-3"), label="AI screening", tab_id="wf-ai"),
             dbc.Tab(html.Div(calibration_view.layout("abstract"), className="pt-3"), label="Calibration", tab_id="wf-cal"),
+            dbc.Tab(html.Div(ai_tab, className="pt-3"), label="AI screening", tab_id="wf-ai"),
         ],
         active_tab="wf-settings",
     )
