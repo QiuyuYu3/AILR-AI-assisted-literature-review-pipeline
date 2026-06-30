@@ -54,7 +54,7 @@ class QuickTestTask:
         sample_size = candidates_available if source_ids else min(n, candidates_available)
 
         prompt_path = self.project.root / self.project.config.screening.prompt
-        criteria_text, _ = resolve_criteria(self.project.root, self.project.config.screening)
+        criteria_text, criterion_ids = resolve_criteria(self.project.root, self.project.config.screening)
         prompt_template = prompt_path.read_text(encoding="utf-8")
         additional_path = self.project.root / self.project.config.screening.additional
         additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
@@ -80,7 +80,7 @@ class QuickTestTask:
 
         for idx, source in enumerate(sample, 1):
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text)
+                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids)
                 self.project.db.insert_test_decision(
                     run_id=run_id,
                     source_id=source.id,
@@ -347,7 +347,7 @@ class CalibrationTask:
         )
 
         prompt_path = self.project.root / self.project.config.screening.prompt
-        criteria_text, _ = resolve_criteria(self.project.root, self.project.config.screening)
+        criteria_text, criterion_ids = resolve_criteria(self.project.root, self.project.config.screening)
         prompt_template = prompt_path.read_text(encoding="utf-8")
         additional_path = self.project.root / self.project.config.screening.additional
         additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
@@ -361,7 +361,7 @@ class CalibrationTask:
                 continue
 
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text)
+                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids)
                 decision.source_id = source.id
                 self.project.db.insert_screening_decision(decision)
                 summary.ai_counts[decision.decision] += 1

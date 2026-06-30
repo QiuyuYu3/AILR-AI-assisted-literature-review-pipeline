@@ -54,7 +54,7 @@ class ScreeningTask:
         prompt_path = self.project.root / config.screening.prompt
 
         prompt_template = prompt_path.read_text(encoding="utf-8")
-        criteria_text, _ = resolve_criteria(self.project.root, config.screening)
+        criteria_text, criterion_ids = resolve_criteria(self.project.root, config.screening)
         additional_path = self.project.root / config.screening.additional
         additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
 
@@ -96,7 +96,7 @@ class ScreeningTask:
                 continue
 
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text)
+                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids)
                 decision.source_id = source.id
                 _save(decision)
                 summary.add_decision(decision)

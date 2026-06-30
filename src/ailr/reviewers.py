@@ -1,5 +1,6 @@
 """Reviewers: abstraction, decision dataclasses, and the LLM-backed reviewer."""
 
+import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -84,6 +85,7 @@ class Reviewer(ABC):
         criteria_text: str,
         prompt_template: str,
         additional_text: str = "",
+        criterion_ids: Optional[list[str]] = None,
     ) -> ScreeningDecision:
         """Make a screening decision for one source. Caller fills source_id afterward."""
 
@@ -170,6 +172,7 @@ class LLMReviewer(Reviewer):
         criteria_text: str,
         prompt_template: str,
         additional_text: str = "",
+        criterion_ids: Optional[list[str]] = None,
     ) -> ScreeningDecision:
         system_prompt = compose_screening_prompt(prompt_template, criteria=criteria_text, additional=additional_text)
         user_message = _format_source_message(source)
@@ -177,7 +180,7 @@ class LLMReviewer(Reviewer):
         output, metadata = self._client.complete_structured(
             system=system_prompt,
             user_message=user_message,
-            tool_schema=SCREENING_TOOL,
+            tool_schema=_build_screening_tool(criterion_ids),
             max_tokens=self._max_tokens,
             cache_system=True,
         )
@@ -294,6 +297,15 @@ def _flag_check_item_schema() -> dict[str, Any]:
         },
         "required": ["verdict", "reason"],
     }
+
+
+def _build_screening_tool(criterion_ids: Optional[list[str]] = None) -> ToolSchema:
+    """Constrain matched_criteria to the known criterion IDs (so the model can't invent labels)."""
+    if not criterion_ids:
+        return SCREENING_TOOL
+    schema = copy.deepcopy(SCREENING_TOOL.input_schema)
+    schema["properties"]["matched_criteria"]["items"]["enum"] = list(criterion_ids)
+    return ToolSchema(name=SCREENING_TOOL.name, description=SCREENING_TOOL.description, input_schema=schema)
 
 
 def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: Optional[list[str]] = None) -> ToolSchema:
