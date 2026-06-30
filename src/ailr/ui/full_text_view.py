@@ -774,6 +774,8 @@ def register_callbacks(app: Any) -> None:
         tags_by_source = db.get_tags_for_sources(page_ids)
         ai_by_source = db.get_latest_ai_decisions(page_ids, stage="full_text")
         note_counts = db.count_notes(page_ids)
+        from ailr.ui.ai_runner import current_extraction_composed
+        stale_ids = db.stale_ai_extraction_source_ids(pid, current_extraction_composed(project))
 
         cards = [
             _ft_card(
@@ -785,6 +787,7 @@ def register_callbacks(app: Any) -> None:
                 tags=tags_by_source.get(s.id, []),
                 ai_decision=ai_by_source.get(s.id),
                 note_count=note_counts.get(s.id, 0),
+                stale=s.id in stale_ids,
             )
             for s in page_sources
         ]
@@ -797,6 +800,8 @@ def register_callbacks(app: Any) -> None:
         page_info = f"Page {page + 1} of {total_pages}  ({total} total)" if total else ""
         n_reviewed = db.count_reviewer_decisions(pid, rid, stage="full_text")
         counts = f"{n_reviewed} / {total_candidates} reviewed by you • {total} match current filter"
+        if stale_ids:
+            counts += f" • {len(stale_ids)} AI extraction(s) outdated — re-run extraction"
         return cards, counts, prev_disabled, next_disabled, page_info
 
 
@@ -822,6 +827,7 @@ def _ft_card(
     tags: Optional[list[dict]] = None,
     ai_decision: Optional[str] = None,
     note_count: int = 0,
+    stale: bool = False,
 ) -> Any:
     sid = src.id
     decision_color = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -948,6 +954,11 @@ def _ft_card(
             ),
             status_badge,
         ]
+        if stale:
+            children.append(
+                dbc.Badge("AI extraction outdated — re-run", color="warning", className="align-middle ms-2",
+                          title="Criteria or the extraction prompt changed since this paper was AI-extracted."),
+            )
         extract_row = html.Div(children, className="mt-2")
 
     abstract_block: Any = None

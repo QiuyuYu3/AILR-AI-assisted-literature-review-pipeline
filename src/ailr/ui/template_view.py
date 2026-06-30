@@ -349,6 +349,15 @@ def _initial_state() -> dict:
     }
 
 
+def _extraction_composed_pre(prompt: str, additional: str) -> Any:
+    """The 'Full prompt preview' content. Used both for the initial render and the live-update callback."""
+    composed = compose_extraction_prompt(prompt or "", criteria=read_criteria(), schema_md=_field_list_text(), additional=additional or "")
+    return html.Pre(
+        composed + "\n\n--- [THE PAPER'S FULL TEXT IS APPENDED HERE AUTOMATICALLY] ---",
+        style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem", "border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"},
+    )
+
+
 def variables_layout() -> Any:
     state = _initial_state()
     suggested = _suggested_names()
@@ -592,7 +601,7 @@ def prompt_layout() -> Any:
             "The exact prompt sent to the AI, with your criteria, variables, and additional instructions filled in.",
             "tmpl-preview-help",
         ),
-        html.Div(id="tmpl-prompt-composed"),
+        html.Div(id="tmpl-prompt-composed", children=_extraction_composed_pre(_prompt_text(), _additional_text())),
         html.Details(
             [
                 html.Summary("Version history & diff"),
@@ -843,14 +852,7 @@ def register_callbacks(app: Any) -> None:
     )
     def _composed_prompt(prompt, additional):
         # Variables live on the Protocol page now; compose from the SAVED schema (source of truth).
-        schema_md = _field_list_text()
-        composed = compose_extraction_prompt(
-            prompt, criteria=read_criteria(), schema_md=schema_md, additional=additional or ""
-        )
-        return html.Pre(
-            composed + "\n\n--- [THE PAPER'S FULL TEXT IS APPENDED HERE AUTOMATICALLY] ---",
-            style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem", "maxHeight": "400px", "overflow": "auto"},
-        )
+        return _extraction_composed_pre(prompt, additional)
 
     @app.callback(
         Output("tmpl-store", "data"),

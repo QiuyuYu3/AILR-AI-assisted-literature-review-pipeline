@@ -13,6 +13,24 @@ if TYPE_CHECKING:
 
 
 class ScreeningMixin:
+    def stale_ai_screening_source_ids(self, project_id: int, current_composed: str, stage: str = "abstract") -> set[int]:
+        """Sources whose latest AI screening decision was made under a prompt/criteria that no longer
+        matches the current one (its version's resolved prompt differs from current_composed)."""
+        rows = self._conn.execute(
+            """
+            SELECT d.source_id AS sid, COALESCE(pv.composed, '') AS composed
+            FROM screening_decisions d
+            JOIN sources s ON s.id = d.source_id
+            LEFT JOIN prompt_versions pv
+              ON pv.project_id = s.project_id AND pv.prompt_type = 'screening' AND pv.version = d.prompt_version
+            WHERE s.project_id = ? AND d.reviewer_type = 'ai' AND d.stage = ?
+              AND d.id = (SELECT MAX(d2.id) FROM screening_decisions d2
+                          WHERE d2.source_id = d.source_id AND d2.reviewer_type = 'ai' AND d2.stage = d.stage)
+            """,
+            (project_id, stage),
+        ).fetchall()
+        return {r["sid"] for r in rows if r["composed"] != current_composed}
+
     def insert_screening_decision(self, decision: "ScreeningDecision") -> int:
         if decision.source_id is None:
             raise DatabaseError("Cannot insert screening_decision without source_id")

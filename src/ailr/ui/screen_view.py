@@ -32,6 +32,15 @@ def _screen_additional_text() -> str:
     return read_screening_additional()
 
 
+def _screening_composed_pre(text: str, additional: str) -> Any:
+    """The 'Full prompt preview' content. Used for the initial render and the live-update callback."""
+    composed = compose_screening_prompt(text or "", criteria=read_criteria(), additional=additional or "")
+    return html.Pre(
+        composed + "\n\n--- [THE ABSTRACT IS APPENDED HERE AUTOMATICALLY] ---",
+        style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"},
+    )
+
+
 
 def _screening_run_prompt() -> str:
     """A ready-to-paste prompt for running AI screening externally, with the exact output format."""
@@ -124,7 +133,7 @@ def screening_prompt_panel() -> list[Any]:
             "The exact prompt sent to the AI, with your criteria and additional instructions filled in.",
             "screen-preview-help",
         ),
-        html.Div(id="screen-prompt-composed"),
+        html.Div(id="screen-prompt-composed", children=_screening_composed_pre(_screen_prompt_text(), _screen_additional_text())),
         html.Details(
             [
                 html.Summary("Version history & diff"),
@@ -547,11 +556,7 @@ def register_callbacks(app: Any) -> None:
         Input("screen-additional", "value"),
     )
     def _composed_screen_prompt(text, additional):
-        composed = compose_screening_prompt(text, criteria=read_criteria(), additional=additional or "")
-        return html.Pre(
-            composed + "\n\n--- [THE ABSTRACT IS APPENDED HERE AUTOMATICALLY] ---",
-            style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "maxHeight": "300px", "overflow": "auto"},
-        )
+        return _screening_composed_pre(text, additional)
 
     @app.callback(
         Output("screen-search", "value"),
@@ -817,6 +822,8 @@ def register_callbacks(app: Any) -> None:
         peer_counts = db.count_peer_reviewers(visible_ids, rid) if workflow == "independent" else {}
         tags_per_source = db.get_tags_for_sources(visible_ids)
         note_counts = db.count_notes(visible_ids)
+        from ailr.ui.ai_runner import current_screening_composed
+        stale_ids = db.stale_ai_screening_source_ids(pid, current_screening_composed(project), stage="abstract")
 
         cards = [
             _source_card(
@@ -824,6 +831,7 @@ def register_callbacks(app: Any) -> None:
                 bool(expand_all), rid,
                 tags=tags_per_source.get(s.id, []),
                 note_count=note_counts.get(s.id, 0),
+                stale=s.id in stale_ids,
             )
             for s in page_sources
         ]
@@ -836,6 +844,8 @@ def register_callbacks(app: Any) -> None:
         page_info = f"Page {page + 1} of {total_pages}  ({total} total)" if total else ""
         n_reviewed, total_sources = db.screen_counts(pid, rid)
         counts_text = f"{n_reviewed} / {total_sources} reviewed by you • {total} match current filter"
+        if stale_ids:
+            counts_text += f" • {len(stale_ids)} AI screening(s) outdated — re-run screening"
         return cards, prev_disabled, next_disabled, page_info, counts_text
 
 
@@ -859,6 +869,7 @@ def _source_card(
     reviewer_id: str = "",
     tags: Optional[list[dict]] = None,
     note_count: int = 0,
+    stale: bool = False,
 ) -> Any:
     sid = src.id
     decision_color = {
@@ -982,6 +993,8 @@ def _source_card(
         [
             html.Strong(f"#{sid}  ", className="text-muted"),
             html.Span(_short_author_year(src), className="text-muted me-2"),
+            dbc.Badge("AI screening outdated", color="warning", className="ms-1",
+                      title="Criteria or the screening prompt changed since this paper was AI-screened.") if stale else None,
         ]
     )
     title_el = html.H6(src.title, className="mb-1")

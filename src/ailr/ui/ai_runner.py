@@ -121,13 +121,18 @@ def _run_preprocess(key: str, project: Any, force: bool, only_ids) -> None:
             _jobs[key].update({"running": False, "error": str(e)})
 
 
+def current_screening_composed(project: Any) -> str:
+    """The fully-resolved screening prompt a fresh run would use right now (criteria + additional)."""
+    return compose_screening_prompt(
+        read_screening_prompt(""), criteria=read_criteria(""), additional=read_screening_additional()
+    )
+
+
 def _screening_prompt_version(project: Any) -> str:
     db = project.db
     pid = project.project_id
     content = read_screening_prompt("")
-    composed = compose_screening_prompt(
-        content, criteria=read_criteria(""), additional=read_screening_additional()
-    )
+    composed = current_screening_composed(project)
     latest = db.latest_prompt_version(pid, "screening")
     if latest is not None:
         prev = db.get_prompt_version(pid, "screening", latest)
@@ -212,9 +217,9 @@ def _run_calibration(key: str, project: Any, mock: bool, n: int) -> None:
             _jobs[key].update({"running": False, "error": str(e)})
 
 
-def _extraction_prompt_version(project: Any) -> str:
-    db = project.db
-    pid = project.project_id
+def current_extraction_composed(project: Any) -> str:
+    """The fully-resolved extraction prompt a fresh run would use right now (criteria + schema +
+    additional filled in). Used to detect stale extractions without cutting a new version."""
     cfg = project.config
 
     def _read(rel: str) -> str:
@@ -229,7 +234,18 @@ def _extraction_prompt_version(project: Any) -> str:
         schema_md = schema_to_markdown(compose_schema(project.root / cfg.extraction.schema_path))
     except Exception:
         schema_md = ""
-    composed = compose_extraction_prompt(template, criteria=read_criteria(""), schema_md=schema_md, additional=additional)
+    return compose_extraction_prompt(template, criteria=read_criteria(""), schema_md=schema_md, additional=additional)
+
+
+def _extraction_prompt_version(project: Any) -> str:
+    db = project.db
+    pid = project.project_id
+
+    composed = current_extraction_composed(project)
+    try:
+        template = (project.root / project.config.extraction.prompt).read_text(encoding="utf-8")
+    except OSError:
+        template = ""
     latest = db.latest_prompt_version(pid, "extraction")
     if latest is not None:
         prev = db.get_prompt_version(pid, "extraction", latest)

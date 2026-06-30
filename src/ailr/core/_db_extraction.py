@@ -387,6 +387,23 @@ class ExtractionMixin:
             out.append(d)
         return out
 
+    def stale_ai_extraction_source_ids(self, project_id: int, current_composed: str) -> set[int]:
+        """Sources whose AI extraction was produced under a prompt/criteria that no longer matches the
+        current one (its version's resolved prompt differs from current_composed) — i.e. needs re-running."""
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT e.source_id AS sid, COALESCE(pv.composed, '') AS composed
+            FROM extractions e
+            JOIN sources s ON s.id = e.source_id
+            LEFT JOIN prompt_versions pv
+              ON pv.project_id = s.project_id AND pv.prompt_type = 'extraction' AND pv.version = e.prompt_version
+            WHERE s.project_id = ? AND e.extractor_type = 'ai'
+              AND e.field_name NOT IN ('_flag_check', '_submitted')
+            """,
+            (project_id,),
+        ).fetchall()
+        return {r["sid"] for r in rows if r["composed"] != current_composed}
+
     def get_flag_checks(self, source_ids: list[int], extractor_type: str = "ai") -> dict[int, list[dict]]:
         """Latest flag_check per source (batch) for conflict cards."""
         if not source_ids:

@@ -4,6 +4,19 @@
 ## [Unreleased]
 
 ---
+## [0.23.0] – 2026-06-29
+
+### Added
+- "AI outdated" badges (and counts) on the Screening and Full-text pages flag papers screened/extracted under criteria or a prompt that have since changed — so you know which to re-run.
+
+### Changed
+- Abstract screening's matched_criteria is constrained to your criterion IDs — both stages now reference criteria by the same locked IDs.
+- Criteria list shows each criterion's full PASS/FAIL/UNCERTAIN rules (no truncation); editor/preview rebalanced; abstract Workflow shows Calibration before AI screening; full-text prompt page text updated (criteria/variables are edited on Protocol).
+
+### Fixed
+- "Full prompt preview" on the screening and extraction prompt pages could render empty until you edited the prompt; it now shows the resolved prompt on load.
+
+---
 ## [0.22.0] – 2026-06-29
 
 ### Changed
