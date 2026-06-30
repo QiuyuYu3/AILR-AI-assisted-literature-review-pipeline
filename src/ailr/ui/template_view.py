@@ -17,7 +17,21 @@ from ailr.extraction import (
     schema_to_markdown,
 )
 from ailr.ingest.schema_import import parse_schema_import
+from ailr.ui import version_ui
 from ailr.ui._common import get_project, read_criteria, with_help
+
+_VARS_KIND = "variables"
+
+
+def _vars_to_content(store, skipverify) -> str:
+    """tmpl-store (+ skip_verify dropdown) -> JSON snapshot stored as a variables version."""
+    store = dict(store or {})
+    store["skip_verify"] = skipverify or store.get("skip_verify") or []
+    return json.dumps(store, ensure_ascii=False)
+
+
+def _vars_to_text(content: str) -> str:
+    return schema_to_markdown(_compose(json.loads(content)))
 
 
 def _extraction_run_prompt() -> str:
@@ -221,46 +235,6 @@ def _field_summary(f: dict) -> str:
     return f"({t}{' • ' + ', '.join(enum) if enum else ''})"
 
 
-# Dyadic-interaction scoping template (derived from the user's v2 extraction prompt; A6 = a repeating group).
-_SCOPING_PRESET_FIELDS = [
-    {"name": "publication_type", "type": "string", "enum": ["Journal", "Conference", "Preprint"]},
-    {"name": "study_design", "type": "string", "enum": ["Primary data collection", "Existing dataset / corpus", "Mixed"]},
-    {"name": "total_n", "type": "integer", "description": "Total N individual participants"},
-    {"name": "dyadic_unit", "type": "object", "description": "Dyad / group unit count", "fields": [
-        {"name": "n_units", "type": "integer"},
-        {"name": "unit_type", "type": "string", "enum": ["dyads", "groups", "NR"]},
-        {"name": "unit_description", "type": "string"},
-        {"name": "group_size", "type": "integer"},
-    ]},
-    {"name": "population_type", "type": "string", "enum": ["Typically-developing", "Clinical", "Mixed", "NR"]},
-    {"name": "clinical_condition", "type": "string", "description": "Specific diagnosis if clinical"},
-    {"name": "age_group", "type": "string", "enum": ["Children (<18)", "Adults (18-60)", "Elderly (60+)", "Mixed"]},
-    {"name": "relationship_type", "type": "string", "enum": ["Couple", "Parent-Child", "Peer", "Teacher-Student", "Therapist-Patient", "Stranger", "Group (mixed)", "NR"]},
-    {"name": "setting", "type": "string", "enum": ["Controlled & Structured Task", "Unstructured", "Clinical Interview", "Classroom", "Mixed"]},
-    {"name": "recording_medium", "type": "string", "enum": ["In-person", "Video call", "Phone", "Asynchronous", "NR"]},
-    {"name": "modality", "type": "list", "item_type": "string", "multi": True, "description": "Audio / Video / Text / Sensor (behavioural only; no physiological)"},
-    {"name": "tools", "type": "list", "item_type": "object", "description": "Tools / software used", "item_fields": [
-        {"name": "tool", "type": "string"},
-        {"name": "computes", "type": "string"},
-    ]},
-    {"name": "algorithm_category", "type": "string", "enum": ["Rule-based", "Traditional ML", "Deep Learning", "NLP / LLM", "Statistical model", "Custom pipeline", "Mixed"]},
-    {"name": "processing_stage", "type": "string", "enum": ["Feature extraction only", "Classification only", "Both", "End-to-end"]},
-    {"name": "dyadic_features", "type": "list", "item_type": "object", "description": "One object per dyadic feature (A6)", "item_fields": [
-        {"name": "individual_features", "type": "string"},
-        {"name": "dyadic_integration", "type": "string", "description": "YES / NO + how integrated"},
-        {"name": "feature_name", "type": "string"},
-        {"name": "operationalization", "type": "string"},
-        {"name": "category", "type": "string", "enum": ["Verbal / Linguistic", "Vocal / Acoustic", "Visual / Facial", "Visual / Body", "Affective", "Multimodal", "Dyadic behavior classification", "Other"]},
-        {"name": "feature_used_as", "type": "string", "enum": ["Predictor", "Outcome measure", "Descriptive", "Classification label"]},
-        {"name": "integration_stage", "type": "string", "enum": ["Pre-processing / Signal-level", "Post-processing / Statistical-level", "Classifier / End-to-end"]},
-        {"name": "performance", "type": "string"},
-    ]},
-    {"name": "primary_research_goal", "type": "string"},
-    {"name": "outcome_domain", "type": "string", "enum": ["Clinical / Health", "Relational / Social", "Educational", "Behavioral / Communicative", "Other"]},
-    {"name": "outcome_level", "type": "string", "enum": ["Dyadic", "Individual", "Both"]},
-]
-
-
 def _suggested_names() -> list[str]:
     return [f.name for f in load_core_schema() if not f.core]
 
@@ -327,58 +301,12 @@ def _initial_state() -> dict:
     }
 
 
-def layout() -> Any:
+def variables_layout() -> Any:
     state = _initial_state()
     suggested = _suggested_names()
     field_names = [f.name for f in _compose(state)]
 
-    header = [
-        html.H4("Extraction template"),
-    ]
-
     variables_section = [
-        html.Div(
-            [
-                dbc.Button("Load scoping preset", id="tmpl-preset-load", color="secondary", outline=True, size="sm"),
-                html.Span(" replaces the variables with a dyadic-interaction scoping template (incl. the A6 repeating group)", className="text-muted small ms-2"),
-            ],
-        ),
-        html.Div(id="tmpl-preset-feedback", className="small mt-1 mb-2"),
-        html.Details(
-            [
-                html.Summary("Import variable definitions from your AI"),
-                html.Div(
-                    [
-                        html.P(
-                            "Have your own ChatGPT/Claude draft the variables as JSON, paste them here, then validate and "
-                            "load them into the editor to review. Nothing is saved until you click Save template.",
-                            className="text-muted small mb-2 mt-2",
-                        ),
-                        html.Div(
-                            [
-                                dbc.Label("Message to your AI", className="small fw-bold mb-0 me-2"),
-                                dcc.Clipboard(target_id="tmpl-schema-msg", title="Copy message", style={"display": "inline-block", "cursor": "pointer"}),
-                            ],
-                            className="d-flex align-items-center",
-                        ),
-                        dbc.Textarea(id="tmpl-schema-msg", value=_AGENT_SCHEMA_MSG, style=_mono(150), className="mb-2"),
-                        dbc.Label("Paste the JSON your AI returned", className="small fw-bold mb-0"),
-                        dbc.Textarea(id="tmpl-import-json", placeholder='{ "fields": [ ... ] }', style=_mono(120), className="mb-2"),
-                        html.Div(
-                            [
-                                dbc.Button("Validate", id="tmpl-import-validate", color="secondary", outline=True, size="sm", className="me-2"),
-                                dbc.Button("Load into editor", id="tmpl-import-load", color="primary", size="sm", disabled=True),
-                            ],
-                            className="mb-1",
-                        ),
-                        html.Div(id="tmpl-import-report"),
-                        dcc.Store(id="tmpl-import-parsed"),
-                    ],
-                    className="ps-2",
-                ),
-            ],
-            className="mt-2 mb-2",
-        ),
         dbc.Row(
             [
                 dbc.Col(
@@ -435,6 +363,41 @@ def layout() -> Any:
                             html.Hr(),
                             dbc.Button("Save template", id="tmpl-save", color="primary", size="sm"),
                             html.Div(id="tmpl-save-feedback", className="small mt-2"),
+                            html.Details(
+                                [
+                                    html.Summary("Import variable definitions from your AI"),
+                                    html.Div(
+                                        [
+                                            html.P(
+                                                "Have your own ChatGPT/Claude draft the variables as JSON, paste them here, then validate and "
+                                                "load them into the editor to review. Nothing is saved until you click Save template.",
+                                                className="text-muted small mb-2 mt-2",
+                                            ),
+                                            html.Div(
+                                                [
+                                                    dbc.Label("Message to your AI", className="small fw-bold mb-0 me-2"),
+                                                    dcc.Clipboard(target_id="tmpl-schema-msg", title="Copy message", style={"display": "inline-block", "cursor": "pointer"}),
+                                                ],
+                                                className="d-flex align-items-center",
+                                            ),
+                                            dbc.Textarea(id="tmpl-schema-msg", value=_AGENT_SCHEMA_MSG, style=_mono(150), className="mb-2"),
+                                            dbc.Label("Paste the JSON your AI returned", className="small fw-bold mb-0"),
+                                            dbc.Textarea(id="tmpl-import-json", placeholder='{ "fields": [ ... ] }', style=_mono(120), className="mb-2"),
+                                            html.Div(
+                                                [
+                                                    dbc.Button("Validate", id="tmpl-import-validate", color="secondary", outline=True, size="sm", className="me-2"),
+                                                    dbc.Button("Load into editor", id="tmpl-import-load", color="primary", size="sm", disabled=True),
+                                                ],
+                                                className="mb-1",
+                                            ),
+                                            html.Div(id="tmpl-import-report"),
+                                            dcc.Store(id="tmpl-import-parsed"),
+                                        ],
+                                        className="ps-2",
+                                    ),
+                                ],
+                                className="mt-3",
+                            ),
                         ],
                         width=5,
                     ),
@@ -476,6 +439,36 @@ def layout() -> Any:
         ),
     ]
 
+    tail = [
+        dcc.Store(id="tmpl-store", data=state),
+        dbc.Modal(
+            [
+                dbc.ModalHeader(dbc.ModalTitle(id="tmpl-subedit-title")),
+                dbc.ModalBody(
+                    [
+                        html.P("One sub-field per line: name: type | options: a, b, c", className="text-muted small"),
+                        dbc.Textarea(id="tmpl-subedit-text", style=_mono(220, 0.8)),
+                        html.Div(id="tmpl-subedit-feedback", className="small mt-1"),
+                    ]
+                ),
+                dbc.ModalFooter(
+                    [
+                        dbc.Button("Cancel", id="tmpl-subedit-cancel", color="link"),
+                        dbc.Button("Save sub-fields", id="tmpl-subedit-save", color="primary"),
+                    ]
+                ),
+            ],
+            id="tmpl-subedit-modal",
+            is_open=False,
+        ),
+        dcc.Store(id="tmpl-subedit-idx", data=None),
+    ]
+
+    version_section = [version_ui.history_layout("tmplv", _VARS_KIND)]
+    return html.Div([html.H4("Extraction variables")] + variables_section + verify_section + version_section + tail)
+
+
+def prompt_layout() -> Any:
     prompt_section = [
         dbc.Alert(
             [
@@ -536,6 +529,9 @@ def layout() -> Any:
                     className="mb-1",
                 ),
                 html.Div(id="tmpl-prompt-ver-view", className="small text-muted"),
+                dbc.Label("Compare the selected version with", className="small fw-bold mb-0 mt-2"),
+                dbc.Select(id="tmpl-prompt-ver-b", options=_extraction_prompt_version_options(), size="sm", className="mb-1"),
+                html.Div(id="tmpl-prompt-ver-diff"),
             ],
             className="mt-3",
         ),
@@ -603,40 +599,7 @@ def layout() -> Any:
         ),
     ]
 
-    tail = [
-        dcc.Store(id="tmpl-store", data=state),
-        dbc.Modal(
-            [
-                dbc.ModalHeader(dbc.ModalTitle(id="tmpl-subedit-title")),
-                dbc.ModalBody(
-                    [
-                        html.P("One sub-field per line: name: type | options: a, b, c", className="text-muted small"),
-                        dbc.Textarea(id="tmpl-subedit-text", style=_mono(220, 0.8)),
-                        html.Div(id="tmpl-subedit-feedback", className="small mt-1"),
-                    ]
-                ),
-                dbc.ModalFooter(
-                    [
-                        dbc.Button("Cancel", id="tmpl-subedit-cancel", color="link"),
-                        dbc.Button("Save sub-fields", id="tmpl-subedit-save", color="primary"),
-                    ]
-                ),
-            ],
-            id="tmpl-subedit-modal",
-            is_open=False,
-        ),
-        dcc.Store(id="tmpl-subedit-idx", data=None),
-    ]
-
-    tabs = dbc.Tabs(
-        [
-            dbc.Tab(html.Div(variables_section + verify_section, className="mt-3"), label="Variables", tab_id="tmpl-tab-vars"),
-            dbc.Tab(html.Div(prompt_section, className="mt-3"), label="Prompt", tab_id="tmpl-tab-prompt"),
-        ],
-        active_tab="tmpl-tab-vars",
-        className="mt-2",
-    )
-    return html.Div(header + [tabs] + tail)
+    return html.Div(prompt_section)
 
 
 def register_callbacks(app: Any) -> None:
@@ -717,26 +680,6 @@ def register_callbacks(app: Any) -> None:
                     className="mt-1",
                 ),
             ]
-        )
-
-    @app.callback(
-        Output("tmpl-preset-feedback", "children"),
-        Input("tmpl-preset-load", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def _load_preset(n):
-        if not n:
-            return no_update
-        project = get_project()
-        path = project.root / project.config.extraction.schema_path
-        try:
-            save_user_schema(path, False, [], _SCOPING_PRESET_FIELDS)
-        except Exception as e:
-            return dbc.Alert(f"Failed: {e}", color="danger", className="mb-0 py-1")
-        return dbc.Alert(
-            "Loaded the scoping preset into schema.yaml. Reopen the Template tab to see and edit it.",
-            color="success",
-            className="mb-0 py-1",
         )
 
     @app.callback(
@@ -821,10 +764,10 @@ def register_callbacks(app: Any) -> None:
         Output("tmpl-prompt-composed", "children"),
         Input("tmpl-prompt", "value"),
         Input("tmpl-additional", "value"),
-        Input("tmpl-store", "data"),
     )
-    def _composed_prompt(prompt, additional, store):
-        schema_md = schema_to_markdown(_compose(store or {}))
+    def _composed_prompt(prompt, additional):
+        # Variables live on the Protocol page now; compose from the SAVED schema (source of truth).
+        schema_md = _field_list_text()
         composed = compose_extraction_prompt(
             prompt, criteria=read_criteria(), schema_md=schema_md, additional=additional or ""
         )
@@ -1049,6 +992,22 @@ def register_callbacks(app: Any) -> None:
             f"Saved to {path.name} (+ {_VARIABLES_JSON_NAME} archive). Extraction will use it on the next run.",
             color="success", className="mb-0 py-1",
         )
+
+    version_ui.register(app, "tmplv", _VARS_KIND, _vars_to_text, Output("tmpl-store", "data", allow_duplicate=True), lambda c: json.loads(c))
+    version_ui.register_save(app, "tmplv", _VARS_KIND, "tmpl-save", [State("tmpl-store", "data"), State("tmpl-skipverify", "value")], _vars_to_content)
+
+    @app.callback(
+        Output("tmpl-prompt-ver-diff", "children"),
+        Input("tmpl-prompt-ver-select", "value"),
+        Input("tmpl-prompt-ver-b", "value"),
+    )
+    def _diff_extraction_prompt(va, vb):
+        if not va or not vb:
+            return html.Small("Pick two versions to compare.", className="text-muted")
+        project = get_project()
+        a = project.db.get_prompt_version(project.project_id, "extraction", va) or {}
+        b = project.db.get_prompt_version(project.project_id, "extraction", vb) or {}
+        return version_ui.diff_view(a.get("composed") or "", b.get("composed") or "")
 
 
 def _compose(store: dict) -> list[FieldSpec]:

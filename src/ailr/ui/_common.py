@@ -205,10 +205,30 @@ def read_text_or(path: Path, fallback: str) -> str:
         return fallback
 
 
-def read_criteria(fallback: str = "(criteria file not found)") -> str:
-    """Read the project's inclusion/exclusion criteria file."""
+def read_criteria_set():
+    """The project's structured criteria (CriteriaSet). Empty if none saved yet."""
+    from ailr.criteria import load_criteria
+
     project = get_project()
-    return read_text_or(project.root / project.config.screening.criteria, fallback)
+    return load_criteria(project.root / project.config.screening.criteria_structured)
+
+
+def criterion_names() -> dict:
+    """Map criterion id -> name for the current project's structured criteria (flag-check display)."""
+    try:
+        return {c.id: c.name for c in read_criteria_set().criteria if c.id}
+    except Exception:
+        return {}
+
+
+def read_criteria(fallback: str = "(criteria file not found)") -> str:
+    """The criteria text injected as {{criteria}} — rendered from the structured criteria.yaml,
+    falling back to the legacy free-text file for older projects."""
+    from ailr.criteria import resolve_criteria
+
+    project = get_project()
+    text, _ = resolve_criteria(project.root, project.config.screening)
+    return text if text.strip() else fallback
 
 
 def read_screening_prompt(fallback: str = "(screening prompt file not found)") -> str:

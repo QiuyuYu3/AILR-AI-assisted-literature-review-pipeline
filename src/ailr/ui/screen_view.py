@@ -11,7 +11,7 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.core.source import Source
 from ailr.extraction import compose_screening_prompt
 from ailr.reviewers import ScreeningDecision
-from ailr.ui import ai_runner
+from ailr.ui import ai_runner, version_ui
 from ailr.ui._common import (
     _short_author_year,
     get_project,
@@ -20,6 +20,7 @@ from ailr.ui._common import (
     read_screening_additional,
     read_screening_prompt,
     triggered_click_id,
+    with_help,
 )
 
 
@@ -30,9 +31,6 @@ def _screen_prompt_text() -> str:
 def _screen_additional_text() -> str:
     return read_screening_additional()
 
-
-def _screen_criteria_text() -> str:
-    return read_criteria("(inclusion/exclusion criteria file not found)")
 
 
 def _screening_run_prompt() -> str:
@@ -67,74 +65,6 @@ def _prompt_version_options() -> list[Any]:
         for v in vers
     ]
 
-
-def criteria_editor_block(prefix: str, note: str, with_import: bool = True) -> Any:
-    """Editable inclusion/exclusion criteria with save (+ optional import-from-file).
-    prefix keeps IDs unique per tab; with_import toggles the file-import row."""
-    import_row = [
-        dbc.InputGroup(
-            [
-                dbc.Input(id=f"{prefix}-criteria-import-path", placeholder="C:/path/to/criteria.md — import overwrites the box above", size="sm"),
-                dbc.Button("Import from file", id=f"{prefix}-criteria-import-run", color="secondary", outline=True, size="sm"),
-            ],
-            className="mt-2",
-        ),
-        html.Div(id=f"{prefix}-criteria-import-status", className="small mt-1"),
-    ] if with_import else []
-    return html.Div(
-        [
-            html.Hr(className="my-2"),
-            dbc.Label("Inclusion / exclusion criteria", className="fw-bold"),
-            html.P(note, className="text-muted small mb-1"),
-            dbc.Textarea(id=f"{prefix}-criteria", value=_screen_criteria_text(), style={"height": "220px", "fontFamily": "monospace", "fontSize": "0.75rem"}),
-            dbc.Button("Save criteria", id=f"{prefix}-criteria-save", color="primary", size="sm", className="mt-1"),
-            html.Div(id=f"{prefix}-criteria-feedback", className="small mt-1"),
-            *import_row,
-        ],
-        className="mt-2",
-    )
-
-
-def register_criteria_callbacks(app: Any, prefix: str, with_import: bool = True) -> None:
-    @app.callback(
-        Output(f"{prefix}-criteria-feedback", "children"),
-        Input(f"{prefix}-criteria-save", "n_clicks"),
-        State(f"{prefix}-criteria", "value"),
-        prevent_initial_call=True,
-    )
-    def _save_criteria(n, text):
-        if not n:
-            return no_update
-        project = get_project()
-        p = project.root / project.config.screening.criteria
-        try:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(text or "", encoding="utf-8")
-        except OSError as e:
-            return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
-        return dbc.Alert(f"Saved to {p.name}.", color="success", className="mb-0 py-1")
-
-    if not with_import:
-        return
-
-    @app.callback(
-        Output(f"{prefix}-criteria", "value"),
-        Output(f"{prefix}-criteria-import-status", "children"),
-        Input(f"{prefix}-criteria-import-run", "n_clicks"),
-        State(f"{prefix}-criteria-import-path", "value"),
-        prevent_initial_call=True,
-    )
-    def _import_criteria(n, path):
-        if not n:
-            return no_update, no_update
-        p = Path((path or "").strip())
-        if not path or not p.is_file():
-            return no_update, dbc.Alert("Enter a valid file path.", color="warning", className="mb-0 py-1")
-        try:
-            text = p.read_text(encoding="utf-8")
-        except OSError as e:
-            return no_update, dbc.Alert(f"Read failed: {e}", color="danger", className="mb-0 py-1")
-        return text, dbc.Alert(f"Loaded {p.name}. Review, then click Save criteria.", color="success", className="mb-0 py-1")
 
 _STATUS_FILTERS = [
     {"label": "To screen", "value": "to_screen"},
@@ -172,7 +102,7 @@ def screening_prompt_panel() -> list[Any]:
         dbc.Alert(
             [
                 html.Strong("You usually only edit the additional instructions below. "),
-                "The criteria are shared with extraction and edited on the Settings page; the output "
+                "The criteria are shared with extraction and edited on the Protocol page; the output "
                 "(decision / reasoning / confidence / matched_criteria / quotes) is enforced automatically. "
                 "The full screening prompt is a ready-made template you rarely need to touch (see Advanced).",
             ],
@@ -211,6 +141,9 @@ def screening_prompt_panel() -> list[Any]:
                     className="mb-1",
                 ),
                 html.Div(id="screen-prompt-ver-view", className="small text-muted"),
+                dbc.Label("Compare the selected version with", className="small fw-bold mb-0 mt-2"),
+                dbc.Select(id="screen-prompt-ver-b", options=_prompt_version_options(), size="sm", className="mb-1"),
+                html.Div(id="screen-prompt-ver-diff"),
             ],
             className="mt-3",
         ),
@@ -580,6 +513,19 @@ def register_callbacks(app: Any) -> None:
                 ),
             ]
         )
+
+    @app.callback(
+        Output("screen-prompt-ver-diff", "children"),
+        Input("screen-prompt-ver-select", "value"),
+        Input("screen-prompt-ver-b", "value"),
+    )
+    def _diff_screening_prompt(va, vb):
+        if not va or not vb:
+            return html.Small("Pick two versions to compare.", className="text-muted")
+        project = get_project()
+        a = project.db.get_prompt_version(project.project_id, "screening", va) or {}
+        b = project.db.get_prompt_version(project.project_id, "screening", vb) or {}
+        return version_ui.diff_view(a.get("composed") or "", b.get("composed") or "")
 
     @app.callback(
         Output("screen-additional-feedback", "children"),

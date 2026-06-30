@@ -476,15 +476,19 @@ def _value_block(val: Any, quote: Any) -> Any:
 def _flag_check_block(flag_check: list) -> Any:
     if not flag_check:
         return None
+    from ailr.ui._common import criterion_names
+
+    names = criterion_names()
     verdict_color = {"PASS": "success", "FAIL": "danger", "UNCERTAIN": "warning"}
     rows = []
     for it in flag_check:
         verdict = (it.get("verdict") or "").upper()
         conf = it.get("confidence")
+        cid = it.get("criterion_id") or ""
         rows.append(html.Div([
             html.Div([
                 dbc.Badge(verdict or "?", color=verdict_color.get(verdict, "secondary"), className="me-2"),
-                html.Span(it.get("criterion_id") or "", className="fw-bold small me-2"),
+                html.Span(names.get(cid, cid), className="fw-bold small me-2"),
                 html.Span(f"conf {conf}" if conf is not None else "", className="text-muted small"),
             ]),
             html.Div(it.get("reason") or "", className="small"),

@@ -11,9 +11,11 @@
 - Dropped sub-tab headings that duplicated the tab name (Workflow, AI screening); some long descriptions tucked into a hover "?" icon.
 - Abstract workflow aligned with full-text: prompt editing split into its own "Prompt" sub-tab, leaving run + import on "AI screening".
 - Reports load faster (shared counts; "studies extracted" is one query, not one per source).
-- Inclusion/exclusion criteria edited only in Settings now, shared by screening + extraction (Template shows it read-only).
+- New top-level **Protocol** page for the review's shared definitions (criteria + extraction variables); criteria moved here from Settings, variables from the full-text Workflow (now prompt-only).
 
 ### Added
+- Criteria are now a structured form (name + PASS/FAIL/UNCERTAIN per criterion); the extraction flag-check is locked to them so the AI re-checks each one by name. Import from your existing criteria text or JSON.
+- Version history with a highlighted diff for criteria, variables, and prompts — restore or compare any two saved versions.
 - Screening: optional "Additional instructions" box for stage-specific guidance.
 - Screening panel reorganised like the Template tab (additional + live preview up front, full editor under "Advanced").
 - Settings shows the prompts as actually sent (criteria/schema/additional filled in).

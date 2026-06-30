@@ -796,11 +796,15 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
             block.append(html.Div(" • ".join(meta), className="text-muted ms-3", style={"fontSize": "0.75rem"}))
         items.append(html.Div(block, className="small mb-2"))
     if flag_check:
+        from ailr.ui._common import criterion_names
+
+        names = criterion_names()
         items.append(html.H6("flag_check", className="mt-2"))
         for fc in flag_check:
             emoji = {"PASS": "[PASS]", "FAIL": "[FAIL]", "UNCERTAIN": "[?]"}.get(fc.get("verdict", ""), "")
+            cid = fc.get("criterion_id") or ""
             items.append(
-                html.P(f"{emoji} {fc.get('criterion_id')}: {fc.get('reason')}", className="small mb-1")
+                html.P(f"{emoji} {names.get(cid, cid)}: {fc.get('reason')}", className="small mb-1")
             )
     return dbc.Card(dbc.CardBody(items), color="light")
 

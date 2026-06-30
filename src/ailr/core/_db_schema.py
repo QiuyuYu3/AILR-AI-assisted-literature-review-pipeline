@@ -104,6 +104,16 @@ CREATE TABLE IF NOT EXISTS prompt_versions (
     PRIMARY KEY (project_id, version, prompt_type)
 );
 
+CREATE TABLE IF NOT EXISTS artifact_versions (
+    project_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    version TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+    PRIMARY KEY (project_id, kind, version)
+);
+
 CREATE TABLE IF NOT EXISTS codebook_versions (
     project_id INTEGER NOT NULL,
     version TEXT NOT NULL,
@@ -357,6 +367,18 @@ Table(
     Column("created_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     Column("notes", Text),
     PrimaryKeyConstraint("project_id", "version", "prompt_type"),
+)
+
+Table(
+    "artifact_versions",
+    metadata,
+    Column("project_id", Integer, nullable=False),
+    Column("kind", Text, nullable=False),  # criteria | variables | screening_prompt | extraction_prompt | *_additional
+    Column("version", Text, nullable=False),
+    Column("content", Text, nullable=False),  # snapshot saved on each Save (JSON for criteria/variables, raw text for prompts)
+    Column("created_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
+    Column("notes", Text),
+    PrimaryKeyConstraint("project_id", "kind", "version"),
 )
 
 Table(

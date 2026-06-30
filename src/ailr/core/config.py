@@ -56,7 +56,8 @@ class ScreeningConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     prompt: str = "prompts/screening.txt"
     additional: str = "prompts/screening_additional.txt"
-    criteria: str = "inclusion_criteria.md"
+    criteria: str = "inclusion_criteria.md"  # legacy free-text fallback (used if criteria_structured is empty)
+    criteria_structured: str = "criteria.yaml"  # structured criteria (single source of truth) — shared by both stages
     batch_size: int = 20
     workflow: Literal["assisted", "independent"] = Field(
         default="assisted",

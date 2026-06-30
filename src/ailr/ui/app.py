@@ -19,6 +19,7 @@ from ailr.ui import (
     full_text_view,
     import_view,
     project_manager_view,
+    protocol_view,
     reports_view,
     screen_view,
     settings_view,
@@ -54,6 +55,7 @@ def _build_sidebar():
     return dbc.Nav(
         [
             _nav_link("Projects", "projects"),
+            _nav_link("Protocol", "protocol"),
             _nav_link("Summary", "dashboard"),
             _nav_section("Abstract"),
             _nav_link("Workflow", "workflow_abstract"),
@@ -332,6 +334,8 @@ def build_app() -> Dash:
         # Project gate: with no project open, every tab shows the project manager.
         if tab == "projects" or not has_project():
             return project_manager_view.layout()
+        if tab == "protocol":
+            return protocol_view.layout()
         if tab == "dashboard":
             return dashboard_view.layout(reviewer or "")
         if tab == "extract":
@@ -417,6 +421,7 @@ def build_app() -> Dash:
     duplicates_view.register_callbacks(app)
     database_view.register_callbacks(app)
     template_view.register_callbacks(app)
+    protocol_view.register_callbacks(app)
     settings_view.register_callbacks(app)
     workflow_view.register_callbacks(app)
 

@@ -8,6 +8,7 @@ from typing import Callable, Optional
 from ailr.core.config import resolve_stage_llm
 from ailr.core.project import Project
 from ailr.core.source import Source
+from ailr.criteria import resolve_criteria
 from ailr.metrics import cohen_kappa, percent_agreement
 from ailr.reviewers import Reviewer, ScreeningDecision
 from ailr.reviewers import LLMReviewer
@@ -52,9 +53,8 @@ class QuickTestTask:
         candidates_available = len(candidates)
         sample_size = candidates_available if source_ids else min(n, candidates_available)
 
-        criteria_path = self.project.root / self.project.config.screening.criteria
         prompt_path = self.project.root / self.project.config.screening.prompt
-        criteria_text = criteria_path.read_text(encoding="utf-8")
+        criteria_text, _ = resolve_criteria(self.project.root, self.project.config.screening)
         prompt_template = prompt_path.read_text(encoding="utf-8")
         additional_path = self.project.root / self.project.config.screening.additional
         additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
@@ -201,7 +201,7 @@ class ExtractionQuickTestTask:
 
         config = self.project.config
         prompt_template = (self.project.root / config.extraction.prompt).read_text(encoding="utf-8")
-        criteria_text = (self.project.root / config.screening.criteria).read_text(encoding="utf-8")
+        criteria_text, criterion_ids = resolve_criteria(self.project.root, config.screening)
         fields = compose_schema(self.project.root / config.extraction.schema_path)
         with_quotes = config.extraction.output_format == "with_quotes"
         flag_check = config.extraction.flag_check
@@ -253,6 +253,7 @@ class ExtractionQuickTestTask:
                     criteria_text=criteria_text,
                     with_quotes=with_quotes,
                     flag_check=flag_check,
+                    criterion_ids=criterion_ids,
                 )
                 serialized = [
                     {"field": r.field_name, "value": r.value, "quote": r.source_quote, "confidence": r.confidence}
@@ -345,9 +346,8 @@ class CalibrationTask:
             sample_round=sample_round,
         )
 
-        criteria_path = self.project.root / self.project.config.screening.criteria
         prompt_path = self.project.root / self.project.config.screening.prompt
-        criteria_text = criteria_path.read_text(encoding="utf-8")
+        criteria_text, _ = resolve_criteria(self.project.root, self.project.config.screening)
         prompt_template = prompt_path.read_text(encoding="utf-8")
         additional_path = self.project.root / self.project.config.screening.additional
         additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""

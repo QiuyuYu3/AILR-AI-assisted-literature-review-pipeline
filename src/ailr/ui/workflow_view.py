@@ -35,6 +35,14 @@ def layout(section: str = "abstract") -> Any:
             html.P("Get PDFs and their markdown ready for full-text review + extraction.", className="text-muted small"),
             *pdf_tools_panel(),
         ]
+        prompt_tab = [
+            html.P(
+                "Edit the extraction prompt and additional instructions for this stage. The criteria and the "
+                "extraction variables are shared definitions — edit them on the Protocol page.",
+                className="text-muted small",
+            ),
+            template_view.prompt_layout(),
+        ]
         extraction_tab = [
             html.P("Run AI extraction on included papers, or import results you ran externally (use 'Run externally' under Import to copy the prompt and download the JSON template).", className="text-muted small"),
             *ai_extraction_panel(),
@@ -42,7 +50,7 @@ def layout(section: str = "abstract") -> Any:
         return dbc.Tabs(
             [
                 dbc.Tab(html.Div(workflow_tab, className="pt-3"), label="Workflow", tab_id="wf-settings"),
-                dbc.Tab(html.Div(template_view.layout(), className="pt-3"), label="Template", tab_id="wf-template"),
+                dbc.Tab(html.Div(prompt_tab, className="pt-3"), label="Prompt", tab_id="wf-prompt"),
                 dbc.Tab(html.Div(calibration_view.layout("extraction"), className="pt-3"), label="Calibration", tab_id="wf-cal"),
                 dbc.Tab(html.Div(extraction_tab, className="pt-3"), label="AI extraction", tab_id="wf-extract"),
             ],
@@ -71,7 +79,7 @@ def layout(section: str = "abstract") -> Any:
         html.Div(id="workflow-feedback", className="small mt-2"),
     ]
     prompt_tab = [
-        html.P("Edit the screening prompt and additional instructions. The criteria are shared with extraction and edited on Settings.", className="text-muted small"),
+        html.P("Edit the screening prompt and additional instructions. The criteria are shared with extraction and edited on the Protocol page.", className="text-muted small"),
         *screening_prompt_panel(),
     ]
     ai_tab = [

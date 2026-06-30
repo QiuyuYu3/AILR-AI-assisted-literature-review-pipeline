@@ -99,6 +99,7 @@ class Reviewer(ABC):
         additional_text: str = "",
         with_quotes: bool = True,
         flag_check: bool = True,
+        criterion_ids: Optional[list[str]] = None,
     ) -> SourceExtraction:
         """Extract structured fields from the full-text paper. Caller fills source_id afterward."""
 
@@ -215,6 +216,7 @@ class LLMReviewer(Reviewer):
         additional_text: str = "",
         with_quotes: bool = True,
         flag_check: bool = True,
+        criterion_ids: Optional[list[str]] = None,
     ) -> SourceExtraction:
         tool_schema = build_extraction_tool_schema(
             fields,
@@ -223,7 +225,7 @@ class LLMReviewer(Reviewer):
             tool_description="Record the structured extraction for the paper in the user message.",
         )
         if flag_check:
-            tool_schema = _add_flag_check_to_schema(tool_schema)
+            tool_schema = _add_flag_check_to_schema(tool_schema, criterion_ids)
 
         schema_md = schema_to_markdown(fields)
         # The paper text is sent as a separate user message, so {{paper_text}} is intentionally dropped.
@@ -266,7 +268,7 @@ class LLMReviewer(Reviewer):
         return SourceExtraction(
             source_id=source.id or 0,
             results=results,
-            flag_check=output.get("_flag_check") if flag_check else None,
+            flag_check=_normalize_flag_check(output.get("_flag_check")) if flag_check else None,
             raw_output=output,
         )
 
@@ -281,31 +283,62 @@ def _format_paper_message(source: Source, paper_text: str) -> str:
     return f"{header}\n\n--- FULL TEXT ---\n\n{paper_text}"
 
 
-def _add_flag_check_to_schema(tool_schema: ToolSchema) -> ToolSchema:
-    """Inject a _flag_check array property for inclusion-criterion re-verification."""
+def _flag_check_item_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "verdict": {"type": "string", "enum": ["PASS", "FAIL", "UNCERTAIN"]},
+            "reason": {"type": "string", "description": "One sentence."},
+            "confidence": {"type": "integer", "minimum": 1, "maximum": 10},
+            "quote": {"type": ["string", "null"], "description": "Verbatim quote from the full text supporting this verdict, or null if not stated."},
+        },
+        "required": ["verdict", "reason"],
+    }
+
+
+def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: Optional[list[str]] = None) -> ToolSchema:
+    """Inject _flag_check: a named-slot object keyed by criterion_ids (each required), or the legacy
+    free array when no IDs are known."""
     schema = dict(tool_schema.input_schema)
     props = dict(schema.get("properties", {}))
-    props["_flag_check"] = {
-        "type": "array",
-        "description": "Re-verify each inclusion criterion against the full text. One item per criterion.",
-        "items": {
+    if criterion_ids:
+        props["_flag_check"] = {
             "type": "object",
-            "properties": {
-                "criterion_id": {"type": "string", "description": "Criterion identifier (e.g. B1, Population)"},
-                "verdict": {"type": "string", "enum": ["PASS", "FAIL", "UNCERTAIN"]},
-                "reason": {"type": "string", "description": "One sentence."},
-                "confidence": {"type": "integer", "minimum": 1, "maximum": 10},
-                "quote": {"type": ["string", "null"], "description": "Verbatim quote from the full text supporting this verdict, or null if not stated."},
-            },
-            "required": ["criterion_id", "verdict", "reason"],
-        },
-    }
+            "description": "Re-verify each criterion against the full text. One entry per criterion, keyed by its ID.",
+            "properties": {cid: _flag_check_item_schema() for cid in criterion_ids},
+            "required": list(criterion_ids),
+        }
+    else:
+        item = _flag_check_item_schema()
+        item["properties"]["criterion_id"] = {"type": "string", "description": "Criterion identifier (e.g. B1, Population)"}
+        item["required"] = ["criterion_id", "verdict", "reason"]
+        props["_flag_check"] = {
+            "type": "array",
+            "description": "Re-verify each inclusion criterion against the full text. One item per criterion.",
+            "items": item,
+        }
     schema["properties"] = props
     return ToolSchema(
         name=tool_schema.name,
         description=tool_schema.description,
         input_schema=schema,
     )
+
+
+def _normalize_flag_check(raw: Any) -> Optional[list[dict[str, Any]]]:
+    """Normalize either the named-slot object {ID: {verdict,...}} or the legacy array
+    [{criterion_id, verdict,...}] into the canonical list[dict] stored in the DB."""
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        out: list[dict[str, Any]] = []
+        for cid, v in raw.items():
+            if isinstance(v, dict):
+                out.append({"criterion_id": cid, **v})
+        return out
+    if isinstance(raw, list):
+        return raw
+    return None
 
 
 def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tuple[Any, Optional[str]]:

@@ -7,6 +7,7 @@ from typing import Callable, Optional
 
 from ailr.core.project import Project
 from ailr.core.source import Source
+from ailr.criteria import resolve_criteria
 from ailr.extraction import compose_schema
 from ailr.reviewers import ExtractionResult, Reviewer, ScreeningDecision, SourceExtraction
 from ailr.reviewers import LLMReviewer
@@ -45,11 +46,10 @@ class ExtractionTask:
         config = self.project.config
         prompt_path = self.project.root / config.extraction.prompt
         schema_path = self.project.root / config.extraction.schema_path
-        criteria_path = self.project.root / config.screening.criteria
         additional_path = self.project.root / config.extraction.additional
 
         prompt_template = prompt_path.read_text(encoding="utf-8")
-        criteria_text = criteria_path.read_text(encoding="utf-8")
+        criteria_text, criterion_ids = resolve_criteria(self.project.root, config.screening)
         additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
         fields = compose_schema(schema_path)
         with_quotes = config.extraction.output_format == "with_quotes"
@@ -99,6 +99,7 @@ class ExtractionTask:
                     additional_text=additional_text,
                     with_quotes=with_quotes,
                     flag_check=flag_check,
+                    criterion_ids=criterion_ids,
                 )
                 extraction.source_id = source.id
 

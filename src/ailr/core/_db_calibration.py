@@ -227,6 +227,42 @@ class CalibrationMixin:
             self._conn.commit()
             return version
 
+    def save_artifact_version(self, project_id: int, kind: str, content: str, notes: Optional[str] = None) -> Optional[str]:
+        """Snapshot an editable artifact (criteria / variables / a prompt) on Save. Auto-numbers
+        v1, v2, … per (project, kind); skips (returns None) when identical to the latest, so repeated
+        no-op saves don't spam history."""
+        with self._lock, self._conn.transaction():
+            latest = self._conn.execute(
+                "SELECT content FROM artifact_versions WHERE project_id = ? AND kind = ? ORDER BY created_at DESC, version DESC LIMIT 1",
+                (project_id, kind),
+            ).fetchone()
+            if latest is not None and latest["content"] == content:
+                return None
+            n = self._conn.execute(
+                "SELECT COUNT(*) AS c FROM artifact_versions WHERE project_id = ? AND kind = ?", (project_id, kind)
+            ).fetchone()["c"]
+            version = f"v{n + 1}"
+            self._conn.execute(
+                "INSERT INTO artifact_versions (project_id, kind, version, content, notes) VALUES (?, ?, ?, ?, ?)",
+                (project_id, kind, version, content, notes),
+            )
+            self._conn.commit()
+            return version
+
+    def list_artifact_versions(self, project_id: int, kind: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT version, content, notes, created_at FROM artifact_versions WHERE project_id = ? AND kind = ? ORDER BY created_at DESC, version DESC",
+            (project_id, kind),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_artifact_version(self, project_id: int, kind: str, version: str) -> Optional[dict]:
+        row = self._conn.execute(
+            "SELECT version, content, notes, created_at FROM artifact_versions WHERE project_id = ? AND kind = ? AND version = ?",
+            (project_id, kind, version),
+        ).fetchone()
+        return dict(row) if row else None
+
     def list_prompt_versions(self, project_id: int, prompt_type: str) -> list[dict]:
         rows = self._conn.execute(
             """

@@ -23,7 +23,6 @@ from ailr.ui._common import (
     read_screening_additional,
     reload_project,
 )
-from ailr.ui.screen_view import criteria_editor_block, register_criteria_callbacks
 
 _PROVIDERS = [
     {"label": "Anthropic", "value": "anthropic"},
@@ -186,16 +185,16 @@ def layout() -> Any:
     prompts_block = [
         html.P(
             [
-                "What the AI is actually given. ",
+                "What the AI is actually given (view-only) — the exact text sent, with criteria, schema, and "
+                "additional instructions already filled in. Criteria and variables are edited on the Protocol "
+                "page; each stage's prompt on its Workflow page. ",
                 help_icon(
-                    "The inclusion/exclusion criteria (used by both screening and extraction) is edited here; the prompts below are view-only and show the exact text sent — criteria, schema, and additional instructions already filled in. Edit the prompts on the Workflow pages.",
+                    "These are read-only resolved previews. To change them, edit the criteria/variables on Protocol or the prompts on the Workflow pages.",
                     "settings-prompts-help",
                 ),
             ],
             className="text-muted small",
         ),
-        criteria_editor_block("settings", note="Used by both screening and data extraction (fills {{criteria}})."),
-        html.Hr(className="my-3"),
         html.Details(
             [
                 html.Summary("Screening prompt (as sent)"),
@@ -208,7 +207,6 @@ def layout() -> Any:
                 html.Pre(_resolved_extraction_prompt(project), style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"}),
             ]
         ),
-        html.Small("The extraction field list (schema) is set in the Template tab.", className="text-muted"),
     ]
 
     danger_block = [
@@ -256,8 +254,6 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
-    register_criteria_callbacks(app, "settings")
-
     @app.callback(
         Output("settings-stage-feedback", "children"),
         Input("settings-stage-save", "n_clicks"),

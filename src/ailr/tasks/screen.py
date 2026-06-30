@@ -5,6 +5,7 @@ from typing import Callable, Optional
 
 from ailr.core.project import Project
 from ailr.core.source import Source
+from ailr.criteria import resolve_criteria
 from ailr.reviewers import Reviewer, ScreeningDecision
 from ailr.reviewers import LLMReviewer
 
@@ -51,10 +52,9 @@ class ScreeningTask:
     ) -> ScreenRunSummary:
         config = self.project.config
         prompt_path = self.project.root / config.screening.prompt
-        criteria_path = self.project.root / config.screening.criteria
 
         prompt_template = prompt_path.read_text(encoding="utf-8")
-        criteria_text = criteria_path.read_text(encoding="utf-8")
+        criteria_text, _ = resolve_criteria(self.project.root, config.screening)
         additional_path = self.project.root / config.screening.additional
         additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
 
