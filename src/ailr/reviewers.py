@@ -1,6 +1,7 @@
 """Reviewers: abstraction, decision dataclasses, and the LLM-backed reviewer."""
 
 import copy
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -360,7 +361,19 @@ def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tup
         if isinstance(raw, dict) and "value" in raw:
             return raw.get("value"), raw.get("quote")
         return raw, None
-    # Object / list: keep full structure; quotes live at leaves inside.
+    # list of scalars (multi-select) is wrapped as {value: [...], quote}
+    if field.type == "list" and field.item_type != "object":
+        if isinstance(raw, dict) and "value" in raw:
+            return raw.get("value"), raw.get("quote")
+        return raw, None
+    # Object / list-of-objects: keep full structure (quotes live at leaves inside).
+    # Models sometimes return the nested structure as a JSON string; parse it so the
+    # stored value is always a real list/dict.
+    if isinstance(raw, str) and raw.strip()[:1] in ("[", "{"):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            pass
     return raw, None
 
 

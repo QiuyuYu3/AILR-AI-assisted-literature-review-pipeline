@@ -285,14 +285,31 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool) -> dict[str, A
             item_schema: dict[str, Any] = {"type": "object", "properties": item_props}
             if item_required:
                 item_schema["required"] = item_required
-        else:
-            item_schema = dict(_BASIC_TYPES.get(field.item_type or "string", {"type": "string"}))
-            if field.enum:  # constrain each list item to a fixed set (multi-select from options)
-                item_schema["enum"] = field.enum
+            arr: dict[str, Any] = {"type": "array", "items": item_schema}
+            if field.description:
+                arr["description"] = field.description
+            return arr
 
-        arr: dict[str, Any] = {"type": "array", "items": item_schema}
+        # list of scalars (multi-select): leaf quotes can't live inside, so attach
+        # one quote to the whole field, mirroring the scalar wrapper below.
+        item_schema = dict(_BASIC_TYPES.get(field.item_type or "string", {"type": "string"}))
+        if field.enum:  # constrain each list item to a fixed set (multi-select from options)
+            item_schema["enum"] = field.enum
+        arr = {"type": "array", "items": item_schema}
         if field.description:
             arr["description"] = field.description
+        if with_quotes:
+            return {
+                "type": "object",
+                "properties": {
+                    "value": arr,
+                    "quote": {
+                        "type": ["string", "null"],
+                        "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
+                    },
+                },
+                "required": ["value"],
+            }
         return arr
 
     # Leaf
