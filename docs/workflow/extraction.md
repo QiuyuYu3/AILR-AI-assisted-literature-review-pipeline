@@ -40,7 +40,7 @@ Like screening, extraction has a **Calibration** tab — run the AI on a few pap
 
 ## 3. Run AI extraction
 
-On the **AI extraction** tab, run AI extraction on the included papers, or **import results you ran yourself**. **Mock** mode fabricates schema-shaped values so you can test the extraction UI with no API call; a **Force re-extract** toggle re-runs papers that already have extractions (e.g. after you revise the schema).
+On the **AI extraction** tab, run AI extraction on the included papers, or **import results you ran yourself**. **Mock** mode fabricates schema-shaped values so you can test the extraction UI with no API call; a **Force re-extract** toggle re-runs papers that already have extractions (e.g. after you revise the schema). The run makes a couple of AI calls in parallel (2 by default; tune with `extraction.workers` in `lit_review.yaml` — see [per-stage models](../concepts.md#per-stage-models)).
 
 ```bash
 ailr extract <project-folder>           # included papers

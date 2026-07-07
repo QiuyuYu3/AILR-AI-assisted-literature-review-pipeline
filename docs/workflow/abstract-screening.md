@@ -31,7 +31,7 @@ If κ is low, read the disagreements rather than just lowering the bar: usually 
 
 ## 2. Run AI screening
 
-With a calibrated prompt, use the **AI screening** tab to run screening across the un-screened sources. Use **Mock** if you just want to populate the UI with no API call (e.g. to rehearse the workflow before paying for tokens).
+With a calibrated prompt, use the **AI screening** tab to run screening across the un-screened sources. Use **Mock** if you just want to populate the UI with no API call (e.g. to rehearse the workflow before paying for tokens). The run makes several AI calls in parallel (4 by default; tune with `screening.workers` in `lit_review.yaml` — see [per-stage models](../concepts.md#per-stage-models)).
 
 CLI equivalent:
 

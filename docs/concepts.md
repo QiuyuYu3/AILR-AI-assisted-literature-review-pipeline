@@ -64,11 +64,15 @@ llm:
 screening:
   llm:
     model: claude-haiku-4-5  # cheaper for abstract screening
+  workers: 4                 # parallel AI calls (default 4; set 1 for one-at-a-time)
 
 extraction:
   llm:
     model: claude-opus-4-8   # stronger for full-text extraction
+  workers: 2                 # parallel AI calls (default 2 — full-paper prompts are large)
 ```
+
+AI runs make several calls **in parallel** (`workers` above), which shortens large runs considerably. If your API plan has tight rate limits, lower it — a rate-limited call is retried automatically with backoff, so nothing is lost either way.
 
 ![settings — per-stage models](figures/setting2.png)
 
