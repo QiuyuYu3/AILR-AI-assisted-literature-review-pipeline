@@ -6,6 +6,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -21,17 +22,10 @@ from ailr.core.source import Source
 _QMARK = re.compile(r"\?")
 
 
-def _qmark_to_named(sql: str, params):
-    """Translate sqlite3-style `?` placeholders into SQLAlchemy named params.
-
-    The codebase has no literal `?` inside SQL strings (verified) and no CTEs, so a
-    positional left-to-right substitution is safe.
-    """
-    if isinstance(params, dict):
-        return sql, params
-    if params is None:
-        params = ()
-    seq = list(params) if isinstance(params, (list, tuple)) else [params]
+@lru_cache(maxsize=1024)
+def _translate_qmarks(sql: str) -> str:
+    """`?` -> :p0, :p1, ... left to right. Cached: the same statements run over and over,
+    and the regex pass is pure string work."""
     counter = {"i": 0}
 
     def _sub(_m):
@@ -39,8 +33,21 @@ def _qmark_to_named(sql: str, params):
         counter["i"] += 1
         return f":p{n}"
 
-    new_sql = _QMARK.sub(_sub, sql)
-    return new_sql, {f"p{j}": v for j, v in enumerate(seq)}
+    return _QMARK.sub(_sub, sql)
+
+
+def _qmark_to_named(sql: str, params):
+    """Translate sqlite3-style `?` placeholders into SQLAlchemy named params.
+
+    The codebase has no literal `?` inside SQL strings (verified), so a positional
+    left-to-right substitution is safe (works for CTEs too — order is textual).
+    """
+    if isinstance(params, dict):
+        return sql, params
+    if params is None:
+        params = ()
+    seq = list(params) if isinstance(params, (list, tuple)) else [params]
+    return _translate_qmarks(sql), {f"p{j}": v for j, v in enumerate(seq)}
 
 
 class _Result:
@@ -83,11 +90,13 @@ _INSERT_TABLE_RE = re.compile(r'^\s*INSERT\s+INTO\s+"?(\w+)"?', re.IGNORECASE)
 _ID_TABLES: Optional[set] = None
 
 
+@lru_cache(maxsize=1024)
 def _prepare_sql(sql: str) -> tuple[str, bool, bool]:
     """Make a hand-written statement dialect-agnostic. Returns (sql, want_id, is_write):
     - 'INSERT OR IGNORE INTO' → 'INSERT INTO ... ON CONFLICT DO NOTHING' (SQLite + Postgres).
     - INSERT into an integer-id-PK table gets 'RETURNING id' appended so the new id is
-      available without cursor.lastrowid (which Postgres/psycopg doesn't provide)."""
+      available without cursor.lastrowid (which Postgres/psycopg doesn't provide).
+    Cached: pure string work, and the same statements run over and over."""
     global _ID_TABLES
     if _ID_TABLES is None:
         _ID_TABLES = {

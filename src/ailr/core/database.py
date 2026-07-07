@@ -97,12 +97,17 @@ class Database(
         if "composed" not in pv_cols:
             with self._engine.begin() as conn:
                 conn.exec_driver_sql("ALTER TABLE prompt_versions ADD COLUMN composed TEXT")
-        # composite index speeds the screening list / status filters / vote locks (existing DBs only;
-        # fresh ones get it from create_all). CREATE INDEX IF NOT EXISTS works on SQLite + PostgreSQL.
+        # composite indexes speed the screening list / status filters / vote locks and the
+        # extraction marker lookups (existing DBs only; fresh ones get them from create_all).
+        # CREATE INDEX IF NOT EXISTS works on SQLite + PostgreSQL.
         with self._engine.begin() as conn:
             conn.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS idx_screening_lookup "
                 "ON screening_decisions (source_id, reviewer_type, stage)"
+            )
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_extractions_lookup "
+                "ON extractions (source_id, extractor_type, field_name)"
             )
 
     def _sqlite_column_migrations(self) -> None:

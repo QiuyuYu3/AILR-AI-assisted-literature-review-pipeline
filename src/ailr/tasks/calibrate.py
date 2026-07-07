@@ -8,7 +8,7 @@ from typing import Callable, Optional
 from ailr.core.config import resolve_stage_llm
 from ailr.core.project import Project
 from ailr.core.source import Source
-from ailr.criteria import resolve_criteria
+from ailr.criteria import load_screening_inputs, resolve_criteria
 from ailr.metrics import cohen_kappa, percent_agreement
 from ailr.reviewers import Reviewer, ScreeningDecision
 from ailr.reviewers import LLMReviewer
@@ -53,11 +53,9 @@ class QuickTestTask:
         candidates_available = len(candidates)
         sample_size = candidates_available if source_ids else min(n, candidates_available)
 
-        prompt_path = self.project.root / self.project.config.screening.prompt
-        criteria_text, criterion_ids = resolve_criteria(self.project.root, self.project.config.screening)
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-        additional_path = self.project.root / self.project.config.screening.additional
-        additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
+        prompt_template, criteria_text, criterion_ids, additional_text = load_screening_inputs(
+            self.project.root, self.project.config.screening
+        )
 
         run_id = self.project.db.create_test_run(
             project_id=self.project.project_id,
@@ -120,10 +118,12 @@ def sample_agreement(project: Project, sample_ids: list[int]) -> dict:
         return result
 
     placeholders = ",".join("?" for _ in sample_ids)
+    # ORDER BY id so the latest decision per (source, reviewer_type) wins in the dict below.
     rows = project.db._conn.execute(
         f"""
         SELECT source_id, reviewer_type, decision FROM screening_decisions
         WHERE source_id IN ({placeholders}) AND stage = 'abstract'
+        ORDER BY id
         """,
         sample_ids,
     ).fetchall()
@@ -346,11 +346,9 @@ class CalibrationTask:
             sample_round=sample_round,
         )
 
-        prompt_path = self.project.root / self.project.config.screening.prompt
-        criteria_text, criterion_ids = resolve_criteria(self.project.root, self.project.config.screening)
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-        additional_path = self.project.root / self.project.config.screening.additional
-        additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
+        prompt_template, criteria_text, criterion_ids, additional_text = load_screening_inputs(
+            self.project.root, self.project.config.screening
+        )
 
         for idx, source in enumerate(sample, 1):
             existing_ai = self._existing_ai_decision(source.id)
@@ -388,7 +386,7 @@ class CalibrationTask:
         if source_id is None:
             return None
         row = self.project.db._conn.execute(
-            "SELECT decision FROM screening_decisions WHERE source_id = ? AND reviewer_type = 'ai' ORDER BY id DESC LIMIT 1",
+            "SELECT decision FROM screening_decisions WHERE source_id = ? AND reviewer_type = 'ai' AND stage = 'abstract' ORDER BY id DESC LIMIT 1",
             (source_id,),
         ).fetchone()
         return row["decision"] if row else None
@@ -398,13 +396,16 @@ class CalibrationTask:
             return
 
         placeholders = ",".join("?" for _ in sample_ids)
+        # Abstract stage only (full_text decisions must not enter screening κ);
+        # ORDER BY id so the latest decision per (source, reviewer_type) wins in the dict below.
         sql = f"""
             SELECT
                 d.source_id,
                 d.reviewer_type,
                 d.decision
             FROM screening_decisions d
-            WHERE d.source_id IN ({placeholders})
+            WHERE d.source_id IN ({placeholders}) AND d.stage = 'abstract'
+            ORDER BY d.id
         """
         rows = self.project.db._conn.execute(sql, sample_ids).fetchall()
 

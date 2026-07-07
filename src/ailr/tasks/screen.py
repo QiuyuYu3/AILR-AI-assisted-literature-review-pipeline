@@ -1,11 +1,11 @@
 """ScreeningTask: iterate un-screened sources, call reviewer, persist decisions."""
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from ailr.core.project import Project
-from ailr.core.source import Source
-from ailr.criteria import resolve_criteria
+from ailr.criteria import load_screening_inputs
 from ailr.reviewers import Reviewer, ScreeningDecision
 from ailr.reviewers import LLMReviewer
 
@@ -49,14 +49,15 @@ class ScreeningTask:
         limit: Optional[int] = None,
         on_progress: Optional[ProgressCallback] = None,
         batch: bool = False,
+        workers: Optional[int] = None,
     ) -> ScreenRunSummary:
         config = self.project.config
-        prompt_path = self.project.root / config.screening.prompt
-
-        prompt_template = prompt_path.read_text(encoding="utf-8")
-        criteria_text, criterion_ids = resolve_criteria(self.project.root, config.screening)
-        additional_path = self.project.root / config.screening.additional
-        additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
+        prompt_template, criteria_text, criterion_ids, additional_text = load_screening_inputs(
+            self.project.root, config.screening
+        )
+        if workers is None:
+            workers = config.screening.workers
+        workers = max(1, workers)
 
         un_screened = self.project.db.list_unscreened(
             project_id=self.project.project_id,
@@ -77,7 +78,9 @@ class ScreeningTask:
             else:
                 self.project.db.insert_screening_decision(decision)
 
-        for idx, source in enumerate(un_screened, 1):
+        done = 0
+        to_screen = []
+        for source in un_screened:
             if not source.abstract:
                 summary.skipped_no_abstract += 1
                 # Insert an uncertain decision so the source is not screened repeatedly
@@ -87,37 +90,52 @@ class ScreeningTask:
                     reviewer_type=self.reviewer.reviewer_type,
                     reviewer_id=self.reviewer.reviewer_id,
                     source_id=source.id,
-                    confidence=1.0,
+                    confidence=1,  # bottom of the 1-10 scale used by LLM decisions
                 )
                 _save(placeholder)
                 summary.add_decision(placeholder)
+                done += 1
                 if on_progress:
-                    on_progress(idx, summary.total, placeholder, None)
-                continue
+                    on_progress(done, summary.total, placeholder, None)
+            else:
+                to_screen.append(source)
 
-            try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids)
-                decision.source_id = source.id
-                _save(decision)
-                summary.add_decision(decision)
+        # LLM calls run in a small thread pool (they mostly wait on the network); all DB writes,
+        # summary updates, and progress callbacks stay on this thread.
+        def _screen_one(source):
+            decision = self.reviewer.screen(
+                source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids
+            )
+            decision.source_id = source.id
+            meta = self.reviewer.last_metadata if isinstance(self.reviewer, LLMReviewer) else None
+            return decision, meta
 
-                if not batch and isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
-                    meta = self.reviewer.last_metadata
-                    self.project.db.insert_api_call(self.project.project_id, meta)
-                    summary.total_cost_estimate += meta.cost_estimate
-                    summary.total_input_tokens += meta.input_tokens
-                    summary.total_output_tokens += meta.output_tokens
-                    summary.total_cached_input_tokens += meta.cached_input_tokens
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_screen_one, s): s for s in to_screen}
+            for fut in as_completed(futures):
+                source = futures[fut]
+                done += 1
+                try:
+                    decision, meta = fut.result()
+                    _save(decision)
+                    summary.add_decision(decision)
 
-                if on_progress:
-                    on_progress(idx, summary.total, decision, None)
-            except Exception as e:
-                summary.failed += 1
-                summary.failures.append(
-                    {"source_id": source.id, "title": source.title, "error": str(e)}
-                )
-                if on_progress:
-                    on_progress(idx, summary.total, None, e)
+                    if not batch and meta is not None:
+                        self.project.db.insert_api_call(self.project.project_id, meta)
+                        summary.total_cost_estimate += meta.cost_estimate
+                        summary.total_input_tokens += meta.input_tokens
+                        summary.total_output_tokens += meta.output_tokens
+                        summary.total_cached_input_tokens += meta.cached_input_tokens
+
+                    if on_progress:
+                        on_progress(done, summary.total, decision, None)
+                except Exception as e:
+                    summary.failed += 1
+                    summary.failures.append(
+                        {"source_id": source.id, "title": source.title, "error": str(e)}
+                    )
+                    if on_progress:
+                        on_progress(done, summary.total, None, e)
 
         if batch and buffer:
             with self.project.db._conn.transaction():

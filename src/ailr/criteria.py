@@ -139,3 +139,13 @@ def resolve_criteria(root: Path, screening_cfg) -> tuple[str, list[str]]:
     legacy = root / screening_cfg.criteria
     text = legacy.read_text(encoding="utf-8") if legacy.exists() else ""
     return text, []
+
+
+def load_screening_inputs(root: Path, screening_cfg) -> tuple[str, str, list[str], str]:
+    """Everything a screening run sends to the LLM, loaded once:
+    (prompt_template, criteria_text, criterion_ids, additional_text)."""
+    prompt_template = (root / screening_cfg.prompt).read_text(encoding="utf-8")
+    criteria_text, ids = resolve_criteria(root, screening_cfg)
+    additional_path = root / screening_cfg.additional
+    additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
+    return prompt_template, criteria_text, ids, additional_text

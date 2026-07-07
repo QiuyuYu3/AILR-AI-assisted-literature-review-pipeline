@@ -2,7 +2,7 @@
 
 import re
 
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 
 from ailr.core.source import Source
 
@@ -39,21 +39,21 @@ def dedup_by_title(
     if not existing:
         return sources, []
 
-    existing_norms = [(normalize_title(e.title), e) for e in existing]
+    # process.extractOne runs the scorer loop in C with score_cutoff pruning —
+    # much faster than a Python loop when both lists are in the thousands.
+    existing_norms = [normalize_title(e.title) for e in existing]
     kept: list[Source] = []
     matched: list[tuple[Source, Source]] = []
 
     for new in sources:
-        new_norm = normalize_title(new.title)
-        best_score = 0
-        best_match: Source | None = None
-        for ex_norm, ex_src in existing_norms:
-            score = fuzz.token_set_ratio(new_norm, ex_norm)
-            if score > best_score:
-                best_score = score
-                best_match = ex_src
-        if best_match is not None and best_score >= threshold:
-            matched.append((new, best_match))
+        hit = process.extractOne(
+            normalize_title(new.title),
+            existing_norms,
+            scorer=fuzz.token_set_ratio,
+            score_cutoff=threshold,
+        )
+        if hit is not None:
+            matched.append((new, existing[hit[2]]))
         else:
             kept.append(new)
 

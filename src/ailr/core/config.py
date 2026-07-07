@@ -67,6 +67,7 @@ class ScreeningConfig(BaseModel):
     target_kappa: float = 0.7
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     llm: Optional[StageLLMOverride] = None
+    workers: int = 4  # concurrent LLM screening calls (1 = serial)
 
 
 class ExtractionConfig(BaseModel):
@@ -88,6 +89,7 @@ class ExtractionConfig(BaseModel):
         default_factory=lambda: CalibrationConfig(min=10)
     )
     llm: Optional[StageLLMOverride] = None
+    workers: int = 2  # concurrent LLM extraction calls (1 = serial; full-paper prompts are large)
 
 
 class PreprocessConfig(BaseModel):
@@ -187,14 +189,11 @@ def resolve_stage_llm(top_level: LLMConfig, override: Optional[StageLLMOverride]
     return LLMConfig(**fields)
 
 
-def save_llm_config(
-    project_dir: Path,
-    provider: str,
-    model: str,
-    temperature: float,
-    seed: Optional[int] = None,
-) -> None:
-    """Update the top-level `llm:` block in lit_review.yaml (used by AI screening/extraction)."""
+def _edit_config_block(project_dir: Path, key: str, mutate) -> None:
+    """Load lit_review.yaml, apply `mutate(block)` to the dict at `key`, write it back.
+
+    Note: pyyaml's safe_dump rewrites the file and does not preserve comments.
+    """
     config_path = project_dir / "lit_review.yaml"
     if not config_path.exists():
         raise ProjectNotFoundError(f"lit_review.yaml not found in {project_dir}")
@@ -204,17 +203,31 @@ def save_llm_config(
     except yaml.YAMLError as e:
         raise ConfigError(f"Failed to parse {config_path}: {e}") from e
 
-    llm = data.setdefault("llm", {})
-    if not isinstance(llm, dict):
-        raise ConfigError(f"Expected dict at llm: in {config_path}, got {type(llm).__name__}")
-    llm["provider"] = provider
-    llm["model"] = model
-    llm["temperature"] = temperature
-    if seed is not None:
-        llm["seed"] = seed
+    block = data.setdefault(key, {})
+    if not isinstance(block, dict):
+        raise ConfigError(f"Expected dict at {key}: in {config_path}, got {type(block).__name__}")
+    mutate(block)
 
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+
+
+def save_llm_config(
+    project_dir: Path,
+    provider: str,
+    model: str,
+    temperature: float,
+    seed: Optional[int] = None,
+) -> None:
+    """Update the top-level `llm:` block in lit_review.yaml (used by AI screening/extraction)."""
+    def mutate(llm: dict) -> None:
+        llm["provider"] = provider
+        llm["model"] = model
+        llm["temperature"] = temperature
+        if seed is not None:
+            llm["seed"] = seed
+
+    _edit_config_block(project_dir, "llm", mutate)
 
 
 def save_stage_llm_config(
@@ -227,76 +240,31 @@ def save_stage_llm_config(
     """Set or clear a stage's `llm:` override (screening.llm / extraction.llm).
     Blank model clears the override so the stage inherits the top-level `llm:`.
     seed/max_retries always inherit from top-level."""
-    config_path = project_dir / "lit_review.yaml"
-    if not config_path.exists():
-        raise ProjectNotFoundError(f"lit_review.yaml not found in {project_dir}")
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-    except yaml.YAMLError as e:
-        raise ConfigError(f"Failed to parse {config_path}: {e}") from e
+    def mutate(stage_block: dict) -> None:
+        if not model or not str(model).strip():
+            stage_block.pop("llm", None)
+        else:
+            override: dict = {"model": str(model).strip()}
+            if provider:
+                override["provider"] = provider
+            if temperature is not None:
+                override["temperature"] = float(temperature)
+            stage_block["llm"] = override
 
-    stage_block = data.setdefault(stage, {})
-    if not isinstance(stage_block, dict):
-        raise ConfigError(f"Expected dict at {stage}: in {config_path}, got {type(stage_block).__name__}")
-
-    if not model or not str(model).strip():
-        stage_block.pop("llm", None)
-    else:
-        override: dict = {"model": str(model).strip()}
-        if provider:
-            override["provider"] = provider
-        if temperature is not None:
-            override["temperature"] = float(temperature)
-        stage_block["llm"] = override
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+    _edit_config_block(project_dir, stage, mutate)
 
 
 def save_stage_workflow(project_dir: Path, stage: Literal["screening", "extraction"], workflow: str) -> None:
-    """Update screening.workflow or extraction.workflow in the project's lit_review.yaml.
+    """Update screening.workflow or extraction.workflow in the project's lit_review.yaml."""
+    def mutate(stage_block: dict) -> None:
+        stage_block.pop("blinding", None)
+        stage_block["workflow"] = workflow
 
-    Note: pyyaml's safe_dump rewrites the file and does not preserve comments.
-    """
-    config_path = project_dir / "lit_review.yaml"
-    if not config_path.exists():
-        raise ProjectNotFoundError(f"lit_review.yaml not found in {project_dir}")
-
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-    except yaml.YAMLError as e:
-        raise ConfigError(f"Failed to parse {config_path}: {e}") from e
-
-    stage_block = data.setdefault(stage, {})
-    if not isinstance(stage_block, dict):
-        raise ConfigError(f"Expected dict at {stage}: in {config_path}, got {type(stage_block).__name__}")
-    stage_block.pop("blinding", None)
-    stage_block["workflow"] = workflow
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+    _edit_config_block(project_dir, stage, mutate)
 
 
 def _save_preprocess_fields(project_dir: Path, fields: dict) -> None:
-    config_path = project_dir / "lit_review.yaml"
-    if not config_path.exists():
-        raise ProjectNotFoundError(f"lit_review.yaml not found in {project_dir}")
-
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-    except yaml.YAMLError as e:
-        raise ConfigError(f"Failed to parse {config_path}: {e}") from e
-
-    block = data.setdefault("preprocess", {})
-    if not isinstance(block, dict):
-        raise ConfigError(f"Expected dict at preprocess: in {config_path}, got {type(block).__name__}")
-    block.update(fields)
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+    _edit_config_block(project_dir, "preprocess", lambda block: block.update(fields))
 
 
 def save_preprocess_threshold(project_dir: Path, low_text_threshold: int) -> None:

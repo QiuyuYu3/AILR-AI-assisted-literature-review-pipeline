@@ -1,6 +1,6 @@
 """ExtractionTask: iterate include'd sources with markdown, call reviewer.extract, persist results."""
 
-import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -42,6 +42,7 @@ class ExtractionTask:
         force: bool = False,
         on_progress: Optional[ProgressCallback] = None,
         batch: bool = False,
+        workers: Optional[int] = None,
     ) -> ExtractRunSummary:
         config = self.project.config
         prompt_path = self.project.root / config.extraction.prompt
@@ -54,6 +55,9 @@ class ExtractionTask:
         fields = compose_schema(schema_path)
         with_quotes = config.extraction.output_format == "with_quotes"
         flag_check = config.extraction.flag_check
+        if workers is None:
+            workers = config.extraction.workers
+        workers = max(1, workers)
 
         candidates = self._select_candidates(only_includes=only_includes)
         if limit is not None:
@@ -61,106 +65,119 @@ class ExtractionTask:
 
         summary = ExtractRunSummary(total_candidates=len(candidates))
 
+        already_done: set[int] = set()
+        if not force:
+            already_done = self.project.db.sources_with_extraction(
+                [s.id for s in candidates if s.id is not None], self.reviewer.reviewer_type
+            )
+
+        # Skips are decided up front; only real LLM calls go to the pool below.
+        done = 0
+        to_extract: list[tuple] = []
+        for source in candidates:
+            md_path = Path(source.markdown_path) if source.markdown_path else None
+            if md_path is not None and not md_path.is_absolute():
+                md_path = self.project.root / md_path
+            if md_path is None or not md_path.exists():
+                summary.skipped_no_markdown += 1
+            elif not force and source.id in already_done:
+                summary.skipped_already_done += 1
+            else:
+                to_extract.append((source, md_path))
+                continue
+            done += 1
+            if on_progress:
+                on_progress(done, len(candidates), source, None)
+
         # Mock runs buffer everything and write it in a few multi-row INSERTs at the end (fast, no
         # per-row Neon round trips); real runs keep the per-row, per-commit path for durability.
         all_results: list[ExtractionResult] = []
         all_ft_decisions: list[ScreeningDecision] = []
 
-        for idx, source in enumerate(candidates, 1):
-            if not source.markdown_path:
-                summary.skipped_no_markdown += 1
-                if on_progress:
-                    on_progress(idx, len(candidates), source, None)
-                continue
+        # LLM calls run in a small thread pool (they mostly wait on the network); all DB writes,
+        # summary updates, and progress callbacks stay on this thread.
+        def _extract_one(source, md_path):
+            paper_text = md_path.read_text(encoding="utf-8")
+            extraction = self.reviewer.extract(
+                source=source,
+                paper_text=paper_text,
+                fields=fields,
+                prompt_template=prompt_template,
+                criteria_text=criteria_text,
+                additional_text=additional_text,
+                with_quotes=with_quotes,
+                flag_check=flag_check,
+                criterion_ids=criterion_ids,
+            )
+            meta = self.reviewer.last_metadata if isinstance(self.reviewer, LLMReviewer) else None
+            return extraction, meta
 
-            md_path = Path(source.markdown_path)
-            if not md_path.is_absolute():
-                md_path = self.project.root / md_path
-            if not md_path.exists():
-                summary.skipped_no_markdown += 1
-                if on_progress:
-                    on_progress(idx, len(candidates), source, None)
-                continue
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_extract_one, s, p): s for s, p in to_extract}
+            for fut in as_completed(futures):
+                source = futures[fut]
+                done += 1
+                try:
+                    extraction, meta = fut.result()
+                    extraction.source_id = source.id
 
-            if not force and self.project.db.has_extraction(source.id, self.reviewer.reviewer_type):
-                summary.skipped_already_done += 1
-                if on_progress:
-                    on_progress(idx, len(candidates), source, None)
-                continue
-
-            try:
-                paper_text = md_path.read_text(encoding="utf-8")
-                extraction = self.reviewer.extract(
-                    source=source,
-                    paper_text=paper_text,
-                    fields=fields,
-                    prompt_template=prompt_template,
-                    criteria_text=criteria_text,
-                    additional_text=additional_text,
-                    with_quotes=with_quotes,
-                    flag_check=flag_check,
-                    criterion_ids=criterion_ids,
-                )
-                extraction.source_id = source.id
-
-                for result in extraction.results:
-                    result.source_id = source.id
-
-                # Derive a full-text screening decision from the flag_check verdicts and persist it so
-                # the FT review tab + conflict detection work uniformly.
-                ft_decision = None
-                if extraction.flag_check is not None:
-                    ft_decision = ScreeningDecision(
-                        decision=_derive_ft_decision(extraction.flag_check),
-                        reasoning="(derived from extraction flag_check)",
-                        reviewer_type=self.reviewer.reviewer_type,
-                        reviewer_id=self.reviewer.reviewer_id,
-                        source_id=source.id,
-                        stage="full_text",
-                        confidence=_avg_flag_confidence(extraction.flag_check),
-                    )
-
-                if batch:
-                    all_results.extend(extraction.results)
-                    if extraction.flag_check is not None:
-                        all_results.append(ExtractionResult(
-                            extractor_type=self.reviewer.reviewer_type,
-                            extractor_id=self.reviewer.reviewer_id,
-                            field_name="_flag_check",
-                            value=extraction.flag_check,
-                            source_id=source.id,
-                        ))
-                        all_ft_decisions.append(ft_decision)
-                else:
                     for result in extraction.results:
-                        self.project.db.insert_extraction(result)
+                        result.source_id = source.id
+
+                    # Derive a full-text screening decision from the flag_check verdicts and persist it so
+                    # the FT review tab + conflict detection work uniformly.
+                    ft_decision = None
                     if extraction.flag_check is not None:
-                        self.project.db.insert_flag_check(
+                        ft_decision = ScreeningDecision(
+                            decision=_derive_ft_decision(extraction.flag_check),
+                            reasoning="(derived from extraction flag_check)",
+                            reviewer_type=self.reviewer.reviewer_type,
+                            reviewer_id=self.reviewer.reviewer_id,
                             source_id=source.id,
-                            extractor_type=self.reviewer.reviewer_type,
-                            extractor_id=self.reviewer.reviewer_id,
-                            flag_check=extraction.flag_check,
+                            stage="full_text",
+                            confidence=_avg_flag_confidence(extraction.flag_check),
                         )
-                        self.project.db.insert_screening_decision(ft_decision)
 
-                if not batch and isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
-                    meta = self.reviewer.last_metadata
-                    self.project.db.insert_api_call(self.project.project_id, meta)
-                    summary.total_cost_estimate += meta.cost_estimate
-                    summary.total_input_tokens += meta.input_tokens
-                    summary.total_output_tokens += meta.output_tokens
-                    summary.total_cached_input_tokens += meta.cached_input_tokens
+                    if batch:
+                        all_results.extend(extraction.results)
+                        if extraction.flag_check is not None:
+                            all_results.append(ExtractionResult(
+                                extractor_type=self.reviewer.reviewer_type,
+                                extractor_id=self.reviewer.reviewer_id,
+                                field_name="_flag_check",
+                                value=extraction.flag_check,
+                                source_id=source.id,
+                            ))
+                            all_ft_decisions.append(ft_decision)
+                    else:
+                        for result in extraction.results:
+                            self.project.db.insert_extraction(result)
+                        if extraction.flag_check is not None:
+                            self.project.db.insert_flag_check(
+                                source_id=source.id,
+                                extractor_type=self.reviewer.reviewer_type,
+                                extractor_id=self.reviewer.reviewer_id,
+                                flag_check=extraction.flag_check,
+                            )
+                            self.project.db.insert_screening_decision(ft_decision)
 
-                summary.extracted += 1
-                if on_progress:
-                    on_progress(idx, len(candidates), source, None)
-            except Exception as e:
-                summary.failed += 1
-                summary.failures.append(
-                    {"source_id": source.id, "title": source.title, "error": str(e)}
-                )
-                if on_progress:
-                    on_progress(idx, len(candidates), source, e)
+                    if not batch and meta is not None:
+                        self.project.db.insert_api_call(self.project.project_id, meta)
+                        summary.total_cost_estimate += meta.cost_estimate
+                        summary.total_input_tokens += meta.input_tokens
+                        summary.total_output_tokens += meta.output_tokens
+                        summary.total_cached_input_tokens += meta.cached_input_tokens
+
+                    summary.extracted += 1
+                    if on_progress:
+                        on_progress(done, len(candidates), source, None)
+                except Exception as e:
+                    summary.failed += 1
+                    summary.failures.append(
+                        {"source_id": source.id, "title": source.title, "error": str(e)}
+                    )
+                    if on_progress:
+                        on_progress(done, len(candidates), source, e)
 
         if batch and (all_results or all_ft_decisions):
             with self.project.db._conn.transaction():

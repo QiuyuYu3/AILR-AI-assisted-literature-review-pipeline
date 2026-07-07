@@ -3,6 +3,18 @@
 ---
 ## [Unreleased]
 
+### Added
+- AI screening/extraction run LLM calls in parallel (`screening.workers`, default 4; `extraction.workers`, default 2; set 1 for the old serial behavior).
+
+### Changed
+- Faster title dedup on large imports (rapidfuzz C-level matching with cutoff).
+- Faster conflict counts/lists and extraction lookups (CTE-based conflict queries, batched already-extracted check, new composite index on extractions, cached SQL translation).
+
+### Fixed
+- Calibration κ pairs only the latest abstract-stage decisions (full-text decisions and superseded re-votes no longer skew agreement).
+- Large batch runs no longer risk hitting the DB bind-parameter limit (batch inserts are chunked).
+- AI screening `raw_output` is stored as JSON (was a Python repr).
+
 ---
 ## [0.23.0] – 2026-06-29
 

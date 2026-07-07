@@ -2,6 +2,7 @@
 
 import copy
 import json
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -157,7 +158,13 @@ class LLMReviewer(Reviewer):
         self._prompt_version = prompt_version
         self._max_tokens = max_tokens
         self._max_tokens_extract = max_tokens_extract
-        self.last_metadata: Optional[CallMetadata] = None
+        # Thread-local so concurrent screen/extract calls don't clobber each other's metadata;
+        # read it on the same thread that made the call.
+        self._tls = threading.local()
+
+    @property
+    def last_metadata(self) -> Optional[CallMetadata]:
+        return getattr(self._tls, "metadata", None)
 
     @property
     def reviewer_type(self) -> str:
@@ -185,7 +192,7 @@ class LLMReviewer(Reviewer):
             max_tokens=self._max_tokens,
             cache_system=True,
         )
-        self.last_metadata = metadata
+        self._tls.metadata = metadata
 
         decision_value = output.get("decision")
         if decision_value not in ("include", "exclude", "uncertain"):
@@ -205,7 +212,7 @@ class LLMReviewer(Reviewer):
                 "max_tokens": self._max_tokens,
             },
             prompt_version=self._prompt_version,
-            raw_output=str(output),
+            raw_output=json.dumps(output, ensure_ascii=False, default=str),
         )
 
 
@@ -246,7 +253,7 @@ class LLMReviewer(Reviewer):
             max_tokens=self._max_tokens_extract,
             cache_system=True,
         )
-        self.last_metadata = metadata
+        self._tls.metadata = metadata
 
         results: list[ExtractionResult] = []
         for field in fields:

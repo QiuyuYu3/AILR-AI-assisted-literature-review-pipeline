@@ -354,6 +354,8 @@ Table(
     Column("prompt_version", Text),
     Column("timestamp", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     Index("idx_extractions_source", "source_id"),
+    # submitted/flag_check markers and per-extractor lookups filter on these three together
+    Index("idx_extractions_lookup", "source_id", "extractor_type", "field_name"),
 )
 
 Table(

@@ -5,6 +5,7 @@ import sqlite3
 from typing import TYPE_CHECKING, Optional
 
 from ailr.core._db_facade import _row_to_source
+from ailr.core._db_screening import FT_FINAL_INCLUDE_MD_SQL
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError
 
@@ -58,9 +59,10 @@ class ExtractionMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert extraction: {e}") from e
 
-    def insert_extractions(self, results: list["ExtractionResult"]) -> None:
-        """Insert many extraction rows in ONE transaction (single commit) so a multi-field
-        Save/Submit is ~one round trip instead of one commit per field."""
+    def insert_extractions(self, results: list["ExtractionResult"], chunk: int = 500) -> None:
+        """Insert many extraction rows with few round trips (multi-row INSERTs, single commit)
+        so a multi-field Save/Submit is ~one round trip instead of one commit per field.
+        Chunked to stay under the SQLite (32766) / PostgreSQL (65535) bind-parameter limits."""
         rows = [r for r in results if r.source_id is not None]
         if not rows:
             return
@@ -70,19 +72,21 @@ class ExtractionMixin:
             "llm_params", "prompt_version",
         )
         group = "(" + ",".join("?" for _ in cols) + ")"
-        params: list = []
-        for r in rows:
-            params.extend([
-                r.source_id, r.extractor_type, r.extractor_id, r.field_name,
-                json.dumps(r.value), r.source_quote, r.page_or_section, r.confidence,
-                1 if r.is_newly_discovered else 0,
-                json.dumps(r.llm_params) if r.llm_params else None, r.prompt_version,
-            ])
         try:
-            self._conn.execute(
-                f"INSERT INTO extractions ({','.join(cols)}) VALUES {','.join(group for _ in rows)}",
-                params,
-            )
+            for i in range(0, len(rows), chunk):
+                part = rows[i:i + chunk]
+                params: list = []
+                for r in part:
+                    params.extend([
+                        r.source_id, r.extractor_type, r.extractor_id, r.field_name,
+                        json.dumps(r.value), r.source_quote, r.page_or_section, r.confidence,
+                        1 if r.is_newly_discovered else 0,
+                        json.dumps(r.llm_params) if r.llm_params else None, r.prompt_version,
+                    ])
+                self._conn.execute(
+                    f"INSERT INTO extractions ({','.join(cols)}) VALUES {','.join(group for _ in part)}",
+                    params,
+                )
             self._conn.commit()
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert extractions: {e}") from e
@@ -314,22 +318,9 @@ class ExtractionMixin:
         with no conflict. The AI's own verdict is the blinded second opinion (surfaced in
         conflicts), not what gates this queue. 'Move back to full-text' removes a paper by
         clearing the human's full-text verdict + any full-text reconciliation (AI kept)."""
-        sql = """
-            SELECT DISTINCT s.* FROM sources s
-            WHERE s.project_id = ?
-              AND s.markdown_path IS NOT NULL
-              AND (
-                EXISTS (SELECT 1 FROM reconciliations r
-                        WHERE r.source_id = s.id AND r.stage = 'full_text_screening'
-                          AND r.final_value = 'include')
-                OR (
-                  (SELECT decision FROM screening_decisions d
-                   WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
-                   ORDER BY d.id DESC LIMIT 1) = 'include'
-                  AND NOT EXISTS (SELECT 1 FROM reconciliations r
-                                  WHERE r.source_id = s.id AND r.stage = 'full_text_screening')
-                )
-              )
+        sql = f"""
+            SELECT s.* FROM sources s
+            WHERE s.project_id = ? AND {FT_FINAL_INCLUDE_MD_SQL}
             ORDER BY s.id
         """
         return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]

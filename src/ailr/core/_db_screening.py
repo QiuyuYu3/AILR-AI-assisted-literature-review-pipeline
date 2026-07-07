@@ -12,6 +12,110 @@ if TYPE_CHECKING:
     from ailr.reviewers import ScreeningDecision
 
 
+# "final full-text include with markdown" = reconciled-as-include, or human-included with no
+# conflict; gates the to_extract queue (shared with list_full_text_final_includes_with_markdown).
+FT_FINAL_INCLUDE_MD_SQL = """(s.markdown_path IS NOT NULL AND (
+    EXISTS (SELECT 1 FROM reconciliations r
+            WHERE r.source_id = s.id AND r.stage = 'full_text_screening' AND r.final_value = 'include')
+    OR ((SELECT decision FROM screening_decisions d
+         WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
+         ORDER BY d.id DESC LIMIT 1) = 'include'
+        AND NOT EXISTS (SELECT 1 FROM reconciliations r
+                        WHERE r.source_id = s.id AND r.stage = 'full_text_screening'))
+))"""
+
+_SORT_ORDERS = {
+    "id": "s.id",
+    "title": "lower(s.title)",
+    "author": "lower(s.authors)",
+    "year_desc": "s.year DESC NULLS LAST",
+    "year_asc": "s.year ASC NULLS LAST",
+}
+
+
+def _keyword_filter(keyword: str, within: str) -> tuple[Optional[str], list]:
+    """(WHERE clause, params) for the keyword search, or (None, []). Case-insensitive via
+    lower(col) LIKE (portable across SQLite and PostgreSQL); author search matches the stored JSON text."""
+    kw = (keyword or "").strip().lower()
+    if not kw:
+        return None, []
+    like = f"%{kw}%"
+    if within and within.startswith("authors"):
+        return "lower(s.authors) LIKE ?", [like]
+    if within == "all":
+        cols = ["s.title", "s.abstract", "s.journal", "s.authors", "s.doi", "s.pmid", "s.source_database"]
+        clause = " OR ".join(f"lower({c}) LIKE ?" for c in cols) + " OR CAST(s.year AS TEXT) LIKE ?"
+        return "(" + clause + ")", [like] * (len(cols) + 1)
+    return "(lower(s.title) LIKE ? OR lower(s.abstract) LIKE ?)", [like, like]  # title_and_abstract
+
+
+def _fetch_source_page(conn, where_sql: str, params: list, sort_by: str, page: int, page_size: int):
+    """COUNT + clamp page + fetch one page of sources. Returns (rows, total, clamped_page)."""
+    total = conn.execute(f"SELECT COUNT(*) AS n FROM sources s WHERE {where_sql}", params).fetchone()["n"]
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    order = _SORT_ORDERS.get(sort_by, "s.id")
+    rows = conn.execute(
+        f"SELECT s.* FROM sources s WHERE {where_sql} ORDER BY {order} LIMIT ? OFFSET ?",
+        params + [page_size, page * page_size],
+    ).fetchall()
+    return [_row_to_source(r) for r in rows], total, page
+
+
+# Independent mode: both humans voted but no clean agreed include/exclude — they differ, or anyone
+# voted 'uncertain' — and no reconciliation yet. Params: (project_id, stage, stage, stage, reconcile_stage).
+_INDEPENDENT_CONFLICT_WHERE = """
+    s.project_id = ?
+    AND (
+        SELECT COUNT(DISTINCT reviewer_id)
+        FROM screening_decisions
+        WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?
+    ) >= 2
+    AND (
+        (SELECT COUNT(DISTINCT decision)
+         FROM screening_decisions
+         WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) > 1
+        OR EXISTS (
+         SELECT 1 FROM screening_decisions
+         WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ? AND decision = 'uncertain')
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM reconciliations
+        WHERE source_id = s.id AND stage = ?
+    )
+"""
+
+
+def _assisted_conflict_sql(select_clause: str, with_order: bool = False) -> str:
+    """Assisted mode: latest AI vs latest human verdict at a stage differ (or the AI is 'uncertain'),
+    with no reconciliation yet. The latest verdicts are resolved once in CTEs instead of repeating a
+    correlated subquery per condition. Params: (stage, stage, project_id, reconcile_stage)."""
+    return f"""
+        WITH latest_ai AS (
+            SELECT sd.source_id, sd.decision
+            FROM screening_decisions sd
+            JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                  WHERE reviewer_type = 'ai' AND stage = ? GROUP BY source_id) m
+              ON m.source_id = sd.source_id AND m.mid = sd.id
+        ),
+        latest_human AS (
+            SELECT sd.source_id, sd.decision
+            FROM screening_decisions sd
+            JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                  WHERE reviewer_type = 'human' AND stage = ? GROUP BY source_id) m
+              ON m.source_id = sd.source_id AND m.mid = sd.id
+        )
+        SELECT {select_clause}
+        FROM sources s
+        JOIN latest_ai a ON a.source_id = s.id
+        JOIN latest_human h ON h.source_id = s.id
+        WHERE s.project_id = ?
+          AND (a.decision != h.decision OR a.decision = 'uncertain')
+          AND NOT EXISTS (SELECT 1 FROM reconciliations WHERE source_id = s.id AND stage = ?)
+        {'ORDER BY s.id' if with_order else ''}
+    """
+
+
 class ScreeningMixin:
     def stale_ai_screening_source_ids(self, project_id: int, current_composed: str, stage: str = "abstract") -> set[int]:
         """Sources whose latest AI screening decision was made under a prompt/criteria that no longer
@@ -77,10 +181,11 @@ class ScreeningMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert screening_decision: {e}") from e
 
-    def insert_screening_decisions_batch(self, decisions: list["ScreeningDecision"]) -> None:
-        """One multi-row INSERT for many decisions (mock runs only — speed matters, per-row durability
+    def insert_screening_decisions_batch(self, decisions: list["ScreeningDecision"], chunk: int = 500) -> None:
+        """Multi-row INSERTs for many decisions (mock runs only — speed matters, per-row durability
         does not). Real runs keep the per-row insert_screening_decision path. Caller may wrap in a
-        transaction; the trailing commit is a no-op inside one."""
+        transaction; the trailing commit is a no-op inside one. Chunked to stay under the
+        SQLite (32766) / PostgreSQL (65535) bind-parameter limits."""
         rows = [d for d in decisions if d.source_id is not None]
         if not rows:
             return
@@ -90,20 +195,22 @@ class ScreeningMixin:
             "prompt_version", "raw_output", "stage",
         )
         group = "(" + ",".join("?" for _ in cols) + ")"
-        params: list = []
-        for d in rows:
-            params.extend([
-                d.source_id, d.reviewer_type, d.reviewer_id, d.decision, d.reasoning,
-                json.dumps(d.evidence_quotes) if d.evidence_quotes else None,
-                json.dumps(d.matched_criteria) if d.matched_criteria else None,
-                d.confidence, json.dumps(d.llm_params) if d.llm_params else None,
-                d.prompt_version, d.raw_output, d.stage,
-            ])
         try:
-            self._conn.execute(
-                f"INSERT INTO screening_decisions ({','.join(cols)}) VALUES {','.join(group for _ in rows)}",
-                params,
-            )
+            for i in range(0, len(rows), chunk):
+                part = rows[i:i + chunk]
+                params: list = []
+                for d in part:
+                    params.extend([
+                        d.source_id, d.reviewer_type, d.reviewer_id, d.decision, d.reasoning,
+                        json.dumps(d.evidence_quotes) if d.evidence_quotes else None,
+                        json.dumps(d.matched_criteria) if d.matched_criteria else None,
+                        d.confidence, json.dumps(d.llm_params) if d.llm_params else None,
+                        d.prompt_version, d.raw_output, d.stage,
+                    ])
+                self._conn.execute(
+                    f"INSERT INTO screening_decisions ({','.join(cols)}) VALUES {','.join(group for _ in part)}",
+                    params,
+                )
             self._conn.commit()
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert screening_decisions batch: {e}") from e
@@ -326,10 +433,7 @@ class ScreeningMixin:
         page_size: int = 25,
     ) -> tuple[list[Source], int, int]:
         """Filtered + sorted + paginated source page, done in SQL so only one page is fetched.
-
-        Returns (rows, total_matching, clamped_page). Case-insensitive search uses lower(col) LIKE
-        (portable across SQLite and PostgreSQL). Author search matches the stored JSON text.
-        """
+        Returns (rows, total_matching, clamped_page)."""
         where = ["s.project_id = ?", "COALESCE(s.is_duplicate, 0) = 0"]
         params: list = [project_id]
 
@@ -357,47 +461,16 @@ class ScreeningMixin:
             )
             params += [project_id, stage, project_id, stage]
 
-        kw = (keyword or "").strip().lower()
-        if kw:
-            like = f"%{kw}%"
-            if within and within.startswith("authors"):
-                where.append("lower(s.authors) LIKE ?")
-                params.append(like)
-            elif within == "all":
-                cols = ["s.title", "s.abstract", "s.journal", "s.authors", "s.doi", "s.pmid", "s.source_database"]
-                clause = " OR ".join(f"lower({c}) LIKE ?" for c in cols) + " OR CAST(s.year AS TEXT) LIKE ?"
-                where.append("(" + clause + ")")
-                params += [like] * len(cols) + [like]
-            else:  # title_and_abstract
-                where.append("(lower(s.title) LIKE ? OR lower(s.abstract) LIKE ?)")
-                params += [like, like]
+        kw_sql, kw_params = _keyword_filter(keyword, within)
+        if kw_sql:
+            where.append(kw_sql)
+            params += kw_params
 
         if tag_id is not None:
             where.append("s.id IN (SELECT source_id FROM source_tags WHERE tag_id = ?)")
             params.append(tag_id)
 
-        where_sql = " AND ".join(where)
-        total = self._conn.execute(
-            f"SELECT COUNT(*) AS n FROM sources s WHERE {where_sql}", params
-        ).fetchone()["n"]
-
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        page = max(0, min(page, total_pages - 1))
-        offset = page * page_size
-
-        order = {
-            "id": "s.id",
-            "title": "lower(s.title)",
-            "author": "lower(s.authors)",
-            "year_desc": "s.year DESC NULLS LAST",
-            "year_asc": "s.year ASC NULLS LAST",
-        }.get(sort_by, "s.id")
-
-        rows = self._conn.execute(
-            f"SELECT s.* FROM sources s WHERE {where_sql} ORDER BY {order} LIMIT ? OFFSET ?",
-            params + [page_size, offset],
-        ).fetchall()
-        return [_row_to_source(r) for r in rows], total, page
+        return _fetch_source_page(self._conn, " AND ".join(where), params, sort_by, page, page_size)
 
     def list_full_text_page(
         self,
@@ -417,17 +490,6 @@ class ScreeningMixin:
     ) -> tuple[list[Source], int, int]:
         """Full-text review page (candidates = abstract-includes), filtered/sorted/paginated in SQL.
         Returns (rows, total_matching, clamped_page)."""
-        # "final full-text include with markdown" = reconciled-as-include, or human-included with no
-        # conflict; gates the to_extract queue (mirrors list_full_text_final_includes_with_markdown).
-        final_include_md = """(s.markdown_path IS NOT NULL AND (
-            EXISTS (SELECT 1 FROM reconciliations r
-                    WHERE r.source_id = s.id AND r.stage = 'full_text_screening' AND r.final_value = 'include')
-            OR ((SELECT decision FROM screening_decisions d
-                 WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
-                 ORDER BY d.id DESC LIMIT 1) = 'include'
-                AND NOT EXISTS (SELECT 1 FROM reconciliations r
-                                WHERE r.source_id = s.id AND r.stage = 'full_text_screening'))
-        ))"""
         where = [
             "s.project_id = ?",
             "COALESCE(s.is_duplicate, 0) = 0",
@@ -447,7 +509,7 @@ class ScreeningMixin:
                          "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = 'full_text')")
             params.append(reviewer_id)
         elif status == "to_extract":
-            where.append(final_include_md)
+            where.append(FT_FINAL_INCLUDE_MD_SQL)
             where.append("NOT EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
                          "AND e.extractor_type = 'human' AND e.field_name = '_submitted')")
         elif status == "extracted_mine":
@@ -456,20 +518,10 @@ class ScreeningMixin:
                          "ORDER BY e.id DESC LIMIT 1) = ?")
             params.append(reviewer_id)
 
-        kw = (keyword or "").strip().lower()
-        if kw:
-            like = f"%{kw}%"
-            if within and within.startswith("authors"):
-                where.append("lower(s.authors) LIKE ?")
-                params.append(like)
-            elif within == "all":
-                cols = ["s.title", "s.abstract", "s.journal", "s.authors", "s.doi", "s.pmid", "s.source_database"]
-                clause = " OR ".join(f"lower({c}) LIKE ?" for c in cols) + " OR CAST(s.year AS TEXT) LIKE ?"
-                where.append("(" + clause + ")")
-                params += [like] * len(cols) + [like]
-            else:
-                where.append("(lower(s.title) LIKE ? OR lower(s.abstract) LIKE ?)")
-                params += [like, like]
+        kw_sql, kw_params = _keyword_filter(keyword, within)
+        if kw_sql:
+            where.append(kw_sql)
+            params += kw_params
 
         if ft_avail == "has":
             where.append("s.markdown_path IS NOT NULL")
@@ -488,28 +540,7 @@ class ScreeningMixin:
             else:
                 where.append("1 = 0")  # empty whitelist -> no matches
 
-        where_sql = " AND ".join(where)
-        total = self._conn.execute(
-            f"SELECT COUNT(*) AS n FROM sources s WHERE {where_sql}", params
-        ).fetchone()["n"]
-
-        total_pages = max(1, (total + page_size - 1) // page_size)
-        page = max(0, min(page, total_pages - 1))
-        offset = page * page_size
-
-        order = {
-            "id": "s.id",
-            "title": "lower(s.title)",
-            "author": "lower(s.authors)",
-            "year_desc": "s.year DESC NULLS LAST",
-            "year_asc": "s.year ASC NULLS LAST",
-        }.get(sort_by, "s.id")
-
-        rows = self._conn.execute(
-            f"SELECT s.* FROM sources s WHERE {where_sql} ORDER BY {order} LIMIT ? OFFSET ?",
-            params + [page_size, offset],
-        ).fetchall()
-        return [_row_to_source(r) for r in rows], total, page
+        return _fetch_source_page(self._conn, " AND ".join(where), params, sort_by, page, page_size)
 
     def count_full_text_candidates(self, project_id: int) -> int:
         """Number of full-text candidates (sources with an abstract 'include')."""
@@ -534,19 +565,7 @@ class ScreeningMixin:
         if not source_ids:
             return set()
         ph = ",".join("?" for _ in source_ids)
-        sql = f"""
-            SELECT s.id FROM sources s
-            WHERE s.id IN ({ph}) AND s.markdown_path IS NOT NULL
-              AND (
-                EXISTS (SELECT 1 FROM reconciliations r
-                        WHERE r.source_id = s.id AND r.stage = 'full_text_screening' AND r.final_value = 'include')
-                OR ((SELECT decision FROM screening_decisions d
-                     WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
-                     ORDER BY d.id DESC LIMIT 1) = 'include'
-                    AND NOT EXISTS (SELECT 1 FROM reconciliations r
-                                    WHERE r.source_id = s.id AND r.stage = 'full_text_screening'))
-              )
-        """
+        sql = f"SELECT s.id FROM sources s WHERE s.id IN ({ph}) AND {FT_FINAL_INCLUDE_MD_SQL}"
         return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
 
     def list_sources_overview(self, project_id: int) -> list[dict]:
@@ -793,60 +812,17 @@ class ScreeningMixin:
         either they differ, or anyone voted 'uncertain' (uncertain is unresolved, needs adjudication).
         Excludes already-reconciled sources."""
         reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
-        sql = """
-            SELECT s.* FROM sources s
-            WHERE s.project_id = ?
-              AND (
-                  SELECT COUNT(DISTINCT reviewer_id)
-                  FROM screening_decisions
-                  WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?
-              ) >= 2
-              AND (
-                  (SELECT COUNT(DISTINCT decision)
-                   FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) > 1
-                  OR EXISTS (
-                   SELECT 1 FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ? AND decision = 'uncertain')
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM reconciliations
-                  WHERE source_id = s.id AND stage = ?
-              )
-            ORDER BY s.id
-        """
+        sql = f"SELECT s.* FROM sources s WHERE {_INDEPENDENT_CONFLICT_WHERE} ORDER BY s.id"
         rows = self._conn.execute(sql, (project_id, stage, stage, stage, reconcile_stage)).fetchall()
         return [_row_to_source(r) for r in rows]
 
     def list_assisted_conflicts(self, project_id: int, stage: str = "abstract") -> list[Source]:
-        """Assisted mode: sources where the latest AI verdict differs from the latest human verdict,
-        with no reconciliation yet. The AI counts as the second (blinded) reviewer."""
+        """Assisted mode: sources where the latest AI verdict differs from the latest human verdict
+        (or the AI is 'uncertain'), with no reconciliation yet. The AI counts as the second (blinded)
+        reviewer."""
         reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
-        sql = """
-            SELECT s.* FROM sources s
-            WHERE s.project_id = ?
-              AND (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
-                   ORDER BY id DESC LIMIT 1) IS NOT NULL
-              AND (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type='human' AND stage=?
-                   ORDER BY id DESC LIMIT 1) IS NOT NULL
-              AND (
-                  (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
-                   ORDER BY id DESC LIMIT 1)
-                  != (SELECT decision FROM screening_decisions
-                      WHERE source_id = s.id AND reviewer_type='human' AND stage=?
-                      ORDER BY id DESC LIMIT 1)
-                  OR (SELECT decision FROM screening_decisions
-                      WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
-                      ORDER BY id DESC LIMIT 1) = 'uncertain'
-              )
-              AND NOT EXISTS (SELECT 1 FROM reconciliations WHERE source_id = s.id AND stage = ?)
-            ORDER BY s.id
-        """
-        params = (project_id, stage, stage, stage, stage, stage, reconcile_stage)
-        rows = self._conn.execute(sql, params).fetchall()
+        sql = _assisted_conflict_sql("s.*", with_order=True)
+        rows = self._conn.execute(sql, (stage, stage, project_id, reconcile_stage)).fetchall()
         return [_row_to_source(r) for r in rows]
 
     def get_human_decisions(self, source_id: int, stage: str = "abstract") -> list[dict]:
@@ -940,59 +916,16 @@ class ScreeningMixin:
             raise DatabaseError(f"Failed to delete reconciliation: {e}") from e
 
     def count_unresolved_screening_conflicts(self, project_id: int, stage: str = "abstract") -> int:
-        """Independent-mode unresolved-conflict count; mirrors list_screening_conflicts (differ or
-        any 'uncertain' once both humans have voted)."""
+        """Independent-mode unresolved-conflict count; same WHERE as list_screening_conflicts."""
         reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
-        sql = """
-            SELECT COUNT(*) AS n FROM sources s
-            WHERE s.project_id = ?
-              AND (
-                  SELECT COUNT(DISTINCT reviewer_id)
-                  FROM screening_decisions
-                  WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?
-              ) >= 2
-              AND (
-                  (SELECT COUNT(DISTINCT decision)
-                   FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) > 1
-                  OR EXISTS (
-                   SELECT 1 FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ? AND decision = 'uncertain')
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM reconciliations
-                  WHERE source_id = s.id AND stage = ?
-              )
-        """
+        sql = f"SELECT COUNT(*) AS n FROM sources s WHERE {_INDEPENDENT_CONFLICT_WHERE}"
         return self._conn.execute(sql, (project_id, stage, stage, stage, reconcile_stage)).fetchone()["n"]
 
     def count_unresolved_assisted_conflicts(self, project_id: int, stage: str = "abstract") -> int:
-        """Assisted-mode unresolved-conflict count; mirrors list_assisted_conflicts (AI vs human
-        differ, or either is 'uncertain', once both have a verdict and it isn't reconciled)."""
+        """Assisted-mode unresolved-conflict count; same query body as list_assisted_conflicts."""
         reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
-        sql = """
-            SELECT COUNT(*) AS n FROM sources s
-            WHERE s.project_id = ?
-              AND (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
-                   ORDER BY id DESC LIMIT 1) IS NOT NULL
-              AND (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type='human' AND stage=?
-                   ORDER BY id DESC LIMIT 1) IS NOT NULL
-              AND (
-                  (SELECT decision FROM screening_decisions
-                   WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
-                   ORDER BY id DESC LIMIT 1)
-                  != (SELECT decision FROM screening_decisions
-                      WHERE source_id = s.id AND reviewer_type='human' AND stage=?
-                      ORDER BY id DESC LIMIT 1)
-                  OR (SELECT decision FROM screening_decisions
-                      WHERE source_id = s.id AND reviewer_type='ai' AND stage=?
-                      ORDER BY id DESC LIMIT 1) = 'uncertain'
-              )
-              AND NOT EXISTS (SELECT 1 FROM reconciliations WHERE source_id = s.id AND stage = ?)
-        """
-        return self._conn.execute(sql, (project_id, stage, stage, stage, stage, stage, reconcile_stage)).fetchone()["n"]
+        sql = _assisted_conflict_sql("COUNT(*) AS n")
+        return self._conn.execute(sql, (stage, stage, project_id, reconcile_stage)).fetchone()["n"]
 
     def count_human_decisions_per_source(
         self,
