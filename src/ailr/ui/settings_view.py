@@ -19,9 +19,11 @@ from ailr.ui._common import (
     delete_current_project,
     get_project,
     help_icon,
+    prompt_view_toggle,
     read_criteria,
     read_screening_additional,
     reload_project,
+    render_prompt_body,
 )
 
 _PROVIDERS = [
@@ -198,13 +200,15 @@ def layout() -> Any:
         html.Details(
             [
                 html.Summary("Screening prompt (as sent)"),
-                html.Pre(_resolved_screening_prompt(project), style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"}),
+                prompt_view_toggle("settings-screen-prompt-render"),
+                html.Div(id="settings-screen-prompt-view", children=render_prompt_body(_resolved_screening_prompt(project), "plain")),
             ]
         ),
         html.Details(
             [
                 html.Summary("Extraction prompt (as sent)"),
-                html.Pre(_resolved_extraction_prompt(project), style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem"}),
+                prompt_view_toggle("settings-extract-prompt-render"),
+                html.Div(id="settings-extract-prompt-view", children=render_prompt_body(_resolved_extraction_prompt(project), "plain")),
             ]
         ),
     ]
@@ -254,6 +258,20 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
+    @app.callback(
+        Output("settings-screen-prompt-view", "children"),
+        Input("settings-screen-prompt-render", "value"),
+    )
+    def _render_settings_screen_prompt(mode):
+        return render_prompt_body(_resolved_screening_prompt(get_project()), mode or "plain")
+
+    @app.callback(
+        Output("settings-extract-prompt-view", "children"),
+        Input("settings-extract-prompt-render", "value"),
+    )
+    def _render_settings_extract_prompt(mode):
+        return render_prompt_body(_resolved_extraction_prompt(get_project()), mode or "plain")
+
     @app.callback(
         Output("settings-stage-feedback", "children"),
         Input("settings-stage-save", "n_clicks"),

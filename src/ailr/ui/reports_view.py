@@ -216,6 +216,7 @@ def layout() -> Any:
                 dbc.Button("Extraction — AI (CSV)", id="report-dl-csv", color="primary", outline=True),
                 dbc.Button("Extraction — final (CSV)", id="report-dl-csv-human", color="primary", outline=True),
                 dbc.Button("Extraction — AI (JSON)", id="report-dl-json", color="primary", outline=True),
+                dbc.Button("Extraction — AI (per-paper JSON, ZIP)", id="report-dl-json-zip", color="primary", outline=True),
                 dbc.Button("RIS of includes", id="report-dl-ris", color="primary", outline=True),
                 dbc.Button("Screening metrics (JSON)", id="report-dl-metrics", color="primary", outline=True),
             ]
@@ -252,10 +253,11 @@ def register_callbacks(app: Any) -> None:
         Input("report-dl-ris", "n_clicks"),
         Input("report-dl-csv-human", "n_clicks"),
         Input("report-dl-json", "n_clicks"),
+        Input("report-dl-json-zip", "n_clicks"),
         Input("report-dl-metrics", "n_clicks"),
         prevent_initial_call=True,
     )
-    def _download(_c, _p, _s, _m, _r, _ch, _j, _mx):
+    def _download(_c, _p, _s, _m, _r, _ch, _j, _jz, _mx):
         trig = ctx.triggered_id
         if not any(t.get("value") for t in (ctx.triggered or [])):
             return no_update, no_update
@@ -263,10 +265,21 @@ def register_callbacks(app: Any) -> None:
         from ailr.exports.methods import build_methods_skeleton
         from ailr.exports.prisma import build_prisma_report, build_prisma_svg
         from ailr.exports.ris import export_includes_ris
-        from ailr.exports.tables import extraction_table_csv, extraction_table_json
+        from ailr.exports.tables import extraction_table_csv, extraction_table_json, extraction_per_paper_zip
 
         proj = get_project()
         name = (proj.config.project.name or "review").replace(" ", "_")
+
+        # Per-paper JSON is delivered as a ZIP (binary), so it uses send_bytes rather than send_string.
+        if trig == "report-dl-json-zip":
+            fn = f"{name}_extraction_ai_per_paper.zip"
+            try:
+                data = extraction_per_paper_zip(proj, extractor_type="ai", only_includes=True)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return no_update, dbc.Alert(f"Export failed: {e}", color="danger", className="mb-0 py-1")
+            return dcc.send_bytes(lambda b: b.write(data), fn), f"Downloaded {fn}"
 
         builders = {
             "report-dl-csv": (lambda: extraction_table_csv(proj, extractor_type="ai", only_includes=True), f"{name}_extraction_ai.csv"),

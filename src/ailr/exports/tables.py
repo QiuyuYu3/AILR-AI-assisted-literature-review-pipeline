@@ -177,13 +177,14 @@ def extraction_table_csv(
     return buf.getvalue()
 
 
-def extraction_table_json(
+def _extraction_records(
     project: Project,
     *,
     extractor_type: str = "ai",
     only_includes: bool = True,
-) -> str:
-    """Nested JSON: per-source dict preserving full {value, quote} shape."""
+) -> list[dict[str, Any]]:
+    """Per-source extraction dicts preserving the full {value, quote} shape. Shared by the combined
+    JSON export and the per-paper ZIP export."""
     db = project.db
     pid = project.project_id
     if only_includes:
@@ -205,7 +206,6 @@ def extraction_table_json(
                 fields[row["field_name"]] = val
             else:
                 fields[row["field_name"]] = {"value": val, "quote": row.get("source_quote")}
-        flag_check = db.get_flag_check(src.id, extractor_type=extractor_type)
         out.append(
             {
                 "source_id": src.id,
@@ -215,10 +215,39 @@ def extraction_table_json(
                 "title": src.title,
                 "extractor_type": extractor_type,
                 "fields": fields,
-                "flag_check": flag_check,
+                "flag_check": db.get_flag_check(src.id, extractor_type=extractor_type),
             }
         )
-    return json.dumps(out, indent=2, ensure_ascii=False)
+    return out
+
+
+def extraction_table_json(
+    project: Project,
+    *,
+    extractor_type: str = "ai",
+    only_includes: bool = True,
+) -> str:
+    """Nested JSON: one array of per-source dicts, each preserving full {value, quote} shape."""
+    return json.dumps(
+        _extraction_records(project, extractor_type=extractor_type, only_includes=only_includes),
+        indent=2, ensure_ascii=False,
+    )
+
+
+def extraction_per_paper_zip(
+    project: Project,
+    *,
+    extractor_type: str = "ai",
+    only_includes: bool = True,
+) -> bytes:
+    """A ZIP with one <source_id>.json per paper (same content as extraction_table_json, split per file)."""
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for rec in _extraction_records(project, extractor_type=extractor_type, only_includes=only_includes):
+            zf.writestr(f"{rec['source_id']}.json", json.dumps(rec, indent=2, ensure_ascii=False))
+    return buf.getvalue()
 
 
 def extraction_rows_long(

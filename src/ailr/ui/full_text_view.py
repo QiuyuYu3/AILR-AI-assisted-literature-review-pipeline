@@ -759,17 +759,23 @@ def register_callbacks(app: Any) -> None:
                 "",
             )
 
+        # Papers with an unresolved full-text conflict must be adjudicated on the FT Conflicts page
+        # before they can be extracted — keep them out of the To-extract queue and off the Extract button.
+        ft_conflict_ids = db.unresolved_conflict_ids(pid, workflow, stage="full_text")
+
         # Filter + sort + paginate in SQL: only this page's rows come back, not all candidates.
         page_sources, total, page = db.list_full_text_page(
             pid, rid, status=status, keyword=search or "", within=within or "title_and_abstract",
-            tag_id=tag_id, ft_avail=ft_avail, id_whitelist=id_whitelist, team_size=team_size, sort_by=sort_by or "id",
+            tag_id=tag_id, ft_avail=ft_avail, id_whitelist=id_whitelist,
+            exclude_ids=ft_conflict_ids if status == "to_extract" else None,
+            team_size=team_size, sort_by=sort_by or "id",
             page=req_page, page_size=psize,
         )
 
         page_ids = [s.id for s in page_sources if s.id is not None]
         my_decisions = db.get_decisions_by_reviewer(page_ids, rid, stage="full_text")
         peer_counts = db.count_peer_reviewers(page_ids, rid, stage="full_text") if workflow == "independent" else {}
-        extract_ids = db.final_include_md_ids(page_ids)            # which of this page are extraction-eligible
+        extract_ids = db.final_include_md_ids(page_ids) - ft_conflict_ids  # extraction-eligible, minus unresolved conflicts
         extracted_by = db.human_extractors_for_sources(page_ids)  # {sid: extractor_id who submitted}
         tags_by_source = db.get_tags_for_sources(page_ids)
         ai_by_source = db.get_latest_ai_decisions(page_ids, stage="full_text")

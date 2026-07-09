@@ -18,7 +18,7 @@ from ailr.extraction import (
 )
 from ailr.ingest.schema_import import parse_schema_import
 from ailr.ui import version_ui
-from ailr.ui._common import get_project, read_criteria, with_help
+from ailr.ui._common import get_project, prompt_view_toggle, read_criteria, render_prompt_body, with_help
 
 _VARS_KIND = "variables"
 
@@ -349,13 +349,10 @@ def _initial_state() -> dict:
     }
 
 
-def _extraction_composed_pre(prompt: str, additional: str) -> Any:
+def _extraction_composed_pre(prompt: str, additional: str, mode: str = "plain") -> Any:
     """The 'Full prompt preview' content. Used both for the initial render and the live-update callback."""
     composed = compose_extraction_prompt(prompt or "", criteria=read_criteria(), schema_md=_field_list_text(), additional=additional or "")
-    return html.Pre(
-        composed + "\n\n--- [THE PAPER'S FULL TEXT IS APPENDED HERE AUTOMATICALLY] ---",
-        style={"whiteSpace": "pre-wrap", "fontSize": "0.8rem", "border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"},
-    )
+    return render_prompt_body(composed + "\n\n--- [THE PAPER'S FULL TEXT IS APPENDED HERE AUTOMATICALLY] ---", mode)
 
 
 def variables_layout() -> Any:
@@ -601,6 +598,7 @@ def prompt_layout() -> Any:
             "The exact prompt sent to the AI, with your criteria, variables, and additional instructions filled in.",
             "tmpl-preview-help",
         ),
+        prompt_view_toggle("tmpl-prompt-render"),
         html.Div(id="tmpl-prompt-composed", children=_extraction_composed_pre(_prompt_text(), _additional_text())),
         html.Details(
             [
@@ -849,10 +847,11 @@ def register_callbacks(app: Any) -> None:
         Output("tmpl-prompt-composed", "children"),
         Input("tmpl-prompt", "value"),
         Input("tmpl-additional", "value"),
+        Input("tmpl-prompt-render", "value"),
     )
-    def _composed_prompt(prompt, additional):
+    def _composed_prompt(prompt, additional, mode):
         # Variables live on the Protocol page now; compose from the SAVED schema (source of truth).
-        return _extraction_composed_pre(prompt, additional)
+        return _extraction_composed_pre(prompt, additional, mode or "plain")
 
     @app.callback(
         Output("tmpl-store", "data"),

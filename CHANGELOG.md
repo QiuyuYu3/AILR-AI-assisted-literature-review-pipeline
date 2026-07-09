@@ -5,6 +5,7 @@
 
 ### Added
 - AI screening/extraction run LLM calls in parallel (`screening.workers`, default 4; `extraction.workers`, default 2; set 1 for the old serial behavior).
+- Prompt previews (Workflow pages + Settings) have a Plain / Rendered toggle to view the composed prompt as markdown.
 
 ### Changed
 - Faster title dedup on large imports (rapidfuzz C-level matching with cutoff).

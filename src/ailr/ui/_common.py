@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import dash_bootstrap_components as dbc
-from dash import ctx, html
+from dash import ctx, dcc, html
 
 from ailr.core import pdf_paths
 from ailr.core.project import Project
@@ -32,6 +32,25 @@ def with_help(heading, help_text: str, target_id: str, className: str = "mt-3"):
         [heading, help_icon(help_text, target_id)],
         className=f"d-flex align-items-center {className} mb-1",
     )
+
+
+_PROMPT_MODE_OPTIONS = [
+    {"label": "Plain text", "value": "plain"},
+    {"label": "Rendered", "value": "md"},
+]
+
+
+def prompt_view_toggle(radio_id: str):
+    """Plain / Rendered switch for a composed-prompt preview; pair with render_prompt_body."""
+    return dbc.RadioItems(id=radio_id, options=_PROMPT_MODE_OPTIONS, value="plain", inline=True, className="small mb-1")
+
+
+def render_prompt_body(text: str, mode: str, *, font: float = 0.8):
+    """Render a composed prompt as plain html.Pre or rendered dcc.Markdown per the toggle mode."""
+    box = {"border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"}
+    if mode == "md":
+        return dcc.Markdown(text, style={**box, "fontSize": f"{font}rem"})
+    return html.Pre(text, style={"whiteSpace": "pre-wrap", "fontSize": f"{font}rem", **box})
 
 
 def triggered_click_id() -> Optional[dict]:

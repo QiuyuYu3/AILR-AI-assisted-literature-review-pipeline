@@ -16,9 +16,11 @@ from ailr.ui._common import (
     _short_author_year,
     get_project,
     help_icon,
+    prompt_view_toggle,
     read_criteria,
     read_screening_additional,
     read_screening_prompt,
+    render_prompt_body,
     triggered_click_id,
     with_help,
 )
@@ -32,13 +34,10 @@ def _screen_additional_text() -> str:
     return read_screening_additional()
 
 
-def _screening_composed_pre(text: str, additional: str) -> Any:
+def _screening_composed_pre(text: str, additional: str, mode: str = "plain") -> Any:
     """The 'Full prompt preview' content. Used for the initial render and the live-update callback."""
     composed = compose_screening_prompt(text or "", criteria=read_criteria(), additional=additional or "")
-    return html.Pre(
-        composed + "\n\n--- [THE ABSTRACT IS APPENDED HERE AUTOMATICALLY] ---",
-        style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"},
-    )
+    return render_prompt_body(composed + "\n\n--- [THE ABSTRACT IS APPENDED HERE AUTOMATICALLY] ---", mode, font=0.72)
 
 
 
@@ -88,6 +87,7 @@ _SORT_OPTIONS = [
     {"label": "Title", "value": "title"},
     {"label": "Year (newest)", "value": "year_desc"},
     {"label": "Year (oldest)", "value": "year_asc"},
+    {"label": "AI confidence (lowest first)", "value": "confidence_asc"},
 ]
 
 _PAGE_SIZES = [
@@ -133,6 +133,7 @@ def screening_prompt_panel() -> list[Any]:
             "The exact prompt sent to the AI, with your criteria and additional instructions filled in.",
             "screen-preview-help",
         ),
+        prompt_view_toggle("screen-prompt-render"),
         html.Div(id="screen-prompt-composed", children=_screening_composed_pre(_screen_prompt_text(), _screen_additional_text())),
         html.Details(
             [
@@ -554,9 +555,10 @@ def register_callbacks(app: Any) -> None:
         Output("screen-prompt-composed", "children"),
         Input("screen-prompt", "value"),
         Input("screen-additional", "value"),
+        Input("screen-prompt-render", "value"),
     )
-    def _composed_screen_prompt(text, additional):
-        return _screening_composed_pre(text, additional)
+    def _composed_screen_prompt(text, additional, mode):
+        return _screening_composed_pre(text, additional, mode or "plain")
 
     @app.callback(
         Output("screen-search", "value"),

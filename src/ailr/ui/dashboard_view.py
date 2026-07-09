@@ -53,7 +53,8 @@ def _build_content(reviewer: Optional[str]) -> Any:
     with_md = db.count_sources_with_markdown(pid)
     # Count extraction only among papers still confirmed for it (full-text includes with markdown),
     # so a paper moved back to full-text review stops counting as extracted until it's re-included.
-    eligible_ext_ids = [s.id for s in db.list_full_text_final_includes_with_markdown(pid)]
+    _ft_conflict_ids = db.unresolved_conflict_ids(pid, cfg.screening.workflow, stage="full_text")
+    eligible_ext_ids = [s.id for s in db.list_full_text_final_includes_with_markdown(pid) if s.id not in _ft_conflict_ids]
     ai_extracted = len(db.sources_with_extraction(eligible_ext_ids, "ai"))
     human_extracted = len(db.sources_with_submission(eligible_ext_ids))
 
@@ -89,10 +90,11 @@ def _build_content(reviewer: Optional[str]) -> Any:
             sub_metrics=[],
             extra=html.Small(
                 f"abstract: {abstract_conflicts}  •  full-text: {ft_conflicts}",
-                className="text-white",
+                className="text-dark" if total_conflicts > 0 else "text-white",
             ),
-            bg="danger" if total_conflicts > 0 else "success",
-            text="white",
+            # Amber ("needs attention") rather than red ("alarm") when there's work to do; green when clear.
+            bg="warning" if total_conflicts > 0 else "success",
+            text="dark" if total_conflicts > 0 else "white",
         ),
         _stage_card(
             title="Full-text screening",

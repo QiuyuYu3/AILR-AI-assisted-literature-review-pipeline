@@ -24,12 +24,23 @@ FT_FINAL_INCLUDE_MD_SQL = """(s.markdown_path IS NOT NULL AND (
                         WHERE r.source_id = s.id AND r.stage = 'full_text_screening'))
 ))"""
 
+def _ai_confidence_asc(stage: str) -> str:
+    """ORDER BY fragment: latest AI decision confidence ascending (least-confident first), nulls last."""
+    return (
+        f"(SELECT d.confidence FROM screening_decisions d "
+        f"WHERE d.source_id = s.id AND d.reviewer_type = 'ai' AND d.stage = '{stage}' "
+        f"ORDER BY d.id DESC LIMIT 1) ASC NULLS LAST, s.id"
+    )
+
+
 _SORT_ORDERS = {
     "id": "s.id",
     "title": "lower(s.title)",
     "author": "lower(s.authors)",
     "year_desc": "s.year DESC NULLS LAST",
     "year_asc": "s.year ASC NULLS LAST",
+    "confidence_asc_abstract": _ai_confidence_asc("abstract"),
+    "confidence_asc_full_text": _ai_confidence_asc("full_text"),
 }
 
 
@@ -470,6 +481,8 @@ class ScreeningMixin:
             where.append("s.id IN (SELECT source_id FROM source_tags WHERE tag_id = ?)")
             params.append(tag_id)
 
+        if sort_by == "confidence_asc":
+            sort_by = f"confidence_asc_{stage}"
         return _fetch_source_page(self._conn, " AND ".join(where), params, sort_by, page, page_size)
 
     def list_full_text_page(
@@ -483,6 +496,7 @@ class ScreeningMixin:
         tag_id: Optional[int] = None,
         ft_avail: Optional[str] = None,  # 'has' / 'needs' / None
         id_whitelist: Optional[set[int]] = None,  # restrict to these source ids (used by the low-text filter)
+        exclude_ids: Optional[set[int]] = None,  # drop these source ids (e.g. unresolved-conflict papers)
         team_size: int = 2,
         sort_by: str = "id",
         page: int = 0,
@@ -540,6 +554,13 @@ class ScreeningMixin:
             else:
                 where.append("1 = 0")  # empty whitelist -> no matches
 
+        if exclude_ids:
+            ph = ",".join("?" for _ in exclude_ids)
+            where.append(f"s.id NOT IN ({ph})")
+            params += list(exclude_ids)
+
+        if sort_by == "confidence_asc":
+            sort_by = "confidence_asc_full_text"
         return _fetch_source_page(self._conn, " AND ".join(where), params, sort_by, page, page_size)
 
     def count_full_text_candidates(self, project_id: int) -> int:
@@ -824,6 +845,16 @@ class ScreeningMixin:
         sql = _assisted_conflict_sql("s.*", with_order=True)
         rows = self._conn.execute(sql, (stage, stage, project_id, reconcile_stage)).fetchall()
         return [_row_to_source(r) for r in rows]
+
+    def unresolved_conflict_ids(self, project_id: int, workflow: str, stage: str = "abstract") -> set[int]:
+        """Ids with an unresolved conflict at this stage, using the same rule as the Conflicts tab for
+        this workflow (AI-vs-human in assisted, human-vs-human in independent)."""
+        conflicts = (
+            self.list_assisted_conflicts(project_id, stage=stage)
+            if workflow == "assisted"
+            else self.list_screening_conflicts(project_id, stage=stage)
+        )
+        return {s.id for s in conflicts if s.id is not None}
 
     def get_human_decisions(self, source_id: int, stage: str = "abstract") -> list[dict]:
         rows = self._conn.execute(
