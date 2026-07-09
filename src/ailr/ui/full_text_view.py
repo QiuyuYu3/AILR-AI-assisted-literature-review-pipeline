@@ -773,13 +773,15 @@ def register_callbacks(app: Any) -> None:
         )
 
         page_ids = [s.id for s in page_sources if s.id is not None]
-        my_decisions = db.get_decisions_by_reviewer(page_ids, rid, stage="full_text")
-        peer_counts = db.count_peer_reviewers(page_ids, rid, stage="full_text") if workflow == "independent" else {}
-        extract_ids = db.final_include_md_ids(page_ids) - ft_conflict_ids  # extraction-eligible, minus unresolved conflicts
-        extracted_by = db.human_extractors_for_sources(page_ids)  # {sid: extractor_id who submitted}
-        tags_by_source = db.get_tags_for_sources(page_ids)
-        ai_by_source = db.get_latest_ai_decisions(page_ids, stage="full_text")
-        note_counts = db.count_notes(page_ids)
+        # One round-trip for all per-source scalar metadata (was six separate queries).
+        meta = db.full_text_page_meta(page_ids, rid, stage="full_text")
+        my_decisions = meta["my_decisions"]
+        peer_counts = meta["peer_counts"] if workflow == "independent" else {}
+        extract_ids = meta["extract_eligible"] - ft_conflict_ids  # extraction-eligible, minus unresolved conflicts
+        extracted_by = meta["extracted_by"]                       # {sid: extractor_id who submitted}
+        ai_by_source = meta["ai_decisions"]
+        note_counts = meta["note_counts"]
+        tags_by_source = db.get_tags_for_sources(page_ids)        # one-to-many, kept as its own query
         from ailr.ui.ai_runner import current_extraction_composed
         stale_ids = db.stale_ai_extraction_source_ids(pid, current_extraction_composed(project))
 

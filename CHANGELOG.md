@@ -1,7 +1,7 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.24.0] – 2026-07-09
 
 ### Added
 - AI screening/extraction run LLM calls in parallel (`screening.workers`, default 4; `extraction.workers`, default 2; set 1 for the old serial behavior).
@@ -16,6 +16,7 @@
 - Extraction fields are required by default and always carry their `quote` (nullable); flag_check items require `verdict`, `reason`, `confidence`, and `quote`.
 - Full-text "To extract" queue, the Extract button, and the dashboard extraction count exclude papers with an unresolved full-text conflict — resolve them on FT Conflicts first.
 - Conflicts dashboard card uses a coloured border + number (amber = needs attention) instead of a full red fill.
+- Full-text page loads faster: the six per-source lookups (this reviewer's decision, peer count, AI verdict, notes, submitter, extract-eligibility) are one merged query instead of six round-trips (~0.5s saved), and the "AI extraction outdated" check compares the composed prompt in SQL instead of shipping every row's prompt text to compare in Python (~1.1s saved). Returning from Open extraction is markedly quicker.
 
 ### Fixed
 - Calibration κ pairs only the latest abstract-stage decisions (full-text decisions and superseded re-votes no longer skew agreement).

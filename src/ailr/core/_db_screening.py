@@ -775,6 +775,71 @@ class ScreeningMixin:
             out[r["source_id"]] = r["n"]
         return out
 
+    def full_text_page_meta(self, source_ids: list[int], reviewer_id: str, stage: str = "full_text") -> dict:
+        """One-round-trip per-source metadata for the full-text page: this reviewer's latest decision,
+        peer-reviewer count, latest AI decision, note count, human submitter, and extraction-eligibility.
+        Each piece is a scalar-per-source LEFT JOIN (no fan-out), so this returns exactly what the six
+        separate calls (get_decisions_by_reviewer / count_peer_reviewers / get_latest_ai_decisions /
+        count_notes / human_extractors_for_sources / final_include_md_ids) did — just in one query."""
+        empty = {"my_decisions": {}, "peer_counts": {}, "ai_decisions": {},
+                 "note_counts": {}, "extracted_by": {}, "extract_eligible": set()}
+        if not source_ids:
+            return empty
+        ph = ",".join("?" for _ in source_ids)
+        sql = f"""
+            SELECT s.id AS source_id,
+                   my.decision AS my_decision,
+                   COALESCE(peer.n, 0) AS peer_count,
+                   ai.decision AS ai_decision,
+                   COALESCE(nt.n, 0) AS note_count,
+                   sub.extractor_id AS extracted_by,
+                   CASE WHEN {FT_FINAL_INCLUDE_MD_SQL} THEN 1 ELSE 0 END AS extract_eligible
+            FROM sources s
+            LEFT JOIN (
+                SELECT sd.source_id, sd.decision FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_id = ? AND stage = ? GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            ) my ON my.source_id = s.id
+            LEFT JOIN (
+                SELECT source_id, COUNT(DISTINCT reviewer_id) AS n FROM screening_decisions
+                WHERE reviewer_type = 'human' AND reviewer_id != ? AND stage = ? GROUP BY source_id
+            ) peer ON peer.source_id = s.id
+            LEFT JOIN (
+                SELECT sd.source_id, sd.decision FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_type = 'ai' AND stage = ? GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            ) ai ON ai.source_id = s.id
+            LEFT JOIN (
+                SELECT source_id, COUNT(*) AS n FROM notes GROUP BY source_id
+            ) nt ON nt.source_id = s.id
+            LEFT JOIN (
+                SELECT e.source_id, e.extractor_id FROM extractions e
+                JOIN (SELECT source_id, MAX(id) AS mid FROM extractions
+                      WHERE extractor_type = 'human' AND field_name = '_submitted' GROUP BY source_id) m
+                  ON m.source_id = e.source_id AND m.mid = e.id
+            ) sub ON sub.source_id = s.id
+            WHERE s.id IN ({ph})
+        """
+        params = [reviewer_id, stage, reviewer_id, stage, stage, *source_ids]
+        out = {**empty, "my_decisions": {}, "peer_counts": {}, "ai_decisions": {},
+               "note_counts": {}, "extracted_by": {}, "extract_eligible": set()}
+        for r in self._conn.execute(sql, params).fetchall():
+            sid = r["source_id"]
+            if r["my_decision"] is not None:
+                out["my_decisions"][sid] = r["my_decision"]
+            out["peer_counts"][sid] = r["peer_count"]
+            if r["ai_decision"] is not None:
+                out["ai_decisions"][sid] = r["ai_decision"]
+            if r["note_count"]:
+                out["note_counts"][sid] = r["note_count"]
+            if r["extracted_by"] is not None:
+                out["extracted_by"][sid] = r["extracted_by"]
+            if r["extract_eligible"]:
+                out["extract_eligible"].add(sid)
+        return out
+
     def screening_lock_check(self, source_id: int, reviewer_id: str, stage: str = "abstract") -> tuple[bool, int]:
         """(I already decided this paper?, # of distinct OTHER humans who decided it) in one query —
         for the vote lock (idempotent self-vote + team-size cap) without two round trips."""
