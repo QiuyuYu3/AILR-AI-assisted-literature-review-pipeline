@@ -90,11 +90,12 @@ def _build_content(reviewer: Optional[str]) -> Any:
             sub_metrics=[],
             extra=html.Small(
                 f"abstract: {abstract_conflicts}  •  full-text: {ft_conflicts}",
-                className="text-dark" if total_conflicts > 0 else "text-white",
+                className="text-muted",
             ),
-            # Amber ("needs attention") rather than red ("alarm") when there's work to do; green when clear.
+            # Colour only the border + the number (amber = needs attention), not the whole card,
+            # so it draws the eye without the glaring full-red block.
             bg="warning" if total_conflicts > 0 else "success",
-            text="dark" if total_conflicts > 0 else "white",
+            outline=True,
         ),
         _stage_card(
             title="Full-text screening",
@@ -159,6 +160,7 @@ def _stage_card(
     extra: Any = None,
     bg: Optional[str] = None,
     text: Optional[str] = None,
+    outline: bool = False,
 ) -> Any:
     body_children: list[Any] = [
         dbc.Row(
@@ -168,7 +170,8 @@ def _stage_card(
                         html.H6(title, className="fw-bold mb-3"),
                         html.Div(
                             [
-                                html.Span(main_metric, style={"fontSize": "2rem", "fontWeight": "bold"}),
+                                html.Span(main_metric, className=(f"text-{bg}" if outline and bg else None),
+                                          style={"fontSize": "2rem", "fontWeight": "bold"}),
                                 html.Span(f"  {main_label}", className="ms-2"),
                             ]
                         ),
@@ -199,6 +202,8 @@ def _stage_card(
     card_kwargs: dict = {"className": "mb-3"}
     if bg:
         card_kwargs["color"] = bg
-    if text:
+        if outline:
+            card_kwargs["outline"] = True  # colour the border only, not the whole card
+    if text and not outline:
         card_kwargs["inverse"] = text == "white"
     return dbc.Card(dbc.CardBody(body_children), **card_kwargs)

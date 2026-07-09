@@ -37,7 +37,7 @@ def _screen_additional_text() -> str:
 def _screening_composed_pre(text: str, additional: str, mode: str = "plain") -> Any:
     """The 'Full prompt preview' content. Used for the initial render and the live-update callback."""
     composed = compose_screening_prompt(text or "", criteria=read_criteria(), additional=additional or "")
-    return render_prompt_body(composed + "\n\n--- [THE ABSTRACT IS APPENDED HERE AUTOMATICALLY] ---", mode, font=0.72)
+    return render_prompt_body(composed + "\n\n--- [THE ABSTRACT IS APPENDED HERE AUTOMATICALLY] ---", mode)
 
 
 
@@ -125,7 +125,7 @@ def screening_prompt_panel() -> list[Any]:
             "screen-additional-help",
             className="mt-0",
         ),
-        dbc.Textarea(id="screen-additional", value=_screen_additional_text(), style={"height": "120px", "fontFamily": "monospace", "fontSize": "0.75rem"}),
+        dbc.Textarea(id="screen-additional", value=_screen_additional_text(), style={"height": "120px", "fontFamily": "monospace", "fontSize": "0.88rem"}),
         dbc.Button("Save additional instructions", id="screen-additional-save", color="primary", size="sm", className="mt-1"),
         html.Div(id="screen-additional-feedback", className="small mt-1"),
         with_help(
@@ -167,7 +167,7 @@ def screening_prompt_panel() -> list[Any]:
                             ],
                             color="light", className="small py-2 mt-2",
                         ),
-                        dbc.Textarea(id="screen-prompt", value=_screen_prompt_text(), style={"height": "220px", "fontFamily": "monospace", "fontSize": "0.75rem"}),
+                        dbc.Textarea(id="screen-prompt", value=_screen_prompt_text(), style={"height": "220px", "fontFamily": "monospace", "fontSize": "0.88rem"}),
                         dbc.Button("Save prompt", id="screen-prompt-save", color="primary", size="sm", className="mt-1"),
                         html.Div(id="screen-prompt-feedback", className="small mt-1"),
                     ],
@@ -513,7 +513,7 @@ def register_callbacks(app: Any) -> None:
                 html.Details(
                     [
                         html.Summary("Exact prompt sent (criteria + additional resolved)", className="small"),
-                        html.Pre(composed, style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "maxHeight": "300px", "overflow": "auto"}),
+                        html.Pre(composed, style={"whiteSpace": "pre-wrap", "fontSize": "0.85rem", "maxHeight": "300px", "overflow": "auto"}),
                     ],
                     className="mt-1",
                 ),

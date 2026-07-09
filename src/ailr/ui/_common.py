@@ -45,7 +45,7 @@ def prompt_view_toggle(radio_id: str):
     return dbc.RadioItems(id=radio_id, options=_PROMPT_MODE_OPTIONS, value="plain", inline=True, className="small mb-1")
 
 
-def render_prompt_body(text: str, mode: str, *, font: float = 0.8):
+def render_prompt_body(text: str, mode: str, *, font: float = 0.95):
     """Render a composed prompt as plain html.Pre or rendered dcc.Markdown per the toggle mode."""
     box = {"border": "1px solid #eee", "borderRadius": "6px", "padding": "8px"}
     if mode == "md":

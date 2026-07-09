@@ -261,6 +261,7 @@ class LLMReviewer(Reviewer):
                 continue
             raw = output[field.name]
             value, quote = _unwrap_value_quote(raw, with_quotes=with_quotes, field=field)
+            confidence = raw.get("confidence") if isinstance(raw, dict) else None
             results.append(
                 ExtractionResult(
                     extractor_type=self.reviewer_type,
@@ -268,6 +269,7 @@ class LLMReviewer(Reviewer):
                     field_name=field.name,
                     value=value,
                     source_quote=quote,
+                    confidence=confidence,
                     llm_params={
                         "provider": metadata.provider,
                         "model": metadata.model,

@@ -149,7 +149,7 @@ _TYPES = [
 _SCALAR_TYPES = {"string", "integer", "number", "boolean"}
 
 
-def _mono(height: int, size: float = 0.72) -> dict:
+def _mono(height: int, size: float = 0.88) -> dict:
     return {"height": f"{height}px", "fontFamily": "monospace", "fontSize": f"{size}rem"}
 
 
@@ -501,7 +501,7 @@ def variables_layout() -> Any:
                 dbc.ModalBody(
                     [
                         html.P("One sub-field per line: name: type | options: a, b, c", className="text-muted small"),
-                        dbc.Textarea(id="tmpl-subedit-text", style=_mono(220, 0.8)),
+                        dbc.Textarea(id="tmpl-subedit-text", style=_mono(220, 0.88)),
                         html.Div(id="tmpl-subedit-feedback", className="small mt-1"),
                     ]
                 ),
@@ -586,7 +586,7 @@ def prompt_layout() -> Any:
             id="tmpl-additional",
             value=_additional_text(),
             placeholder="e.g. When a paper reports multiple studies, extract only Study 1 unless stated otherwise.",
-            style=_mono(140, 0.8),
+            style=_mono(140, 0.88),
         ),
         html.Div(
             dbc.Button("Save additional instructions", id="tmpl-additional-save", color="primary", size="sm"),
@@ -632,7 +632,7 @@ def prompt_layout() -> Any:
                             ],
                             color="light", className="small py-2 mt-2",
                         ),
-                        dbc.Textarea(id="tmpl-prompt", value=_prompt_text(), style=_mono(260, 0.8)),
+                        dbc.Textarea(id="tmpl-prompt", value=_prompt_text(), style=_mono(260, 0.88)),
                         html.Div(
                             [
                                 dbc.Button("Save prompt", id="tmpl-prompt-save", color="primary", size="sm", className="me-2"),
@@ -758,7 +758,7 @@ def register_callbacks(app: Any) -> None:
                 html.Details(
                     [
                         html.Summary("Exact prompt sent (criteria + schema + additional resolved)", className="small"),
-                        html.Pre(composed, style={"whiteSpace": "pre-wrap", "fontSize": "0.72rem", "maxHeight": "300px", "overflow": "auto"}),
+                        html.Pre(composed, style={"whiteSpace": "pre-wrap", "fontSize": "0.85rem", "maxHeight": "300px", "overflow": "auto"}),
                     ],
                     className="mt-1",
                 ),

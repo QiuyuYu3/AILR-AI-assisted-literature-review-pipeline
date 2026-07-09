@@ -6,15 +6,23 @@
 ### Added
 - AI screening/extraction run LLM calls in parallel (`screening.workers`, default 4; `extraction.workers`, default 2; set 1 for the old serial behavior).
 - Prompt previews (Workflow pages + Settings) have a Plain / Rendered toggle to view the composed prompt as markdown.
+- Reports → Data exports: per-paper AI extraction export (a ZIP with one `<source_id>.json` per paper), alongside the existing combined JSON.
+- Sort by "AI confidence (lowest first)" on the Screening and Full-text pages, to surface the papers the AI was least sure about.
+- AI extraction records a per-field confidence (1–10), shown next to each field and in the AI panel.
 
 ### Changed
 - Faster title dedup on large imports (rapidfuzz C-level matching with cutoff).
 - Faster conflict counts/lists and extraction lookups (CTE-based conflict queries, batched already-extracted check, new composite index on extractions, cached SQL translation).
+- Extraction fields are required by default and always carry their `quote` (nullable); flag_check items require `verdict`, `reason`, `confidence`, and `quote`.
+- Full-text "To extract" queue, the Extract button, and the dashboard extraction count exclude papers with an unresolved full-text conflict — resolve them on FT Conflicts first.
+- Conflicts dashboard card uses a coloured border + number (amber = needs attention) instead of a full red fill.
 
 ### Fixed
 - Calibration κ pairs only the latest abstract-stage decisions (full-text decisions and superseded re-votes no longer skew agreement).
 - Large batch runs no longer risk hitting the DB bind-parameter limit (batch inserts are chunked).
 - AI screening `raw_output` is stored as JSON (was a Python repr).
+- Multi-select fields the model returned as a JSON string (e.g. study_design) are parsed and shown as values instead of raw JSON.
+- Open extraction: the "AI proposed (reference)" table scrolls horizontally instead of overflowing the pane; its flag_check shows confidence and the derived full-text decision.
 
 ---
 ## [0.23.0] – 2026-06-29

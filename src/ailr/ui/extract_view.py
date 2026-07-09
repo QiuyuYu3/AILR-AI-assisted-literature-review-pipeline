@@ -16,6 +16,8 @@ from ailr.extraction import FieldSpec, compose_schema
 from ailr.reviewers import ExtractionResult
 from ailr.ui._common import format_authors, get_project, reload_project
 
+_DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
+
 _WORKFLOW_OPTIONS = [
     {"label": "verify (AI extracts, you verify)", "value": "verify"},
     {"label": "independent (you extract blind)", "value": "independent"},
@@ -390,7 +392,7 @@ def register_callbacks(app: Any) -> None:
             ai_data = {}
             for r in db.list_extractions(src.id, extractor_type="ai"):
                 v = r["value"]
-                ai_data[r["field_name"]] = v if isinstance(v, (dict, list)) else {"value": v, "quote": r.get("source_quote")}
+                ai_data[r["field_name"]] = v if isinstance(v, (dict, list)) else {"value": v, "quote": r.get("source_quote"), "confidence": r.get("confidence")}
         # Editable fields prefill from THIS reviewer's saved values (overriding AI); the AI value
         # stays visible as the "AI proposed" reference. Latest row wins (ORDER BY id).
         human_data = {
@@ -682,7 +684,12 @@ def _ai_grid_reference(ai_val: Any, item_fields: list[FieldSpec]) -> Any:
     return html.Details(
         [
             html.Summary(html.Small("AI proposed (reference)", className="text-muted")),
-            dbc.Table([head, body], bordered=True, size="sm", className="mt-1", style={"fontSize": "0.75rem"}),
+            # Many wide columns (e.g. operationalization) overflow the pane; scroll horizontally inside
+            # this container instead of pushing past the edge.
+            html.Div(
+                dbc.Table([head, body], bordered=True, size="sm", className="mt-1 mb-0", style={"fontSize": "0.75rem"}),
+                style={"overflowX": "auto"},
+            ),
         ],
         className="mt-1",
     )
@@ -734,6 +741,7 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
         and str(pre_value).strip() != str(ai_value).strip()
     )
 
+    ai_conf = ai_cell.get("confidence") if isinstance(ai_cell, dict) else None
     children: list[Any] = [label, _desc(field), value_widget]
     if ai_value is not None:
         children.append(
@@ -741,6 +749,7 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
                 [
                     dbc.Badge("changed from AI", color="warning", className="me-2") if differs else None,
                     f"AI proposed: {ai_value}",
+                    html.Span(f"  · conf {ai_conf}", className="fw-bold ms-1") if ai_conf is not None else None,
                 ],
                 className="text-muted d-block",
                 style={"fontStyle": "italic"},
@@ -797,15 +806,23 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
         items.append(html.Div(block, className="small mb-2"))
     if flag_check:
         from ailr.ui._common import criterion_names
+        from ailr.tasks.extract import _derive_ft_decision
 
         names = criterion_names()
-        items.append(html.H6("flag_check", className="mt-2"))
+        ft_decision = _derive_ft_decision(flag_check)
+        header = [html.Span("flag_check", className="me-2")]
+        if ft_decision:
+            header.append(dbc.Badge(f"full-text: {ft_decision.upper()}", color=_DECISION_COLOR.get(ft_decision, "secondary")))
+        items.append(html.H6(header, className="mt-2"))
         for fc in flag_check:
-            emoji = {"PASS": "[PASS]", "FAIL": "[FAIL]", "UNCERTAIN": "[?]"}.get(fc.get("verdict", ""), "")
+            verdict = (fc.get("verdict") or "").upper()
+            tag = {"PASS": "[PASS]", "FAIL": "[FAIL]", "UNCERTAIN": "[?]"}.get(verdict, "")
             cid = fc.get("criterion_id") or ""
-            items.append(
-                html.P(f"{emoji} {names.get(cid, cid)}: {fc.get('reason')}", className="small mb-1")
-            )
+            conf = fc.get("confidence")
+            title = f"{tag} {names.get(cid, cid)}" + (f"  (conf {conf})" if conf is not None else "")
+            items.append(html.Div(title, className="small fw-bold mb-0"))
+            if fc.get("reason"):
+                items.append(html.Div(fc["reason"], className="small ms-3 mb-1"))
     return dbc.Card(dbc.CardBody(items), color="light")
 
 

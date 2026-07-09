@@ -245,7 +245,7 @@ def build_extraction_tool_schema(
     properties: dict[str, dict[str, Any]] = {}
     required: list[str] = []
     for f in fields:
-        properties[f.name] = _field_to_json_schema(f, with_quotes=with_quotes)
+        properties[f.name] = _field_to_json_schema(f, with_quotes=with_quotes, top_level=True)
         if f.required:
             required.append(f.name)
 
@@ -259,7 +259,13 @@ def build_extraction_tool_schema(
     return ToolSchema(name=tool_name, description=tool_description, input_schema=input_schema)
 
 
-def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool) -> dict[str, Any]:
+_CONFIDENCE_PROP = {
+    "type": "integer", "minimum": 1, "maximum": 10,
+    "description": "Your confidence in this extracted value, 1 (guess) to 10 (explicit in the paper).",
+}
+
+
+def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool, top_level: bool = False) -> dict[str, Any]:
     if field.type == "object":
         sub_props: dict[str, Any] = {}
         sub_required: list[str] = []
@@ -299,17 +305,18 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool) -> dict[str, A
         if field.description:
             arr["description"] = field.description
         if with_quotes:
-            return {
-                "type": "object",
-                "properties": {
-                    "value": arr,
-                    "quote": {
-                        "type": ["string", "null"],
-                        "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
-                    },
+            props: dict[str, Any] = {
+                "value": arr,
+                "quote": {
+                    "type": ["string", "null"],
+                    "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
                 },
-                "required": ["value", "quote"],
             }
+            req = ["value", "quote"]
+            if top_level:
+                props["confidence"] = dict(_CONFIDENCE_PROP)
+                req.append("confidence")
+            return {"type": "object", "properties": props, "required": req}
         return arr
 
     # Leaf
@@ -320,15 +327,16 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool) -> dict[str, A
         leaf["description"] = field.description
 
     if with_quotes:
-        return {
-            "type": "object",
-            "properties": {
-                "value": leaf,
-                "quote": {
-                    "type": ["string", "null"],
-                    "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
-                },
+        props: dict[str, Any] = {
+            "value": leaf,
+            "quote": {
+                "type": ["string", "null"],
+                "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
             },
-            "required": ["value", "quote"],
         }
+        req = ["value", "quote"]
+        if top_level:
+            props["confidence"] = dict(_CONFIDENCE_PROP)
+            req.append("confidence")
+        return {"type": "object", "properties": props, "required": req}
     return leaf
