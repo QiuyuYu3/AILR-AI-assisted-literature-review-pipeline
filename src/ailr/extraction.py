@@ -7,7 +7,7 @@ When `with_quotes=True`, every leaf field (string/integer/number/boolean) is wra
             "value": <original leaf schema>,
             "quote": {"type": ["string", "null"], "description": "verbatim quote from the paper"}
         },
-        "required": ["value"]
+        "required": ["value", "quote"]
     }
 This is the canonical pattern used by the v2 extraction prompt.
 """
@@ -32,7 +32,7 @@ class FieldSpec(BaseModel):
     type: Literal["string", "integer", "number", "boolean", "list", "object"]
     description: Optional[str] = None
     enum: Optional[list[str]] = None
-    required: bool = False
+    required: bool = True
     multi: bool = False
     core: bool = False
     verify: bool = True  # whether a human must verify this field at extraction (False = accept AI value)
@@ -308,7 +308,7 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool) -> dict[str, A
                         "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
                     },
                 },
-                "required": ["value"],
+                "required": ["value", "quote"],
             }
         return arr
 
@@ -329,6 +329,6 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool) -> dict[str, A
                     "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
                 },
             },
-            "required": ["value"],
+            "required": ["value", "quote"],
         }
     return leaf

@@ -303,7 +303,7 @@ def _flag_check_item_schema() -> dict[str, Any]:
             "confidence": {"type": "integer", "minimum": 1, "maximum": 10},
             "quote": {"type": ["string", "null"], "description": "Verbatim quote from the full text supporting this verdict, or null if not stated."},
         },
-        "required": ["verdict", "reason"],
+        "required": ["verdict", "reason", "confidence", "quote"],
     }
 
 
@@ -370,9 +370,24 @@ def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tup
         return raw, None
     # list of scalars (multi-select) is wrapped as {value: [...], quote}
     if field.type == "list" and field.item_type != "object":
+        if isinstance(raw, str) and raw.strip()[:1] in ("[", "{"):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                pass
+        outer_quote = None
         if isinstance(raw, dict) and "value" in raw:
-            return raw.get("value"), raw.get("quote")
-        return raw, None
+            raw, outer_quote = raw.get("value"), raw.get("quote")
+            if isinstance(raw, str) and raw.strip()[:1] == "[":
+                try:
+                    raw = json.loads(raw)
+                except ValueError:
+                    pass
+        # model sometimes over-wraps each item as {value, quote}: flatten to values + first quote
+        if isinstance(raw, list) and raw and all(isinstance(x, dict) and "value" in x for x in raw):
+            quotes = [x.get("quote") for x in raw if x.get("quote")]
+            return [x.get("value") for x in raw], (outer_quote or (quotes[0] if quotes else None))
+        return raw, outer_quote
     # Object / list-of-objects: keep full structure (quotes live at leaves inside).
     # Models sometimes return the nested structure as a JSON string; parse it so the
     # stored value is always a real list/dict.

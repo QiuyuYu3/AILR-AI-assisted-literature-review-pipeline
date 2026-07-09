@@ -40,9 +40,11 @@ def _build_content(reviewer: Optional[str]) -> Any:
     ft_conflicts = _count_conflicts(pid, stage="full_text")
     total_conflicts = abstract_conflicts + ft_conflicts
     api_summary = db.api_call_summary(pid)
-    total_calls = sum((row.get("calls") or 0) for row in api_summary)
-    total_in = sum((row.get("input_tokens") or 0) for row in api_summary)
-    total_out = sum((row.get("output_tokens") or 0) for row in api_summary)
+    # Mock runs fabricate token counts; exclude them so this reflects real, billable API usage.
+    billed = [row for row in api_summary if (row.get("provider") or "").lower() != "mock"]
+    total_calls = sum((row.get("calls") or 0) for row in billed)
+    total_in = sum((row.get("input_tokens") or 0) for row in billed)
+    total_out = sum((row.get("output_tokens") or 0) for row in billed)
 
     abstract_sources_screened = db.count_sources_screened(pid, "human", stage="abstract")
     ft_human = db.screening_summary(pid, "human", stage="full_text")

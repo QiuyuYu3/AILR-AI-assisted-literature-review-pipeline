@@ -449,6 +449,18 @@ def _quote_line(q: Any) -> Any:
 def _value_block(val: Any, quote: Any) -> Any:
     """Render a field's value + quote. Expands a repeating group (list of objects) into per-item
     sub-fields, each with its own value and grey quote underneath."""
+    # the model sometimes stores a nested value as a JSON string; parse so it can be expanded
+    if isinstance(val, str) and val.strip()[:1] in ("[", "{"):
+        import json as _json
+        try:
+            val = _json.loads(val)
+        except ValueError:
+            pass
+    # multi-select the model over-wrapped as [{value, quote}, ...]: show the values + their quotes
+    if isinstance(val, list) and val and all(isinstance(x, dict) and set(x.keys()) <= {"value", "quote"} for x in val):
+        vals = ", ".join(_scalar_str(x.get("value")) for x in val) or "—"
+        quote_lines = [_quote_line(x.get("quote")) for x in val if x.get("quote")] or [_quote_line(quote)]
+        return html.Div([html.Div(vals, className="small"), *quote_lines])
     # repeating group / list of objects: each leaf sub-field is {value, quote}
     if isinstance(val, list) and val and all(isinstance(x, dict) for x in val):
         items = []

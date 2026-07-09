@@ -121,6 +121,24 @@ def _prepare_sql(sql: str) -> tuple[str, bool, bool]:
     return sql, want_id, is_write
 
 
+_DISCONNECT_MARKERS = (
+    "server closed the connection",
+    "consuming input failed",
+    "connection already closed",
+    "ssl connection has been closed",
+    "terminating connection",
+    "eof detected",
+)
+
+
+def _is_disconnect(e) -> bool:
+    """Whether a SQLAlchemyError signals a dropped connection (vs. a real query error)."""
+    if getattr(e, "connection_invalidated", False):
+        return True
+    msg = str(e).lower()
+    return any(m in msg for m in _DISCONNECT_MARKERS)
+
+
 def _coerce_row(mapping) -> dict:
     """Row as a plain dict, with datetime/date coerced to strings so the rest of the codebase
     sees timestamps as strings regardless of dialect (Postgres returns datetime objects)."""
@@ -152,42 +170,78 @@ class _EngineConn:
             self._tls.has_writes = False
         return c
 
+    def _discard_thread_conn(self):
+        """Drop the cached thread-local connection so the next call reconnects.
+
+        The connection is held for the thread's lifetime, so pool_pre_ping never re-runs
+        on it; when the server closes an idle connection it becomes a zombie. Clearing it
+        here lets _thread_conn check out a fresh (pre-pinged) connection.
+        """
+        conn = getattr(self._tls, "conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        self._tls.conn = None
+        self._tls.has_writes = False
+
     def execute(self, sql, params=()):
         sql, want_id, is_write = _prepare_sql(sql)
         stmt, pdict = _qmark_to_named(sql, params)
         compiled = text(stmt)
         try:
-            tx_conn = getattr(self._tls, "tx_conn", None)
-            conn = tx_conn if tx_conn is not None else self._thread_conn()
-            result = conn.execute(compiled, pdict)
-            if is_write:
-                if want_id:  # INSERT ... RETURNING id
-                    row = result.fetchone()
-                    lastid = row[0] if row is not None else None
-                else:
-                    try:
-                        lastid = result.lastrowid
-                    except Exception:
-                        lastid = None
-                try:
-                    rc = result.rowcount
-                except Exception:
-                    rc = -1
-                if tx_conn is None:
-                    self._tls.has_writes = True
-                return _Result(lastrowid=lastid, rowcount=rc)
-            # read
-            keys = list(result.keys())
-            rows = [_coerce_row(m) for m in result.mappings()]
-            if tx_conn is None and not getattr(self._tls, "has_writes", False):
-                conn.rollback()  # standalone read: don't pin a snapshot
-            return _Result(rows=rows, keys=keys, rowcount=len(rows))
+            return self._execute_once(compiled, pdict, want_id, is_write)
         except _SAIntegrityError as e:
             self._safe_rollback()
             raise sqlite3.IntegrityError(str(e)) from e
         except SQLAlchemyError as e:
+            # A held thread-local connection can go stale when the server closes it (e.g.
+            # Neon dropping an idle connection). Retry once with a fresh connection, but
+            # only for a standalone statement with no pending work — retrying mid-write or
+            # inside an explicit transaction would break atomicity.
+            if _is_disconnect(e) and self._can_retry_disconnect():
+                self._discard_thread_conn()
+                try:
+                    return self._execute_once(compiled, pdict, want_id, is_write)
+                except SQLAlchemyError as e2:
+                    self._safe_rollback()
+                    raise sqlite3.Error(str(e2)) from e2
             self._safe_rollback()
             raise sqlite3.Error(str(e)) from e
+
+    def _can_retry_disconnect(self) -> bool:
+        return (
+            getattr(self._tls, "tx_conn", None) is None
+            and not getattr(self._tls, "has_writes", False)
+        )
+
+    def _execute_once(self, compiled, pdict, want_id, is_write):
+        tx_conn = getattr(self._tls, "tx_conn", None)
+        conn = tx_conn if tx_conn is not None else self._thread_conn()
+        result = conn.execute(compiled, pdict)
+        if is_write:
+            if want_id:  # INSERT ... RETURNING id
+                row = result.fetchone()
+                lastid = row[0] if row is not None else None
+            else:
+                try:
+                    lastid = result.lastrowid
+                except Exception:
+                    lastid = None
+            try:
+                rc = result.rowcount
+            except Exception:
+                rc = -1
+            if tx_conn is None:
+                self._tls.has_writes = True
+            return _Result(lastrowid=lastid, rowcount=rc)
+        # read
+        keys = list(result.keys())
+        rows = [_coerce_row(m) for m in result.mappings()]
+        if tx_conn is None and not getattr(self._tls, "has_writes", False):
+            conn.rollback()  # standalone read: don't pin a snapshot
+        return _Result(rows=rows, keys=keys, rowcount=len(rows))
 
     def commit(self):
         if getattr(self._tls, "tx_conn", None) is not None:
