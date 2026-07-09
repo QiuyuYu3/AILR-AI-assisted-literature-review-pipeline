@@ -10,8 +10,8 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.core.source import Source
 from ailr.extraction import compose_screening_prompt
-from ailr.reviewers import ScreeningDecision
 from ailr.ui import ai_runner, version_ui
+from ailr.ui._actions import _apply_reset, _apply_vote
 from ailr.ui._common import (
     _short_author_year,
     get_project,
@@ -629,43 +629,11 @@ def register_callbacks(app: Any) -> None:
         db = get_project().db
 
         if isinstance(triggered, dict) and triggered.get("type") == "screen-decide":
-            source_id = int(triggered["source"])
-            decision = triggered["decision"]
-            # Vote lock in one query: skip if I already decided this paper (rapid double-click), and
-            # cap the team size — 1 human (+ AI) in assisted, 2 humans in independent.
-            i_voted, others = db.screening_lock_check(source_id, rid, "abstract")
-            if i_voted:
-                return {"ts": time.time()}, no_update
-            team_humans = 1 if get_project().config.screening.workflow == "assisted" else 2
-            if others >= team_humans:
-                other = db.other_human_decided(source_id, "abstract", rid) or "another reviewer"
-                return {"ts": time.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": time.time()}
-            with db._conn.transaction():  # decision + action in one commit
-                db.insert_screening_decision(
-                    ScreeningDecision(
-                        decision=decision,
-                        reasoning="(inline screening)",
-                        reviewer_type="human",
-                        reviewer_id=rid,
-                        source_id=source_id,
-                    )
-                )
-                db.insert_screening_action(source_id, rid, action="vote", decision=decision)
-            src = db.get_source(source_id)
-            return {"ts": time.time()}, {
-                "sid": source_id,
-                "decision": decision,
-                "author_year": _short_author_year(src) if src else "",
-                "title": src.title if src else "",
-                "ts": time.time(),
-            }
+            workflow = get_project().config.screening.workflow
+            return _apply_vote(db, int(triggered["source"]), triggered["decision"], rid, workflow)
 
         if isinstance(triggered, dict) and triggered.get("type") == "screen-reset":
-            source_id = int(triggered["source"])
-            db.delete_screening_decision(source_id, rid, reviewer_type="human")
-            db.delete_reconciliations_for_source(source_id, "abstract_screening")
-            db.insert_screening_action(source_id, rid, action="reset")
-            return {"ts": time.time()}, None  # clear banner
+            return _apply_reset(db, int(triggered["source"]), rid)
 
         return {"ts": time.time()}, no_update
 

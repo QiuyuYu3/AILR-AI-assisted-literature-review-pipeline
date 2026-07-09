@@ -872,9 +872,26 @@ class ScreeningMixin:
         ).fetchone()
         return row is not None
 
-    def paired_screening_decisions(self, project_id: int) -> list[dict]:
-        """Per-source AI+human paired decisions (only where both exist)."""
+    def paired_screening_decisions(self, project_id: int, stage: str = "abstract") -> list[dict]:
+        """Per-source AI+human paired decisions (only where both exist): exactly ONE pair per
+        source — the latest AI verdict vs the latest human verdict at this stage. Same pairing
+        rule as calibration's _compute_agreement, so Reports κ and calibration κ agree
+        (superseded re-votes, AI re-runs, and other stages' decisions never skew the pairing)."""
         sql = """
+            WITH latest_ai AS (
+                SELECT sd.source_id, sd.decision, sd.confidence, sd.reviewer_id
+                FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_type = 'ai' AND stage = ? GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            ),
+            latest_human AS (
+                SELECT sd.source_id, sd.decision, sd.confidence, sd.reviewer_id
+                FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_type = 'human' AND stage = ? GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            )
             SELECT
                 s.id AS source_id,
                 ai.decision AS ai_decision,
@@ -884,14 +901,12 @@ class ScreeningMixin:
                 ai.reviewer_id AS ai_reviewer_id,
                 hum.reviewer_id AS human_reviewer_id
             FROM sources s
-            JOIN screening_decisions ai
-              ON ai.source_id = s.id AND ai.reviewer_type = 'ai'
-            JOIN screening_decisions hum
-              ON hum.source_id = s.id AND hum.reviewer_type = 'human'
+            JOIN latest_ai ai ON ai.source_id = s.id
+            JOIN latest_human hum ON hum.source_id = s.id
             WHERE s.project_id = ?
             ORDER BY s.id
         """
-        return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
+        return [dict(r) for r in self._conn.execute(sql, (stage, stage, project_id)).fetchall()]
 
     def list_screening_conflicts(self, project_id: int, stage: str = "abstract") -> list[Source]:
         """Independent mode: both humans have voted but there is no clean agreed include/exclude —

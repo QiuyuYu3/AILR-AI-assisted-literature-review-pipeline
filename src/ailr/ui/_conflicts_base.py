@@ -6,7 +6,6 @@ abstract-only extras (DOI link, abstract collapse, history button). A ConflictCo
 captures those differences; conflicts_view / ft_conflicts_view are thin wrappers.
 """
 
-import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,6 +13,7 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, html, no_update
 
 from ailr.core.source import Source
+from ailr.ui._actions import _apply_resolve, _apply_undo_resolve
 from ailr.ui._common import _short_author_year, get_project, triggered_click_id
 
 _DECISION_COLORS = {
@@ -170,10 +170,7 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
                 rationale = (r_val or "").strip() or None
                 break
 
-        db = get_project().db
-        db.insert_screening_reconciliation(source_id, decision, rid, rationale, stage=cfg.stage)
-        db.insert_screening_action(source_id, rid, action="reconcile", decision=decision)
-        return {"ts": time.time()}
+        return _apply_resolve(get_project().db, source_id, decision, rid, rationale, cfg.stage)
 
     if cfg.show_abstract_extras:
         @app.callback(
@@ -206,17 +203,7 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         triggered = triggered_click_id()
         if triggered is None:
             return no_update
-        rec_id = int(triggered["rec_id"])
-        db = get_project().db
-        # Fetch the row to learn source_id + adjudicator before deleting (for audit trail).
-        row = db._conn.execute(
-            "SELECT source_id, adjudicator FROM reconciliations WHERE id = ?",
-            (rec_id,),
-        ).fetchone()
-        db.delete_reconciliation(rec_id)
-        if row:
-            db.insert_screening_action(row["source_id"], row["adjudicator"], action="reconcile_undo")
-        return {"ts": time.time()}
+        return _apply_undo_resolve(get_project().db, int(triggered["rec_id"]))
 
     @app.callback(
         Output(f"{cfg.store_prefix}-cards", "children"),

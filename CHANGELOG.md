@@ -1,6 +1,21 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Added
+- Tests for the screening vote lock, conflict detection (assisted + independent), and the click-routing regression (`triggered_click_id`); the Screen tab's vote/reset callback body is now module-level (`_apply_vote` / `_apply_reset`) so it can be tested directly.
+- Tests for the extraction claim lock / submit markers / to-extract queue, AI-output parsing (multi-select JSON strings, flag_check derivation, external-results import), calibration κ pairing, import dedup (blank-DOI NULL, keep-more-complete), and reference-stripping / PDF-link year tie-break regressions.
+- Tests for PRISMA/report counts (latest-only, report+SVG share one count set), mock-run orchestration (skip screened, placeholder for no-abstract, clear-mock-then-rerun, raw_output JSON, stale detection), full-text vote lock, and conflict resolve/undo.
+
+### Changed
+- Vote / reset / resolve / undo callback bodies unified in `ui/_actions.py` (stage-aware, shared by Screen, Full-text, and both Conflicts tabs); the full-text tab now uses the same strict click-routing helper (`triggered_click_id`) as the Screen tab.
+
+### Fixed
+- Reports κ / confusion matrix / methods export pair only the latest abstract-stage AI and human decisions (same rule as calibration κ; superseded re-votes, AI re-runs, and full-text decisions no longer skew agreement).
+- Removed the unique-vote index from the legacy reference DDL: it never existed in the live (SQLAlchemy) schema, and it conflicts with the multiple-rows-latest-wins decision model (AI re-runs). Duplicate votes are prevented by the application-level vote lock.
+
+---
 ## [0.24.0] – 2026-07-09
 
 ### Added

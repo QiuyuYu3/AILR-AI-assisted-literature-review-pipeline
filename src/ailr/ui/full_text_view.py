@@ -15,6 +15,7 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
 from ailr.ui import ai_runner
+from ailr.ui._actions import _apply_reset, _apply_vote
 from ailr.ui._common import get_project, reload_project, triggered_click_id
 from ailr.ui.screen_view import (
     _SORT_OPTIONS,
@@ -378,54 +379,22 @@ def register_callbacks(app: Any) -> None:
     )
     def _on_action(_d, _r, reviewer):
         rid = (reviewer or "").strip()
-        # Use the button that actually carries the click value (not ctx.triggered_id, which can point
-        # at a value-less freshly-rendered button) so the decision always lands on the clicked paper.
-        clicked = next((c for c in (ctx.triggered or []) if c.get("value")), None)
-        if clicked is None or not rid:
+        # Act on the button that actually carries the click — not ctx.triggered_id, which can point at
+        # a value-less freshly-rendered button and apply the decision to the wrong paper when a click
+        # coincides with the card list re-rendering.
+        triggered = triggered_click_id()
+        if triggered is None or not rid:
             return no_update, no_update
-        triggered = json.loads(clicked["prop_id"].rsplit(".", 1)[0])
 
         import time as _t
         db = get_project().db
 
         if isinstance(triggered, dict) and triggered.get("type") == "ft-decide":
-            source_id = int(triggered["source"])
-            decision = triggered["decision"]
-            # Vote lock in one query: skip my double-click; cap team size (assisted 1 + AI, independent 2).
-            i_voted, others = db.screening_lock_check(source_id, rid, "full_text")
-            if i_voted:
-                return {"ts": _t.time()}, no_update
-            team_humans = 1 if get_project().config.screening.workflow == "assisted" else 2
-            if others >= team_humans:
-                other = db.other_human_decided(source_id, "full_text", rid) or "another reviewer"
-                return {"ts": _t.time()}, {"blocked": True, "by": other, "sid": source_id, "ts": _t.time()}
-            with db._conn.transaction():  # decision + action in one commit
-                db.insert_screening_decision(
-                    ScreeningDecision(
-                        decision=decision,
-                        reasoning="(full-text review)",
-                        reviewer_type="human",
-                        reviewer_id=rid,
-                        source_id=source_id,
-                        stage="full_text",
-                    )
-                )
-                db.insert_screening_action(source_id, rid, action="vote", decision=decision)
-            src = db.get_source(source_id)
-            return {"ts": _t.time()}, {
-                "sid": source_id,
-                "decision": decision,
-                "author_year": _short_author_year(src) if src else "",
-                "title": src.title if src else "",
-                "ts": _t.time(),
-            }
+            workflow = get_project().config.screening.workflow
+            return _apply_vote(db, int(triggered["source"]), triggered["decision"], rid, workflow, stage="full_text")
 
         if isinstance(triggered, dict) and triggered.get("type") == "ft-reset":
-            source_id = int(triggered["source"])
-            db.delete_screening_decision(source_id, rid, stage="full_text", reviewer_type="human")
-            db.delete_reconciliations_for_source(source_id, "full_text_screening")
-            db.insert_screening_action(source_id, rid, action="reset")
-            return {"ts": _t.time()}, None
+            return _apply_reset(db, int(triggered["source"]), rid, stage="full_text")
 
         return {"ts": _t.time()}, no_update
 
