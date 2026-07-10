@@ -19,7 +19,10 @@ def _reconcile_stage(stage: str) -> str:
     return "abstract_screening" if stage == "abstract" else "full_text_screening"
 
 
-def _apply_vote(db: Any, source_id: int, decision: str, rid: str, workflow: str, stage: str = "abstract") -> tuple:
+def _apply_vote(
+    db: Any, source_id: int, decision: str, rid: str, workflow: str,
+    stage: str = "abstract", reasoning: Optional[str] = None,
+) -> tuple:
     """Record one human vote behind the vote lock. Returns (refresh, last_action) for the callback.
     Lock in one query: skip if I already decided this paper (rapid double-click), and cap the
     team size — 1 human (+ AI) in assisted, 2 humans in independent."""
@@ -34,7 +37,7 @@ def _apply_vote(db: Any, source_id: int, decision: str, rid: str, workflow: str,
         db.insert_screening_decision(
             ScreeningDecision(
                 decision=decision,
-                reasoning=_VOTE_REASONING.get(stage, ""),
+                reasoning=reasoning or _VOTE_REASONING.get(stage, ""),
                 reviewer_type="human",
                 reviewer_id=rid,
                 source_id=source_id,

@@ -589,6 +589,32 @@ class ScreeningMixin:
         sql = f"SELECT s.id FROM sources s WHERE s.id IN ({ph}) AND {FT_FINAL_INCLUDE_MD_SQL}"
         return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
 
+    def count_final_includes(self, project_id: int, stage: str = "abstract", require_markdown: bool = False) -> int:
+        """PAPERS (not decisions) whose final decision at this stage is include: reconciled-as-include,
+        or at least one human's LATEST verdict is include with no reconciliation recorded. For the
+        PRISMA flow, where two reviewers including the same paper must count once."""
+        reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
+        md = "AND s.markdown_path IS NOT NULL" if require_markdown else ""
+        sql = f"""
+            SELECT COUNT(*) AS n FROM sources s
+            WHERE s.project_id = ? {md}
+              AND (
+                EXISTS (SELECT 1 FROM reconciliations r
+                        WHERE r.source_id = s.id AND r.stage = ? AND r.final_value = 'include')
+                OR (
+                  EXISTS (SELECT 1 FROM screening_decisions d
+                          WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = ?
+                            AND d.decision = 'include'
+                            AND d.id = (SELECT MAX(id) FROM screening_decisions
+                                        WHERE source_id = d.source_id AND reviewer_id = d.reviewer_id
+                                          AND reviewer_type = 'human' AND stage = d.stage))
+                  AND NOT EXISTS (SELECT 1 FROM reconciliations r
+                                  WHERE r.source_id = s.id AND r.stage = ?)
+                )
+              )
+        """
+        return self._conn.execute(sql, (project_id, reconcile_stage, stage, reconcile_stage)).fetchone()["n"]
+
     def list_sources_overview(self, project_id: int) -> list[dict]:
         """Joined view for the Sources overview UI: source row + latest AI/human decision + extraction
         count. Each derived value is aggregated once per source then LEFT JOINed (instead of a

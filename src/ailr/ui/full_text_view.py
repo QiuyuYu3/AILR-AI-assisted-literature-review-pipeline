@@ -13,7 +13,6 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.core.source import Source
-from ailr.reviewers import ScreeningDecision
 from ailr.ui import ai_runner
 from ailr.ui._actions import _apply_reset, _apply_vote
 from ailr.ui._common import get_project, reload_project, triggered_click_id
@@ -584,33 +583,12 @@ def register_callbacks(app: Any) -> None:
         if not reasons:
             return no_update, no_update, no_update, dbc.Alert("Pick or add at least one reason.", color="warning", className="mb-0 py-1")
         reason = "; ".join(reasons) if isinstance(reasons, list) else str(reasons)
-        import time as _t
         sid = int(data["sid"])
-        db = get_project().db
-        if get_project().config.screening.workflow == "assisted":
-            other = db.other_human_decided(sid, "full_text", rid)
-            if other:
-                return {"ts": _t.time()}, {"blocked": True, "by": other, "sid": sid, "ts": _t.time()}, False, ""
-        db.insert_screening_decision(
-            ScreeningDecision(
-                decision="exclude",
-                reasoning=reason,
-                reviewer_type="human",
-                reviewer_id=rid,
-                source_id=sid,
-                stage="full_text",
-            )
-        )
-        db.insert_screening_action(sid, rid, action="vote", decision="exclude")
-        src = db.get_source(sid)
-        last = {
-            "sid": sid,
-            "decision": "exclude",
-            "author_year": _short_author_year(src) if src else "",
-            "title": src.title if src else "",
-            "ts": _t.time(),
-        }
-        return {"ts": _t.time()}, last, False, ""
+        # Same vote lock as the inline buttons (idempotent self-vote + team cap) — this modal
+        # must not be a second, weaker path to a duplicate vote.
+        workflow = get_project().config.screening.workflow
+        refresh, last = _apply_vote(get_project().db, sid, "exclude", rid, workflow, stage="full_text", reasoning=reason)
+        return refresh, last, False, ""
 
     @app.callback(
         Output("ft-tags-filter", "options"),

@@ -19,10 +19,14 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     full_text = db.screening_summary(pid, "human", stage="full_text")
     ai_abstract = db.screening_summary(pid, "ai", stage="abstract")
 
-    abstract_screened = sum(abstract.values())
-    reports_sought = abstract["include"]
-    reports_retrieved = db.count_screening_includes_with_markdown(pid, stage="abstract")
-    full_text_assessed = sum(full_text.values())
+    # Flow numbers count PAPERS (a paper two reviewers both decided counts once, and a
+    # reconciliation overrides the votes); the include/exclude/uncertain breakdowns stay
+    # decision-based (latest per reviewer) — identical in assisted mode (one human per paper).
+    abstract_screened = db.count_sources_screened(pid, "human", stage="abstract")
+    reports_sought = db.count_final_includes(pid, "abstract")
+    reports_retrieved = db.count_final_includes(pid, "abstract", require_markdown=True)
+    full_text_assessed = db.count_sources_screened(pid, "human", stage="full_text")
+    studies_included = db.count_final_includes(pid, "full_text")
 
     sources_extracted = db.count_sources_with_extraction(pid, "ai")
 
@@ -45,7 +49,7 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         "reports_not_retrieved": max(reports_sought - reports_retrieved, 0),
         "full_text_assessed": full_text_assessed,
         "full_text_excluded": full_text["exclude"],
-        "studies_included": full_text["include"],
+        "studies_included": studies_included,
         "studies_extracted": sources_extracted,
     }
 
