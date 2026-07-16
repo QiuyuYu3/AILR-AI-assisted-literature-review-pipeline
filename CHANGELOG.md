@@ -1,7 +1,7 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.25.0] – 2026-07-16
 
 ### Added
 - Tests for the screening vote lock, conflict detection (assisted + independent), and the click-routing regression (`triggered_click_id`); the Screen tab's vote/reset callback body is now module-level (`_apply_vote` / `_apply_reset`) so it can be tested directly.
@@ -13,6 +13,7 @@
 - Vote / reset / resolve / undo callback bodies unified in `ui/_actions.py` (stage-aware, shared by Screen, Full-text, and both Conflicts tabs); the full-text tab now uses the same strict click-routing helper (`triggered_click_id`) as the Screen tab.
 
 ### Fixed
+- Extraction page shows AI quotes for all field types (scalar lists and grid cells previously dropped them); quotes render as collapsible blocks, and the AI panel no longer truncates nested values mid-quote.
 - Reports κ / confusion matrix / methods export pair only the latest abstract-stage AI and human decisions (same rule as calibration κ; superseded re-votes, AI re-runs, and full-text decisions no longer skew agreement).
 - The full-text "Exclude with reasons" modal goes through the same vote lock as the inline buttons (it could previously stack a second vote by the same reviewer, and had no team cap in independent mode).
 - PRISMA flow numbers (screened / sought / retrieved / assessed / included) count papers, not decisions — in independent mode two reviewers including a paper counted it twice — and a reconciliation now overrides the votes in the flow.

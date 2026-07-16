@@ -387,12 +387,13 @@ def register_callbacks(app: Any) -> None:
 
         ai_data: dict[str, Any] | None = None
         if workflow == "verify":
-            # Scalar fields keep their quote in the separate source_quote column; wrap them as
-            # {value, quote} so the form can show it. Object/list values stay raw (quotes are nested).
+            # Scalar fields AND scalar lists keep their quote in the separate source_quote
+            # column; wrap them as {value, quote} so the form can show it. Object /
+            # list-of-object values stay raw (quotes are nested at the leaves).
             ai_data = {}
             for r in db.list_extractions(src.id, extractor_type="ai"):
                 v = r["value"]
-                ai_data[r["field_name"]] = v if isinstance(v, (dict, list)) else {"value": v, "quote": r.get("source_quote"), "confidence": r.get("confidence")}
+                ai_data[r["field_name"]] = v if isinstance(v, dict) else {"value": v, "quote": r.get("source_quote"), "confidence": r.get("confidence")}
         # Editable fields prefill from THIS reviewer's saved values (overriding AI); the AI value
         # stays visible as the "AI proposed" reference. Latest row wins (ORDER BY id).
         human_data = {
@@ -554,6 +555,7 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
         )
 
     if field.type == "list" and field.item_type == "object":
+        ai_val, _ = _unwrap_cell(ai_data.get(field.name) if ai_data else None)
         item_fields = field.item_fields or []
         column_defs = [{"field": s.name, "editable": True, "tooltipField": s.name} for s in item_fields]
         prefill_rows: list[dict] = []
@@ -584,13 +586,14 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
                         outline=True,
                         className="mt-2",
                     ),
-                    _ai_grid_reference(ai_data.get(field.name) if ai_data else None, item_fields),
+                    _ai_grid_reference(ai_val, item_fields),
                 ]
             ),
             className="mb-2",
         )
 
     if field.type == "list":
+        ai_val, ai_quote = _unwrap_cell(ai_data.get(field.name) if ai_data else None)
         prefill_text = ""
         src_list = prefill_data.get(field.name) if prefill_data else None
         if isinstance(src_list, list):
@@ -606,7 +609,7 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
                         style={"height": "80px"},
                         value=prefill_text,
                     ),
-                    _ai_list_reference(ai_data.get(field.name) if ai_data else None),
+                    _ai_list_reference(ai_val, ai_quote),
                 ]
             ),
             className="mb-2",
@@ -645,6 +648,20 @@ def _unwrap_cell(cell: Any) -> tuple[Any, Any]:
     return cell, None
 
 
+def _strip_nested_quotes(v: Any, quotes: list) -> Any:
+    """Unwrap {value, quote} wrappers at any depth for a clean value display; the
+    collected quotes go into one collapsible block instead of bloating the JSON."""
+    if isinstance(v, dict) and "value" in v:
+        if v.get("quote"):
+            quotes.append(v["quote"])
+        return _strip_nested_quotes(v.get("value"), quotes)
+    if isinstance(v, dict):
+        return {k: _strip_nested_quotes(x, quotes) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_strip_nested_quotes(x, quotes) for x in v]
+    return v
+
+
 def _flatten_list_item(item: Any, item_fields: list[FieldSpec]) -> dict:
     """For ag-grid prefill: AI may return [{name: {value:..,quote:..}, ...}]; flatten to {name: value}."""
     if not isinstance(item, dict):
@@ -657,14 +674,29 @@ def _flatten_list_item(item: Any, item_fields: list[FieldSpec]) -> dict:
     return out
 
 
-def _ai_list_reference(ai_val: Any) -> Any:
+def _quote_details(quotes: Any) -> Any:
+    """Collapsible 'AI quote' block; quotes can run long, so they start folded."""
+    qs = [q for q in (quotes if isinstance(quotes, list) else [quotes]) if q]
+    if not qs:
+        return None
+    label = "AI quote" if len(qs) == 1 else f"AI quotes ({len(qs)})"
+    return html.Details(
+        [html.Summary(html.Small(label, className="text-muted"))]
+        + [html.Small(f"“{q}”", className="text-muted d-block fst-italic ms-3") for q in qs],
+    )
+
+
+def _ai_list_reference(ai_val: Any, ai_quote: Any = None) -> Any:
     """Read-only 'AI proposed' line for a list-of-string field (matches the leaf widget's reference)."""
     if not isinstance(ai_val, list) or not ai_val:
         return None
     items = [str(_unwrap_cell(v)[0]) for v in ai_val if _unwrap_cell(v)[0] not in (None, "")]
     if not items:
         return None
-    return html.Small("AI proposed: " + "; ".join(items), className="text-muted d-block fst-italic mt-1")
+    return html.Div([
+        html.Small("AI proposed: " + "; ".join(items), className="text-muted d-block fst-italic mt-1"),
+        _quote_details(ai_quote),
+    ])
 
 
 def _ai_grid_reference(ai_val: Any, item_fields: list[FieldSpec]) -> Any:
@@ -672,15 +704,16 @@ def _ai_grid_reference(ai_val: Any, item_fields: list[FieldSpec]) -> Any:
     edits against AI's original rows (the editable grid above is pre-filled but loses the reference)."""
     if not isinstance(ai_val, list) or not ai_val:
         return None
-    rows = [_flatten_list_item(it, item_fields) for it in ai_val]
+
+    def _cell(item: Any, name: str) -> Any:
+        v, q = _unwrap_cell(item.get(name) if isinstance(item, dict) else None)
+        parts: list[Any] = [] if v is None else [html.Div(str(v))]
+        if q:
+            parts.append(html.Div(f"“{q}”", className="text-muted fst-italic", style={"fontSize": "0.7rem"}))
+        return html.Td(parts, style={"whiteSpace": "pre-wrap", "fontSize": "0.75rem"})
+
     head = html.Thead(html.Tr([html.Th(s.name) for s in item_fields]))
-    body = html.Tbody([
-        html.Tr([
-            html.Td("" if r.get(s.name) is None else str(r.get(s.name)), style={"whiteSpace": "pre-wrap", "fontSize": "0.75rem"})
-            for s in item_fields
-        ])
-        for r in rows
-    ])
+    body = html.Tbody([html.Tr([_cell(it, s.name) for s in item_fields]) for it in ai_val])
     return html.Details(
         [
             html.Summary(html.Small("AI proposed (reference)", className="text-muted")),
@@ -756,9 +789,7 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
             )
         )
     if ai_quote:
-        children.append(
-            html.Small(f"AI quote: “{ai_quote}”", className="text-muted d-block", style={"fontStyle": "italic"})
-        )
+        children.append(_quote_details(ai_quote))
     children.append(
         dbc.Textarea(
             id={"type": "ex-quote", "field": dotted},
@@ -791,11 +822,18 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
 
     items: list[Any] = [html.H6("AI extraction")]
     for row in ai_rows:
-        block: list[Any] = [
-            html.Div([html.Strong(f"{row['field_name']}: "), html.Code(json.dumps(row["value"], ensure_ascii=False)[:300])]),
-        ]
+        quotes: list = []
+        clean = _strip_nested_quotes(row["value"], quotes)
         if row.get("source_quote"):
-            block.append(html.Div(f"“{row['source_quote']}”", className="text-muted fst-italic ms-3"))
+            quotes.insert(0, row["source_quote"])
+        block: list[Any] = [
+            html.Div([
+                html.Strong(f"{row['field_name']}: "),
+                html.Code(json.dumps(clean, ensure_ascii=False), style={"whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
+            ]),
+        ]
+        if quotes:
+            block.append(html.Div(_quote_details(quotes), className="ms-3"))
         meta = []
         if row.get("confidence") is not None:
             meta.append(f"confidence: {row['confidence']}")
