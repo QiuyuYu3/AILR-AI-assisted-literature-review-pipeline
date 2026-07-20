@@ -185,6 +185,8 @@ def ai_screening_panel() -> list[Any]:
         dbc.Label("Run AI screening", className="fw-bold"),
         html.P("Runs AI on the abstracts and records its decisions (the prompt is snapshotted as a version).", className="text-muted small mb-1"),
         dbc.Switch(id="screen-ai-mock", label="Mock (no API cost)", value=True, className="small"),
+        html.P("For every decision the AI also records a PASS / FAIL / UNCERTAIN verdict, reason, and confidence for each criterion (shown in the review). This keeps each include/exclude auditable.",
+               className="text-muted small mb-1"),
         dbc.Button("Run AI screening", id="screen-ai-run", color="primary", outline=True, size="sm"),
         html.Div(id="screen-ai-status", className="small mt-2"),
         dcc.Interval(id="screen-ai-poll", interval=1200, disabled=True),

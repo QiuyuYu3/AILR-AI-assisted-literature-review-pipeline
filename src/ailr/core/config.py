@@ -68,6 +68,7 @@ class ScreeningConfig(BaseModel):
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     llm: Optional[StageLLMOverride] = None
     workers: int = 4  # concurrent LLM screening calls (1 = serial)
+    flag_check: bool = True  # per-criterion verdicts on every AI screening decision (auditable); escape hatch to disable
 
 
 class ExtractionConfig(BaseModel):

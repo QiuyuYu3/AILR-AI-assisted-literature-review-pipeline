@@ -12,7 +12,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
 from ailr.ui import ai_runner
-from ailr.ui._common import get_project
+from ailr.ui._common import flag_check_block, get_project
 
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
@@ -360,7 +360,12 @@ def _render_quick_screening(run_value: Any) -> Any:
     except (TypeError, ValueError):
         run_id = runs[0]["id"]
 
-    decisions = project.db.list_test_decisions(run_id)
+    try:
+        decisions = project.db.list_test_decisions(run_id)
+    except Exception as e:
+        return dbc.Alert(f"Could not load decisions for run #{run_id}: {e}", color="danger")
+    if not decisions:
+        return dbc.Alert("This run produced no decisions (the run may have failed — check the status above, then re-run).", color="warning")
     counts = {"include": 0, "exclude": 0, "uncertain": 0}
     for d in decisions:
         if d["decision"] in counts:
@@ -369,24 +374,30 @@ def _render_quick_screening(run_value: Any) -> Any:
         [dbc.Badge(f"{k} {v}", color=_DECISION_COLOR[k], className="me-1") for k, v in counts.items()],
         className="mb-2",
     )
-    rows = []
-    for d in decisions:
-        conf = f"{d['confidence']:.2f}" if d.get("confidence") is not None else "—"
-        rows.append(
-            html.Tr([
-                html.Td(f"#{d['source_id']}", className="text-muted"),
-                html.Td([html.Div(_author_year(d), className="fw-bold small"), html.Div(d.get("title") or "", className="small text-muted")]),
-                html.Td(dbc.Badge((d["decision"] or "").upper(), color=_DECISION_COLOR.get(d["decision"], "secondary"))),
-                html.Td(conf, className="small"),
-                html.Td(html.Span(d.get("reasoning") or "", className="small")),
-            ])
-        )
-    table = dbc.Table(
-        [html.Thead(html.Tr([html.Th("ID"), html.Th("Study"), html.Th("AI"), html.Th("Conf."), html.Th("Reasoning")])),
-         html.Tbody(rows)],
-        bordered=False, hover=True, responsive=True, size="sm",
-    )
-    return html.Div([header, table])
+    cards = []
+    try:
+        for d in decisions:
+            dec = d.get("decision")
+            conf = f"{d['confidence']:.2f}" if d.get("confidence") is not None else None
+            cards.append(
+                dbc.Card(
+                    dbc.CardBody([
+                        html.Div([
+                            html.Strong(f"#{d['source_id']} ", className="me-2"),
+                            html.Span(_author_year(d), className="text-muted me-2"),
+                            dbc.Badge((dec or "").upper(), color=_DECISION_COLOR.get(dec, "secondary")),
+                            html.Span(f"conf {conf}" if conf else "", className="text-muted small ms-2"),
+                        ], className="mb-1"),
+                        html.Div(d.get("title") or "", className="small text-muted mb-2"),
+                        html.Div(d.get("reasoning") or "", className="small mb-1"),
+                        flag_check_block(d.get("flag_check") or []),
+                    ]),
+                    className="mb-2",
+                )
+            )
+    except Exception as e:
+        return dbc.Alert(f"Render error: {e}", color="danger")
+    return html.Div([header, *cards])
 
 
 def _render_quick_extraction(run_value: Any) -> Any:
@@ -425,7 +436,7 @@ def _render_quick_extraction(run_value: Any) -> Any:
                     ], className="mb-1"),
                     html.Div(ex.get("title") or "", className="small text-muted mb-2"),
                     body,
-                    _flag_check_block(ex.get("flag_check") or []),
+                    flag_check_block(ex.get("flag_check") or []),
                 ]),
                 className="mb-2",
             )
@@ -483,30 +494,6 @@ def _value_block(val: Any, quote: Any) -> Any:
         return html.Div([html.Div(", ".join(_scalar_str(x) for x in val) if val else "—", className="small"), _quote_line(quote)])
     # scalar
     return html.Div([html.Div(_scalar_str(val), className="small"), _quote_line(quote)])
-
-
-def _flag_check_block(flag_check: list) -> Any:
-    if not flag_check:
-        return None
-    from ailr.ui._common import criterion_names
-
-    names = criterion_names()
-    verdict_color = {"PASS": "success", "FAIL": "danger", "UNCERTAIN": "warning"}
-    rows = []
-    for it in flag_check:
-        verdict = (it.get("verdict") or "").upper()
-        conf = it.get("confidence")
-        cid = it.get("criterion_id") or ""
-        rows.append(html.Div([
-            html.Div([
-                dbc.Badge(verdict or "?", color=verdict_color.get(verdict, "secondary"), className="me-2"),
-                html.Span(names.get(cid, cid), className="fw-bold small me-2"),
-                html.Span(f"conf {conf}" if conf is not None else "", className="text-muted small"),
-            ]),
-            html.Div(it.get("reason") or "", className="small"),
-            _quote_line(it.get("quote")),
-        ], className="mb-2"))
-    return html.Div([html.Hr(className="my-2"), html.Div("Inclusion flag check", className="fw-bold small mb-1"), *rows])
 
 
 def _render_full() -> Any:

@@ -151,16 +151,18 @@ class CalibrationMixin:
         confidence: Optional[float],
         matched_criteria: Optional[list],
         evidence_quotes: Optional[list],
+        flag_check: Optional[list] = None,
     ) -> int:
         with self._lock, self._conn.transaction():
             cur = self._conn.execute(
                 """
                 INSERT INTO test_decisions
-                    (run_id, source_id, decision, reasoning, confidence, matched_criteria, evidence_quotes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (run_id, source_id, decision, reasoning, confidence, matched_criteria, evidence_quotes, flag_check)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (run_id, source_id, decision, reasoning, confidence,
-                 json.dumps(matched_criteria or []), json.dumps(evidence_quotes or [])),
+                 json.dumps(matched_criteria or []), json.dumps(evidence_quotes or []),
+                 json.dumps(flag_check) if flag_check else None),
             )
             self._conn.commit()
             return cur.lastrowid
@@ -197,6 +199,7 @@ class CalibrationMixin:
             d = dict(r)
             d["matched_criteria"] = json.loads(d["matched_criteria"]) if d["matched_criteria"] else []
             d["evidence_quotes"] = json.loads(d["evidence_quotes"]) if d["evidence_quotes"] else []
+            d["flag_check"] = json.loads(d["flag_check"]) if d.get("flag_check") else []
             d["authors"] = json.loads(d["authors"]) if d["authors"] else []
             out.append(d)
         return out

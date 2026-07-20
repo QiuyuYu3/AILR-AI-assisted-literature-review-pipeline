@@ -37,11 +37,11 @@ def is_running(key: str) -> bool:
         return bool(_jobs.get(key, {}).get("running"))
 
 
-def _make_client(project: Any, stage: str, mock: bool):
+def _make_client(project: Any, stage: str, mock: bool, synth: bool = False):
     if mock:
-        if stage == "extract":
-            # Mock extraction fabricates data shaped to the schema so the extraction UI
-            # populates every field (value/quote, groups, _flag_check) — no API call.
+        if stage == "extract" or synth:
+            # Fabricate data shaped to the tool schema so the UI populates every field
+            # (value/quote, groups, _flag_check per-criterion verdicts) — no API call.
             from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
 
             return MockLLMClient(
@@ -79,8 +79,8 @@ def _start(key: str, runner: Callable, *args: Any) -> bool:
     return True
 
 
-def start_screening(project: Any, mock: bool) -> bool:
-    return _start("screening", _run_screening, project, mock)
+def start_screening(project: Any, mock: bool, flag_check: Any = None) -> bool:
+    return _start("screening", _run_screening, project, mock, flag_check)
 
 
 def start_quick_test(project: Any, n: int, mock: bool, stage: str = "abstract", source_ids=None) -> bool:
@@ -144,13 +144,13 @@ def _screening_prompt_version(project: Any) -> str:
     return db.save_prompt_version(pid, "screening", content, None, composed=composed)
 
 
-def _run_screening(key: str, project: Any, mock: bool) -> None:
+def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None) -> None:
     try:
         # A real run supersedes earlier mock results: clear them first so they don't block re-screening.
         replaced = project.db.clear_mock_ai_decisions(project.project_id) if not mock else 0
         client = _make_client(project, "screen", mock)
         reviewer = LLMReviewer(client, prompt_version=_screening_prompt_version(project))
-        summary = ScreeningTask(project, reviewer).run(on_progress=_progress_cb(key), batch=mock)
+        summary = ScreeningTask(project, reviewer).run(on_progress=_progress_cb(key), batch=mock, flag_check=flag_check)
         text = (
             f"Screened {summary.screened}/{summary.total} — "
             f"include {summary.include}, exclude {summary.exclude}, uncertain {summary.uncertain}."
@@ -180,7 +180,7 @@ def _run_quick_test(key: str, project: Any, mock: bool, n: int, stage: str, sour
         else:
             from ailr.tasks.calibrate import QuickTestTask
 
-            client = _make_client(project, "screen", mock)
+            client = _make_client(project, "screen", mock, synth=True)
             summary = QuickTestTask(project, LLMReviewer(client)).run(n=n, source_ids=source_ids, on_progress=_progress_cb(key))
             text = (
                 f"Tested {summary.sample_size} (of {summary.candidates_available} available) — "

@@ -32,7 +32,7 @@ _PROVIDERS = [
     {"label": "Gemini", "value": "gemini"},
 ]
 
-_COMMON_MODELS = "Common: claude-opus-4-8 · claude-sonnet-4-6 · claude-haiku-4-5-20251001"
+_COMMON_MODELS = "Common: claude-opus-4-8 · claude-sonnet-4-6 · claude-haiku-4-5"
 
 _API_KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 

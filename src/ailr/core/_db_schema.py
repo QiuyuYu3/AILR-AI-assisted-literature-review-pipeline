@@ -254,6 +254,7 @@ CREATE TABLE IF NOT EXISTS test_decisions (
     confidence REAL,
     matched_criteria TEXT,
     evidence_quotes TEXT,
+    flag_check TEXT,
     FOREIGN KEY (run_id) REFERENCES test_runs(id),
     FOREIGN KEY (source_id) REFERENCES sources(id)
 );
@@ -531,6 +532,7 @@ Table(
     Column("confidence", Float),
     Column("matched_criteria", Text),
     Column("evidence_quotes", Text),
+    Column("flag_check", Text),
     Index("idx_test_decisions_run", "run_id"),
 )
 

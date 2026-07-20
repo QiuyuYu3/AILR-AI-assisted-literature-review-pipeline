@@ -18,7 +18,7 @@ _CFG = ConflictConfig(
     no_conflicts_msg="No unresolved conflicts. ✓",
     votes_label="Reviewer votes",
     blank_reasonings=("(inline screening)",),
-    show_flag_check=False,
+    show_flag_check=True,
     show_abstract_extras=True,
 )
 

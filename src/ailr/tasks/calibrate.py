@@ -78,7 +78,7 @@ class QuickTestTask:
 
         for idx, source in enumerate(sample, 1):
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids)
+                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids, flag_check=True)
                 self.project.db.insert_test_decision(
                     run_id=run_id,
                     source_id=source.id,
@@ -87,6 +87,7 @@ class QuickTestTask:
                     confidence=decision.confidence,
                     matched_criteria=decision.matched_criteria,
                     evidence_quotes=decision.evidence_quotes,
+                    flag_check=decision.flag_check,
                 )
                 summary.ai_counts[decision.decision] += 1
                 if isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
@@ -359,7 +360,10 @@ class CalibrationTask:
                 continue
 
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids)
+                decision = self.reviewer.screen(
+                    source, criteria_text, prompt_template, additional_text,
+                    criterion_ids=criterion_ids, flag_check=self.project.config.screening.flag_check,
+                )
                 decision.source_id = source.id
                 self.project.db.insert_screening_decision(decision)
                 summary.ai_counts[decision.decision] += 1

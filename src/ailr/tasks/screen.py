@@ -50,8 +50,11 @@ class ScreeningTask:
         on_progress: Optional[ProgressCallback] = None,
         batch: bool = False,
         workers: Optional[int] = None,
+        flag_check: Optional[bool] = None,
     ) -> ScreenRunSummary:
         config = self.project.config
+        if flag_check is None:
+            flag_check = config.screening.flag_check
         prompt_template, criteria_text, criterion_ids, additional_text = load_screening_inputs(
             self.project.root, config.screening
         )
@@ -104,7 +107,8 @@ class ScreeningTask:
         # summary updates, and progress callbacks stay on this thread.
         def _screen_one(source):
             decision = self.reviewer.screen(
-                source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids
+                source, criteria_text, prompt_template, additional_text,
+                criterion_ids=criterion_ids, flag_check=flag_check,
             )
             decision.source_id = source.id
             meta = self.reviewer.last_metadata if isinstance(self.reviewer, LLMReviewer) else None

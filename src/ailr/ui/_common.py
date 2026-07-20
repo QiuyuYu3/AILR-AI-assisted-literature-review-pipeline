@@ -240,6 +240,35 @@ def criterion_names() -> dict:
         return {}
 
 
+_FLAG_VERDICT_COLORS = {"PASS": "success", "FAIL": "danger", "UNCERTAIN": "warning"}
+
+
+def flag_check_block(flag_check, *, header: bool = True):
+    """Per-criterion PASS/FAIL/UNCERTAIN verdicts (badge + criterion name + confidence + reason + quote).
+    Shared by the screening/extraction quick tests and the conflict review cards."""
+    if not flag_check:
+        return None
+    names = criterion_names()
+    rows = []
+    for it in flag_check:
+        verdict = (it.get("verdict") or "").upper()
+        conf = it.get("confidence")
+        cid = it.get("criterion_id") or ""
+        quote = it.get("quote")
+        rows.append(html.Div([
+            html.Div([
+                dbc.Badge(verdict or "?", color=_FLAG_VERDICT_COLORS.get(verdict, "secondary"), className="me-2"),
+                html.Span(names.get(cid, cid), className="fw-bold small me-2"),
+                html.Span(f"conf {conf}" if conf is not None else "", className="text-muted small"),
+            ]),
+            html.Div(it.get("reason") or "", className="small"),
+            html.Div(f"“{quote}”", className="text-muted small fst-italic") if quote else None,
+        ], className="mb-2"))
+    if header:
+        return html.Div([html.Hr(className="my-2"), html.Div("Inclusion flag check", className="fw-bold small mb-1"), *rows], className="mt-1")
+    return html.Div(rows, className="mt-1")
+
+
 def read_criteria(fallback: str = "(criteria file not found)") -> str:
     """The criteria text injected as {{criteria}} — rendered from the structured criteria.yaml,
     falling back to the legacy free-text file for older projects."""

@@ -34,6 +34,7 @@ class ScreeningDecision:
     stage: Literal["abstract", "full_text"] = "abstract"
     evidence_quotes: list[str] = field(default_factory=list)
     matched_criteria: list[str] = field(default_factory=list)
+    flag_check: Optional[list[dict[str, Any]]] = None
     confidence: Optional[float] = None
     llm_params: Optional[dict[str, Any]] = None
     prompt_version: Optional[str] = None
@@ -78,7 +79,7 @@ class Reviewer(ABC):
     @property
     @abstractmethod
     def reviewer_id(self) -> str:
-        """Stable identifier (e.g., 'anthropic:claude-haiku-4-5-20251001' or 'alice@team')."""
+        """Stable identifier (e.g., 'anthropic:claude-haiku-4-5' or 'alice@team')."""
 
     @abstractmethod
     def screen(
@@ -88,6 +89,7 @@ class Reviewer(ABC):
         prompt_template: str,
         additional_text: str = "",
         criterion_ids: Optional[list[str]] = None,
+        flag_check: bool = False,
     ) -> ScreeningDecision:
         """Make a screening decision for one source. Caller fills source_id afterward."""
 
@@ -181,14 +183,19 @@ class LLMReviewer(Reviewer):
         prompt_template: str,
         additional_text: str = "",
         criterion_ids: Optional[list[str]] = None,
+        flag_check: bool = False,
     ) -> ScreeningDecision:
         system_prompt = compose_screening_prompt(prompt_template, criteria=criteria_text, additional=additional_text)
         user_message = _format_source_message(source)
 
+        tool_schema = _build_screening_tool(criterion_ids)
+        if flag_check:
+            tool_schema = _add_flag_check_to_schema(tool_schema, criterion_ids)
+
         output, metadata = self._client.complete_structured(
             system=system_prompt,
             user_message=user_message,
-            tool_schema=_build_screening_tool(criterion_ids),
+            tool_schema=tool_schema,
             max_tokens=self._max_tokens,
             cache_system=True,
         )
@@ -205,6 +212,7 @@ class LLMReviewer(Reviewer):
             reviewer_id=self.reviewer_id,
             evidence_quotes=output.get("evidence_quotes", []) or [],
             matched_criteria=output.get("matched_criteria", []) or [],
+            flag_check=_normalize_flag_check(output.get("_flag_check")) if flag_check else None,
             confidence=output.get("confidence"),
             llm_params={
                 "provider": metadata.provider,

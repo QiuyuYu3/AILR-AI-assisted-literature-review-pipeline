@@ -411,6 +411,37 @@ class ScreeningMixin:
             out[sid] = d
         return out
 
+    def get_screening_flag_checks(self, source_ids: list[int], stage: str = "abstract") -> dict[int, list[dict]]:
+        """Latest AI screening decision's per-criterion flag_check (parsed from raw_output), per source."""
+        if not source_ids:
+            return {}
+        placeholders = ",".join("?" for _ in source_ids)
+        sql = f"""
+            SELECT source_id, raw_output FROM screening_decisions
+            WHERE id IN (
+                SELECT MAX(id) FROM screening_decisions
+                WHERE reviewer_type = 'ai' AND stage = ? AND source_id IN ({placeholders})
+                GROUP BY source_id
+            )
+        """
+        out: dict[int, list[dict]] = {}
+        for r in self._conn.execute(sql, [stage, *source_ids]).fetchall():
+            if not r["raw_output"]:
+                continue
+            try:
+                raw = json.loads(r["raw_output"]).get("_flag_check")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(raw, dict):
+                fc = [{"criterion_id": cid, **v} for cid, v in raw.items() if isinstance(v, dict)]
+            elif isinstance(raw, list):
+                fc = raw
+            else:
+                fc = []
+            if fc:
+                out[r["source_id"]] = fc
+        return out
+
     def get_human_decisions_for_sources(self, source_ids: list[int], stage: str = "abstract") -> dict[int, list[dict]]:
         """All human decisions grouped by source (batch), matching get_human_decisions' row shape."""
         if not source_ids:

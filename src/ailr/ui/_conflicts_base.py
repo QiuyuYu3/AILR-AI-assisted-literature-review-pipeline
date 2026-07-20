@@ -14,15 +14,13 @@ from dash import ALL, Input, Output, State, html, no_update
 
 from ailr.core.source import Source
 from ailr.ui._actions import _apply_resolve, _apply_undo_resolve
-from ailr.ui._common import _short_author_year, get_project, triggered_click_id
+from ailr.ui._common import _short_author_year, flag_check_block, get_project, triggered_click_id
 
 _DECISION_COLORS = {
     "include": "success",
     "exclude": "danger",
     "uncertain": "warning",
 }
-
-_FLAG_COLORS = {"PASS": "success", "FAIL": "danger", "UNCERTAIN": "warning"}
 
 
 @dataclass(frozen=True)
@@ -58,22 +56,7 @@ def ai_detail_block(ai: dict, flag_check: Any = None) -> Any:
     if reasoning and reasoning != "(derived from extraction flag_check)":
         rows.append(html.Div(reasoning, className="small text-muted"))
     if flag_check:
-        rows.append(
-            html.Div(
-                [
-                    html.Div(
-                        [
-                            dbc.Badge((f.get("verdict") or "").upper(), color=_FLAG_COLORS.get((f.get("verdict") or "").upper(), "secondary"), className="me-2"),
-                            html.Strong(str(f.get("criterion_id", "?")), className="small me-2"),
-                            html.Span(f.get("reason") or "", className="text-muted small"),
-                        ],
-                        className="mb-1",
-                    )
-                    for f in flag_check
-                ],
-                className="mt-1",
-            )
-        )
+        rows.append(flag_check_block(flag_check, header=False))
     if ai.get("matched_criteria"):
         rows.append(html.Div("Criteria: " + ", ".join(str(c) for c in ai["matched_criteria"]), className="small text-muted"))
     if ai.get("evidence_quotes"):
@@ -98,7 +81,12 @@ def initial_payload(cfg: ConflictConfig) -> tuple[Any, str, Any]:
         sids = [s.id for s in conflicts if s.id is not None]
         human = db.get_human_decisions_for_sources(sids, stage=cfg.stage)
         ai_rows = db.get_latest_ai_decision_rows(sids, stage=cfg.stage)
-        flags = db.get_flag_checks(sids) if cfg.show_flag_check else {}
+        if not cfg.show_flag_check:
+            flags = {}
+        elif cfg.stage == "abstract":
+            flags = db.get_screening_flag_checks(sids, stage=cfg.stage)  # abstract: parsed from screening raw_output
+        else:
+            flags = db.get_flag_checks(sids)  # full-text: from extraction _flag_check field
         cards = [
             _conflict_card(cfg, s, human.get(s.id, []), ai_rows.get(s.id), flags.get(s.id))
             for s in conflicts
