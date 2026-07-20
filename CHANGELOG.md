@@ -1,6 +1,12 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Added
+- Protocol page: "Import JSON file" button on both Criteria and Variables to load `criteria.json` / `extraction_variables.json` directly (validates and fills the editor, same as pasting).
+
+---
 ## [0.25.0] – 2026-07-16
 
 ### Added

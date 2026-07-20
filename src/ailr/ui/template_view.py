@@ -1,5 +1,6 @@
 """Extraction template editor (GUI for schema.yaml): toggle modules, add custom fields, live preview, save."""
 
+import base64
 import json
 from typing import Any
 
@@ -151,6 +152,14 @@ _SCALAR_TYPES = {"string", "integer", "number", "boolean"}
 
 def _mono(height: int, size: float = 0.88) -> dict:
     return {"height": f"{height}px", "fontFamily": "monospace", "fontSize": f"{size}rem"}
+
+
+def _decode_upload(contents: str) -> str:
+    try:
+        _, b64 = contents.split(",", 1)
+        return base64.b64decode(b64).decode("utf-8")
+    except Exception:
+        return ""
 
 
 _PREVIEW_BOX = {"border": "1px solid #eee", "borderRadius": "6px", "padding": "12px"}
@@ -435,7 +444,16 @@ def variables_layout() -> Any:
                                                 className="d-flex align-items-center",
                                             ),
                                             dbc.Textarea(id="tmpl-schema-msg", value=_AGENT_SCHEMA_MSG, style=_mono(150), className="mb-2"),
-                                            dbc.Label("Paste the JSON your AI returned", className="small fw-bold mb-0"),
+                                            html.Div(
+                                                [
+                                                    dbc.Label("Paste the JSON your AI returned", className="small fw-bold mb-0 me-2"),
+                                                    dcc.Upload(
+                                                        dbc.Button("Import JSON file", color="link", size="sm", className="p-0"),
+                                                        id="tmpl-import-upload", accept=".json", multiple=False,
+                                                    ),
+                                                ],
+                                                className="d-flex align-items-center",
+                                            ),
                                             dbc.Textarea(id="tmpl-import-json", placeholder='{ "fields": [ ... ] }', style=_mono(120), className="mb-2"),
                                             html.Div(
                                                 [
@@ -781,6 +799,24 @@ def register_callbacks(app: Any) -> None:
         if report.has_errors or not fields:
             return children, None, True
         return children, fields, False
+
+    @app.callback(
+        Output("tmpl-import-report", "children", allow_duplicate=True),
+        Output("tmpl-import-parsed", "data", allow_duplicate=True),
+        Output("tmpl-import-load", "disabled", allow_duplicate=True),
+        Output("tmpl-import-json", "value"),
+        Input("tmpl-import-upload", "contents"),
+        prevent_initial_call=True,
+    )
+    def _upload_schema(contents):
+        if not contents:
+            return (no_update,) * 4
+        raw = _decode_upload(contents)
+        fields, report = parse_schema_import(raw or "")
+        children = _render_validation_report(report)
+        if report.has_errors or not fields:
+            return children, None, True, raw
+        return children, fields, False, raw
 
     @app.callback(
         Output("tmpl-store", "data", allow_duplicate=True),

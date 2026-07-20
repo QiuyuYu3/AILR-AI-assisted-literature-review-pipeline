@@ -1,5 +1,6 @@
 """Structured inclusion/exclusion criteria editor (GUI for criteria.yaml)."""
 
+import base64
 import json
 from typing import Any
 
@@ -44,6 +45,14 @@ _PREVIEW_EXPANDED = {**_PREVIEW_BASE, "overflow": "visible"}
 
 def _mono(h: int) -> dict:
     return {"height": f"{h}px", "fontFamily": "monospace", "fontSize": "0.75rem"}
+
+
+def _decode_upload(contents: str) -> str:
+    try:
+        _, b64 = contents.split(",", 1)
+        return base64.b64decode(b64).decode("utf-8")
+    except Exception:
+        return ""
 
 
 def _initial_rows() -> list[dict]:
@@ -181,7 +190,16 @@ def _editor_column(rows: list[dict]) -> list:
                             className="d-flex align-items-center",
                         ),
                         dbc.Textarea(id="crit-json-msg", value=_AGENT_CRITERIA_MSG, style=_mono(140), className="mb-2"),
-                        dbc.Label("Paste the JSON your AI returned", className="small fw-bold mb-0"),
+                        html.Div(
+                            [
+                                dbc.Label("Paste the JSON your AI returned", className="small fw-bold mb-0 me-2"),
+                                dcc.Upload(
+                                    dbc.Button("Import JSON file", color="link", size="sm", className="p-0"),
+                                    id="crit-json-upload", accept=".json", multiple=False,
+                                ),
+                            ],
+                            className="d-flex align-items-center",
+                        ),
                         dbc.Textarea(id="crit-json-input", placeholder='{ "criteria": [ ... ] }', style=_mono(110), className="mb-1"),
                         html.Div(
                             [
@@ -364,6 +382,23 @@ def register_callbacks(app: Any) -> None:
         if report.has_errors or not rows:
             return _report_view(report), None, True
         return _report_view(report), rows, False
+
+    @app.callback(
+        Output("crit-json-report", "children", allow_duplicate=True),
+        Output("crit-json-parsed", "data", allow_duplicate=True),
+        Output("crit-json-load", "disabled", allow_duplicate=True),
+        Output("crit-json-input", "value"),
+        Input("crit-json-upload", "contents"),
+        prevent_initial_call=True,
+    )
+    def _upload_json(contents):
+        if not contents:
+            return (no_update,) * 4
+        raw = _decode_upload(contents)
+        rows, report = parse_criteria_import(raw or "")
+        if report.has_errors or not rows:
+            return _report_view(report), None, True, raw
+        return _report_view(report), rows, False, raw
 
     @app.callback(
         Output("crit-feedback", "children"),
