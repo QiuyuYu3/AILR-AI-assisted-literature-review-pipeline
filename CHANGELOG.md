@@ -1,7 +1,7 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.26.0] – 2026-07-20
 
 ### Added
 - Protocol page: "Import JSON file" button on both Criteria and Variables to load `criteria.json` / `extraction_variables.json` directly (validates and fills the editor, same as pasting).
@@ -11,6 +11,8 @@
 
 ### Changed
 - Per-criterion flag-check rendering unified into one shared `flag_check_block` helper used by both quick tests and both conflict views; the conflict cards now also show each criterion's confidence and supporting quote.
+- Abstract screening messages now include the journal/venue and DOI (alongside title/year/authors) so the AI can better judge publication type (journal vs thesis vs conference).
+- Calibration quick-test cards (both screening and extraction) show a clickable DOI.
 
 ---
 ## [0.25.0] – 2026-07-16

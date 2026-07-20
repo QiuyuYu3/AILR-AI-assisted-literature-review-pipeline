@@ -413,6 +413,11 @@ def _format_source_message(source: Source) -> str:
     parts: list[str] = [f"Title: {source.title}"]
     if source.year:
         parts.append(f"Year: {source.year}")
+    # Venue + DOI help the model judge the publication type (journal article vs thesis vs conference paper).
+    if source.journal:
+        parts.append(f"Journal / Venue: {source.journal}")
+    if source.doi:
+        parts.append(f"DOI: {source.doi}")
     if source.authors:
         shown = "; ".join(source.authors[:5])
         if len(source.authors) > 5:

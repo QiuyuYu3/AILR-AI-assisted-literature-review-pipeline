@@ -186,7 +186,7 @@ class CalibrationMixin:
     def list_test_decisions(self, run_id: int) -> list[dict]:
         rows = self._conn.execute(
             """
-            SELECT td.*, s.title, s.authors, s.year
+            SELECT td.*, s.title, s.authors, s.year, s.doi
             FROM test_decisions td
             JOIN sources s ON s.id = td.source_id
             WHERE td.run_id = ?

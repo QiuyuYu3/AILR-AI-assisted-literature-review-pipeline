@@ -350,6 +350,12 @@ def _author_year(d: dict) -> str:
     return f"{ay} {d['year']}".strip() if d.get("year") else ay
 
 
+def _doi_line(doi: Any) -> Any:
+    if not doi:
+        return None
+    return html.Div(html.A(f"DOI: {doi}", href=f"https://doi.org/{doi}", target="_blank", className="small"), className="mb-2")
+
+
 def _render_quick_screening(run_value: Any) -> Any:
     project = get_project()
     runs = project.db.list_test_runs(project.project_id, "abstract")
@@ -388,7 +394,8 @@ def _render_quick_screening(run_value: Any) -> Any:
                             dbc.Badge((dec or "").upper(), color=_DECISION_COLOR.get(dec, "secondary")),
                             html.Span(f"conf {conf}" if conf else "", className="text-muted small ms-2"),
                         ], className="mb-1"),
-                        html.Div(d.get("title") or "", className="small text-muted mb-2"),
+                        html.Div(d.get("title") or "", className="small text-muted mb-1"),
+                        _doi_line(d.get("doi")),
                         html.Div(d.get("reasoning") or "", className="small mb-1"),
                         flag_check_block(d.get("flag_check") or []),
                     ]),
@@ -434,7 +441,8 @@ def _render_quick_extraction(run_value: Any) -> Any:
                         dbc.Badge(("full-text: " + dec.upper()) if dec else "no decision",
                                   color=_DECISION_COLOR.get(dec, "secondary")),
                     ], className="mb-1"),
-                    html.Div(ex.get("title") or "", className="small text-muted mb-2"),
+                    html.Div(ex.get("title") or "", className="small text-muted mb-1"),
+                    _doi_line(ex.get("doi")),
                     body,
                     flag_check_block(ex.get("flag_check") or []),
                 ]),

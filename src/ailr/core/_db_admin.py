@@ -96,7 +96,7 @@ class AdminMixin:
     def list_test_extractions(self, run_id: int) -> list[dict]:
         rows = self._conn.execute(
             """
-            SELECT te.*, s.title, s.authors, s.year
+            SELECT te.*, s.title, s.authors, s.year, s.doi
             FROM test_extractions te
             JOIN sources s ON s.id = te.source_id
             WHERE te.run_id = ?
