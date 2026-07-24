@@ -37,6 +37,7 @@ class ConflictConfig:
     blank_reasonings: tuple[str, ...]
     show_flag_check: bool       # full-text: show AI flag_check verdicts
     show_abstract_extras: bool  # abstract: DOI link, abstract collapse, history button
+    show_read_fulltext: bool = False  # full-text: "Read full text" button (opens the global reader modal)
 
 
 def ai_detail_block(ai: dict, flag_check: Any = None) -> Any:
@@ -259,6 +260,19 @@ def _conflict_card(cfg: ConflictConfig, src: Source, decisions: list[dict], ai: 
     body: list[Any] = [header, html.H6(src.title, className="mb-1"), meta_line]
     if cfg.show_abstract_extras:
         body.extend(_abstract_extras(cfg, src, sid))
+    if cfg.show_read_fulltext:
+        body.append(
+            html.Div(
+                dbc.Button(
+                    "Read full text",
+                    id={"type": "ft-read-btn", "source": sid},
+                    size="sm",
+                    color="link",
+                    className="p-0",
+                ),
+                className="mt-1",
+            )
+        )
     body.extend(
         [
             html.Hr(),

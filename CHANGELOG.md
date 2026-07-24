@@ -1,6 +1,12 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Added
+- Full-text conflicts page: "Read full text" button on each card opens the PDF/markdown in the shared reader modal, matching the full-text review tab.
+
+---
 ## [0.26.0] – 2026-07-20
 
 ### Added

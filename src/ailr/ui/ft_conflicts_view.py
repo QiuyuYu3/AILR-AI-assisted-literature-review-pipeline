@@ -18,6 +18,7 @@ _CFG = ConflictConfig(
     blank_reasonings=("(full-text review)", "(inline screening)"),
     show_flag_check=True,
     show_abstract_extras=False,
+    show_read_fulltext=True,
 )
 
 
