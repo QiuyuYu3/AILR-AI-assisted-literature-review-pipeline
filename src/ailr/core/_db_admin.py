@@ -50,12 +50,16 @@ class AdminMixin:
             raise DatabaseError(f"Failed to delete project data: {e}") from e
         return counts
 
-    def raw_table(self, table: str, limit: int = 500) -> tuple[list[str], list[dict]]:
+    def raw_table(self, table: str, limit: Optional[int] = 500) -> tuple[list[str], list[dict]]:
         """Return (column_names, rows) for a whitelisted table. Read-only DB inspection.
-        Values are coerced to JSON-safe types so the UI grid never chokes on bytes/odd values."""
+        limit=None returns the whole table. Values are coerced to JSON-safe types so the UI grid
+        never chokes on bytes/odd values."""
         if table not in self.BROWSABLE_TABLES:
             raise DatabaseError(f"Table not browsable: {table}")
-        cur = self._conn.execute(f"SELECT * FROM {table} LIMIT ?", (limit,))
+        if limit is None:
+            cur = self._conn.execute(f"SELECT * FROM {table}")
+        else:
+            cur = self._conn.execute(f"SELECT * FROM {table} LIMIT ?", (limit,))
         cols = [d[0] for d in cur.description]
 
         def _safe(v: Any) -> Any:

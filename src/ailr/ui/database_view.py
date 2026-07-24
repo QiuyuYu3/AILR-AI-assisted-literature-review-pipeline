@@ -32,7 +32,7 @@ def layout() -> Any:
     return html.Div(
         [
             html.H4("Database"),
-            html.P("Read-only view of the raw tables — including the isolated test_* tables and AI extraction values. Showing up to 500 rows per table.", className="text-muted small"),
+            html.P("Read-only view of the raw tables — including the isolated test_* tables and AI extraction values. Paginated below; sort/filter/page act on the whole loaded table.", className="text-muted small"),
             dbc.Row(
                 [
                     dbc.Col(
@@ -49,8 +49,14 @@ def layout() -> Any:
                 columnDefs=[],
                 rowData=[],
                 defaultColDef={"resizable": True, "sortable": True, "filter": True, "minWidth": 110},
-                dashGridOptions={"animateRows": True, "enableCellTextSelection": True, "domLayout": "autoHeight"},
-                style={"height": None},
+                dashGridOptions={
+                    "animateRows": True,
+                    "enableCellTextSelection": True,
+                    "pagination": True,
+                    "paginationPageSize": 100,
+                    "paginationPageSizeSelector": [25, 50, 100, 200],
+                },
+                style={"height": "70vh"},
             ),
         ]
     )
@@ -68,11 +74,10 @@ def register_callbacks(app: Any) -> None:
             return no_update, no_update, no_update
         db = get_project().db
         try:
-            cols, rows = db.raw_table(table)
+            cols, rows = db.raw_table(table, limit=None)
             total = db.table_count(table)
         except Exception as e:
             return [], [], f"Error: {e}"
         col_defs = [{"field": c, "headerName": c, "tooltipField": c} for c in cols]
-        shown = len(rows)
-        note = f"{total} row(s)" + (f" — showing first {shown}" if total > shown else "")
+        note = f"{total} row(s)"
         return col_defs, rows, note

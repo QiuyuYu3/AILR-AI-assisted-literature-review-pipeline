@@ -6,6 +6,9 @@
 ### Added
 - Full-text conflicts page: "Read full text" button on each card opens the PDF/markdown in the shared reader modal, matching the full-text review tab.
 
+### Changed
+- Database tab paginates (25/50/100/200 per page) and loads the whole table so sort/filter/paging span all rows, not just the first 500.
+
 ---
 ## [0.26.0] – 2026-07-20
 
