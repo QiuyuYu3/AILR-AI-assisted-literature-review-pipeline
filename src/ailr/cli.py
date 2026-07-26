@@ -11,7 +11,16 @@ from ailr.core.config import resolve_stage_llm, save_stage_workflow
 from ailr.core.project import Project
 from ailr.exceptions import AILRError
 from ailr.llm.factory import make_llm_client
-from ailr.metrics import cohen_kappa, confusion_matrix, percent_agreement
+from ailr.metrics import (
+    BINARY_CATEGORIES,
+    binarize,
+    cohen_kappa,
+    confusion_matrix,
+    decisions_for_pair,
+    pabak,
+    percent_agreement,
+    rater_overlaps,
+)
 from ailr.reviewers import LLMReviewer
 from ailr.tasks.calibrate import CalibrationTask
 from ailr.tasks.extract import ExtractionTask
@@ -43,10 +52,11 @@ def init(
     name: Annotated[str, typer.Argument(help="Name of the new review project (also directory name).")],
     mode: Annotated[str, typer.Option("--mode", "-m", help="Built-in mode preset: strict | assisted | custom.")] = "assisted",
     preset: Annotated[Optional[Path], typer.Option("--preset", help="Path to a custom mode preset YAML to layer on top of defaults.")] = None,
+    review_type: Annotated[str, typer.Option("--type", help="Review type: scoping | systematic.")] = "scoping",
 ) -> None:
     """Scaffold a new review project directory."""
     try:
-        project = Project.init(Path(name), mode=mode, preset=preset)
+        project = Project.init(Path(name), mode=mode, preset=preset, project_type=review_type)
         typer.echo(f"Initialized project at {project.root}")
         typer.echo("")
         typer.echo("Next steps:")
@@ -460,30 +470,36 @@ def metrics(
         ai_counts = proj.db.screening_summary(proj.project_id, "ai")
         human_counts = proj.db.screening_summary(proj.project_id, "human")
 
-        pairs_raw = proj.db.paired_screening_decisions(proj.project_id)
-        pairs = [(p["ai_decision"], p["human_decision"]) for p in pairs_raw]
-
-        categories = ["include", "exclude", "uncertain"]
-        kappa = cohen_kappa(pairs, categories=categories)
-        agreement = percent_agreement(pairs)
-        cats, matrix = confusion_matrix(pairs, categories=categories)
+        # One entry per reviewer pair per stage. `uncertain` is folded into include (an uncertain
+        # record carries forward) and votes are read before adjudication.
+        categories = BINARY_CATEGORIES
+        agreement_by_stage: dict[str, list[dict]] = {}
+        for stage in ("abstract", "full_text"):
+            rows = proj.db.latest_decisions_by_rater(proj.project_id, stage)
+            entries = []
+            for rater_a, rater_b, _ in rater_overlaps(rows):
+                pairs = binarize(decisions_for_pair(rows, rater_a, rater_b))
+                cats, matrix = confusion_matrix(pairs, categories=categories)
+                k = cohen_kappa(pairs, categories=categories)
+                pb = pabak(pairs, categories=categories)
+                ag = percent_agreement(pairs)
+                entries.append({
+                    "rater_a": rater_a,
+                    "rater_b": rater_b,
+                    "paired_count": len(pairs),
+                    "cohen_kappa": None if k != k else k,
+                    "pabak": None if pb != pb else pb,
+                    "percent_agreement": None if ag != ag else ag,
+                    "confusion_matrix": {"rows_a": cats, "cols_b": cats, "matrix": matrix},
+                })
+            agreement_by_stage[stage] = entries
 
         api_summary = proj.db.api_call_summary(proj.project_id)
 
         if as_json:
             payload = {
-                "screening": {
-                    "ai": ai_counts,
-                    "human": human_counts,
-                    "paired_count": len(pairs),
-                    "cohen_kappa": None if kappa != kappa else kappa,
-                    "percent_agreement": None if agreement != agreement else agreement,
-                    "confusion_matrix": {
-                        "rows_ai": cats,
-                        "cols_human": cats,
-                        "matrix": matrix,
-                    },
-                },
+                "screening": {"ai": ai_counts, "human": human_counts},
+                "agreement": agreement_by_stage,
                 "api_calls": api_summary,
             }
             typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -494,19 +510,28 @@ def metrics(
         typer.echo(f"  Human: include={human_counts['include']:>4}  exclude={human_counts['exclude']:>4}  uncertain={human_counts['uncertain']:>4}")
         typer.echo("")
 
-        if pairs:
-            typer.echo(f"Agreement (n={len(pairs)} paired):")
-            typer.echo(f"  Cohen's kappa:     {kappa:.3f}" if kappa == kappa else "  Cohen's kappa:     undefined")
-            typer.echo(f"  Percent agreement: {agreement:.1%}" if agreement == agreement else "  Percent agreement: undefined")
-            typer.echo("")
-            typer.echo("  Confusion matrix (rows=AI, cols=human):")
-            header = "             " + " ".join(f"{c[:8]:>9}" for c in cats)
-            typer.echo(header)
-            for i, c in enumerate(cats):
-                row_str = "  " + f"{c[:8]:<9}" + " ".join(f"{matrix[i][j]:>9}" for j in range(len(cats)))
-                typer.echo(row_str)
+        if any(agreement_by_stage.values()):
+            typer.echo("Agreement (uncertain counted as include; votes as first cast):")
+            for stage, entries in agreement_by_stage.items():
+                if not entries:
+                    continue
+                typer.echo(f"  {stage}:")
+                for e in entries:
+                    k, pb, ag = e["cohen_kappa"], e["pabak"], e["percent_agreement"]
+                    parts = [f"kappa={k:.3f}" if k is not None else "kappa=undefined"]
+                    if pb is not None:
+                        parts.append(f"PABAK={pb:.3f}")
+                    if ag is not None:
+                        parts.append(f"agreement={ag:.1%}")
+                    typer.echo(f"    {e['rater_a']} vs {e['rater_b']} (n={e['paired_count']}): " + "  ".join(parts))
+                top = entries[0]
+                cm = top["confusion_matrix"]
+                typer.echo(f"    Confusion matrix (rows={top['rater_a']}, cols={top['rater_b']}):")
+                typer.echo("             " + " ".join(f"{c[:8]:>9}" for c in cm["rows_a"]))
+                for i, c in enumerate(cm["rows_a"]):
+                    typer.echo("  " + f"{c[:8]:<9}" + " ".join(f"{cm['matrix'][i][j]:>9}" for j in range(len(cm["cols_b"]))))
         else:
-            typer.echo("Agreement: (no paired decisions yet)")
+            typer.echo("Agreement: (no records judged by two reviewers yet)")
         typer.echo("")
 
         if api_summary:

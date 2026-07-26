@@ -14,7 +14,7 @@ from ailr.llm.base import LLMClient
 def make_llm_client(
     provider: str,
     *,
-    model: str,
+    model: Optional[str],
     temperature: float = 0.0,
     seed: Optional[int] = 42,
     max_retries: int = 3,
@@ -22,7 +22,13 @@ def make_llm_client(
 ) -> LLMClient:
     if provider == "mock":
         from ailr.llm.mock import MockLLMClient
-        return MockLLMClient(model=model)
+        return MockLLMClient(model=model or "mock")
+
+    if not model or not str(model).strip():
+        raise ConfigError(
+            "No model set for this stage. Open Settings -> Models and enter the model name to use "
+            f"with {provider} (ailr ships no default, since model names change)."
+        )
 
     if provider == "anthropic":
         from ailr.llm.providers.anthropic import AnthropicClient

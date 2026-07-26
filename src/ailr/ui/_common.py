@@ -187,6 +187,7 @@ def create_project(
     name: str,
     mode: str = "assisted",
     database_url: Optional[str] = None,
+    project_type: str = "scoping",
 ) -> Project:
     """Scaffold a new project under parent/name and switch the app to it.
 
@@ -195,7 +196,7 @@ def create_project(
     """
     global _project
     root = Path(parent).resolve() / name
-    Project.init(root, mode=mode)
+    Project.init(root, mode=mode, project_type=project_type)
     if database_url and database_url.strip():
         import yaml
 

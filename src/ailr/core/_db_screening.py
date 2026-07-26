@@ -929,6 +929,31 @@ class ScreeningMixin:
         ).fetchone()
         return row is not None
 
+    def latest_decisions_by_rater(self, project_id: int, stage: str = "abstract") -> list[dict]:
+        """Latest decision per (source, rater) at this stage, one row per rater. Raters are the AI
+        (one per provider:model that ran) and each human reviewer_id.
+
+        Reconciliations are deliberately NOT applied: reliability describes agreement between
+        reviewers before adjudication, unlike the PRISMA counts where a reconciliation overrides
+        the votes. Pairing is left to ailr.metrics so any two raters can be compared."""
+        sql = """
+            SELECT sd.source_id, sd.reviewer_type, sd.reviewer_id, sd.decision, sd.confidence
+            FROM screening_decisions sd
+            JOIN (SELECT source_id, reviewer_type, reviewer_id, MAX(id) AS mid
+                  FROM screening_decisions
+                  WHERE stage = ?
+                  GROUP BY source_id, reviewer_type, reviewer_id) m
+              ON m.mid = sd.id
+            JOIN sources s ON s.id = sd.source_id
+            WHERE s.project_id = ?
+            ORDER BY sd.source_id, sd.reviewer_type, sd.reviewer_id
+        """
+        rows = [dict(r) for r in self._conn.execute(sql, (stage, project_id)).fetchall()]
+        for r in rows:
+            rid = r["reviewer_id"] or "(unnamed)"
+            r["rater"] = f"AI: {rid}" if r["reviewer_type"] == "ai" else rid
+        return rows
+
     def paired_screening_decisions(self, project_id: int, stage: str = "abstract") -> list[dict]:
         """Per-source AI+human paired decisions (only where both exist): exactly ONE pair per
         source — the latest AI verdict vs the latest human verdict at this stage. Same pairing

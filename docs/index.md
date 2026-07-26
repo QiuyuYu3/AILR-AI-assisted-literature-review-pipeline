@@ -4,7 +4,7 @@ title: ailr handbook
 
 # ailr handbook
 
-**ailr** is a desktop app for running systematic / scoping / methodological literature reviews with an AI as a **second reviewer**. It is **domain-agnostic**: your criteria, prompts, and extraction fields live in each project, and the tool provides the pipeline (import → screen → full text → extract → export) together with a PRISMA-auditable trail.
+**ailr** is a desktop app for running systematic and scoping literature reviews with an AI as a **second reviewer**. It is **domain-agnostic**: your criteria, prompts, and extraction fields live in each project, and the tool provides the pipeline (import → screen → full text → extract → export) together with a PRISMA-auditable trail.
 
 Everything is doable from the **web UI**. The command line is an optional power-user bypass, not a requirement.
 

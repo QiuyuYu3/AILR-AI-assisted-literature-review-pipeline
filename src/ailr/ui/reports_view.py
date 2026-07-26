@@ -4,17 +4,36 @@ import json
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import Input, Output, ctx, dcc, html, no_update
+from dash import Input, Output, State, ctx, dcc, html, no_update
 
-from ailr.metrics import cohen_kappa, confusion_matrix, percent_agreement
+from ailr.metrics import (
+    BINARY_CATEGORIES,
+    THREE_WAY_CATEGORIES,
+    binarize,
+    cohen_kappa,
+    confusion_matrix,
+    decisions_for_pair,
+    pabak,
+    percent_agreement,
+    rater_overlaps,
+)
 from ailr.ui._common import get_project
 
+_IRR_STAGE_OPTIONS = [
+    {"label": "Abstract screening", "value": "abstract"},
+    {"label": "Full-text review", "value": "full_text"},
+]
+_IRR_CATS_OPTIONS = [
+    {"label": "Binary — uncertain counts as include", "value": "binary"},
+    {"label": "Three-way — include / exclude / uncertain", "value": "three"},
+]
 
-def _confusion_block(pairs: list) -> Any:
+
+def _confusion_block(pairs: list, categories: list[str], rater_a: str, rater_b: str) -> Any:
     if not pairs:
-        return html.Small("(no paired AI+human decisions yet)", className="text-muted")
-    cats, matrix = confusion_matrix(pairs, categories=["include", "exclude", "uncertain"])
-    head = html.Thead(html.Tr([html.Th("AI ↓ / Human →")] + [html.Th(c) for c in cats]))
+        return html.Small("(no shared records)", className="text-muted")
+    cats, matrix = confusion_matrix(pairs, categories=categories)
+    head = html.Thead(html.Tr([html.Th(f"{rater_a} ↓ / {rater_b} →")] + [html.Th(c) for c in cats]))
     body = html.Tbody([
         html.Tr([html.Th(c)] + [html.Td(matrix[i][j]) for j in range(len(cats))])
         for i, c in enumerate(cats)
@@ -39,41 +58,92 @@ def _api_block(rows: list) -> Any:
     return dbc.Table([head, body], bordered=False, hover=True, size="sm")
 
 
-def _reliability(pairs: list) -> dict:
-    cats = ["include", "exclude", "uncertain"]
-    k = cohen_kappa(pairs, categories=cats)
-    a = percent_agreement(pairs)
+def _round(x: float) -> Any:
+    return None if x != x else round(x, 3)      # x != x catches NaN
+
+
+def _reliability(pairs: list, categories: list[str]) -> dict:
     return {
         "n_pairs": len(pairs),
-        "cohen_kappa": None if k != k else round(k, 3),       # k != k catches NaN
-        "percent_agreement": None if a != a else round(a, 3),
+        "cohen_kappa": _round(cohen_kappa(pairs, categories=categories)),
+        "pabak": _round(pabak(pairs, categories=categories)),
+        "percent_agreement": _round(percent_agreement(pairs)),
     }
 
 
-def _reliability_block(rel: dict) -> Any:
-    if rel["n_pairs"] == 0:
-        return html.Small("No AI+human paired decisions yet (run AI screening + make human decisions).", className="text-muted")
-    k = rel["cohen_kappa"]
-    a = rel["percent_agreement"]
+def _pair_key(rater_a: str, rater_b: str) -> str:
+    return json.dumps([rater_a, rater_b])
+
+
+def _pair_options(rows: list) -> list[dict]:
+    return [
+        {"label": f"{a}  vs  {b}   ({n} shared)", "value": _pair_key(a, b)}
+        for a, b, n in rater_overlaps(rows)
+    ]
+
+
+def _reliability_body(rows: list, pair_value: Any, cats_mode: str) -> Any:
+    if not pair_value:
+        return html.Small(
+            "No records judged by two reviewers at this stage yet. Agreement needs the same record "
+            "decided by two raters (AI + human, or two humans).",
+            className="text-muted",
+        )
+    rater_a, rater_b = json.loads(pair_value)
+    raw = decisions_for_pair(rows, rater_a, rater_b)
+    if cats_mode == "binary":
+        pairs, categories = binarize(raw), BINARY_CATEGORIES
+    else:
+        pairs, categories = raw, THREE_WAY_CATEGORIES
+    rel = _reliability(pairs, categories)
+
+    def _stat(label: str, value: Any, suffix: str = "") -> Any:
+        shown = "n/a" if value is None else f"{value}{suffix}"
+        return html.Span([html.Span(f"{label}: ", className="text-muted"), html.Strong(shown)], className="me-4")
+
+    pct = rel["percent_agreement"]
     return html.Div(
         [
-            html.Span(f"Paired decisions: {rel['n_pairs']}", className="me-3"),
-            html.Span(f"Cohen's κ: {k if k is not None else 'n/a'}", className="me-3"),
-            html.Span(f"% agreement: {int(a * 100) if a is not None else 'n/a'}%"),
-        ],
-        className="small",
+            html.Div(
+                [
+                    _stat("Records judged by both", rel["n_pairs"]),
+                    _stat("Cohen's κ", rel["cohen_kappa"]),
+                    _stat("PABAK", rel["pabak"]),
+                    _stat("% agreement", None if pct is None else round(pct * 100, 1), "%"),
+                ],
+                className="small mb-2",
+            ),
+            html.Small(
+                "PABAK is the prevalence-adjusted form: when almost everything is excluded, κ can look "
+                "poor even at high agreement, and PABAK shows that.",
+                className="text-muted d-block mb-3",
+            ),
+            html.H6("Confusion matrix", className="mt-3"),
+            _confusion_block(pairs, categories, rater_a, rater_b),
+        ]
     )
 
 
 def _metrics_json(proj: Any) -> str:
     db, pid = proj.db, proj.project_id
-    pairs = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
+    agreement: dict[str, list] = {}
+    for stage in ("abstract", "full_text"):
+        rows = db.latest_decisions_by_rater(pid, stage)
+        agreement[stage] = [
+            {
+                "rater_a": a,
+                "rater_b": b,
+                "binary": _reliability(binarize(decisions_for_pair(rows, a, b)), BINARY_CATEGORIES),
+                "three_way": _reliability(decisions_for_pair(rows, a, b), THREE_WAY_CATEGORIES),
+            }
+            for a, b, _ in rater_overlaps(rows)
+        ]
     payload = {
         "screening": {
             "ai": db.screening_summary(pid, "ai"),
             "human": db.screening_summary(pid, "human"),
-            **_reliability(pairs),
-        }
+        },
+        "agreement": agreement,
     }
     return json.dumps(payload, indent=2, ensure_ascii=False)
 
@@ -168,9 +238,8 @@ def layout() -> Any:
     from ailr.exports.prisma import prisma_counts
 
     counts = prisma_counts(project)
-    paired = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
     api_summary = db.api_call_summary(pid)
-    methods_text = build_methods_skeleton(project, counts=counts, api_summary=api_summary, pairs=paired)
+    methods_text = build_methods_skeleton(project, counts=counts, api_summary=api_summary)
 
     prisma_block = [
         html.H4("PRISMA flow"),
@@ -198,11 +267,32 @@ def layout() -> Any:
         ),
     ]
 
+    irr_rows = db.latest_decisions_by_rater(pid, "abstract")
+    irr_options = _pair_options(irr_rows)
+    irr_default = irr_options[0]["value"] if irr_options else None
+
     metrics_block = [
-        html.H4("Inter-rater reliability (screening: AI vs human)"),
-        _reliability_block(_reliability(paired)),
-        html.H6("Confusion matrix", className="mt-3"),
-        _confusion_block(paired),
+        html.H4("Inter-rater reliability (screening)"),
+        html.P(
+            "Agreement between any two reviewers on the records they both judged. Votes are read as "
+            "cast, before adjudication, so resolving a conflict does not change these numbers.",
+            className="text-muted small",
+        ),
+        dbc.Row(
+            [
+                dbc.Col([dbc.Label("Stage", className="small mb-0"),
+                         dbc.Select(id="report-irr-stage", options=_IRR_STAGE_OPTIONS, value="abstract", size="sm")], width="auto"),
+                dbc.Col([dbc.Label("Reviewer pair", className="small mb-0"),
+                         dbc.Select(id="report-irr-pair", options=irr_options, value=irr_default, size="sm")], width=4),
+                dbc.Col([dbc.Label("Categories", className="small mb-0"),
+                         dbc.Select(id="report-irr-cats", options=_IRR_CATS_OPTIONS, value="binary", size="sm")], width="auto"),
+            ],
+            className="g-2 align-items-end mb-3",
+        ),
+        html.Div(_reliability_body(irr_rows, irr_default, "binary"), id="report-irr-body"),
+        html.Div(
+            dbc.Button("Download the votes behind this (CSV)", id="report-dl-pairs", color="link", size="sm", className="p-0 mt-3"),
+        ),
         html.Hr(className="my-4"),
         html.H4("API usage"),
         html.P("Per provider/model token + cost + latency. Mock runs are not billed.", className="text-muted small"),
@@ -243,6 +333,29 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
+    # Both callbacks below live entirely inside the Reports tab (own Inputs, own Outputs), so a
+    # global store ticking on another tab can never fire them against a missing component.
+    @app.callback(
+        Output("report-irr-pair", "options"),
+        Output("report-irr-pair", "value"),
+        Input("report-irr-stage", "value"),
+    )
+    def _irr_pairs(stage):
+        proj = get_project()
+        options = _pair_options(proj.db.latest_decisions_by_rater(proj.project_id, stage or "abstract"))
+        return options, (options[0]["value"] if options else None)
+
+    @app.callback(
+        Output("report-irr-body", "children"),
+        Input("report-irr-stage", "value"),
+        Input("report-irr-pair", "value"),
+        Input("report-irr-cats", "value"),
+    )
+    def _irr_body(stage, pair_value, cats_mode):
+        proj = get_project()
+        rows = proj.db.latest_decisions_by_rater(proj.project_id, stage or "abstract")
+        return _reliability_body(rows, pair_value, cats_mode or "binary")
+
     @app.callback(
         Output("report-download", "data"),
         Output("report-dl-feedback", "children"),
@@ -255,20 +368,24 @@ def register_callbacks(app: Any) -> None:
         Input("report-dl-json", "n_clicks"),
         Input("report-dl-json-zip", "n_clicks"),
         Input("report-dl-metrics", "n_clicks"),
+        Input("report-dl-pairs", "n_clicks"),
+        State("report-irr-stage", "value"),
         prevent_initial_call=True,
     )
-    def _download(_c, _p, _s, _m, _r, _ch, _j, _jz, _mx):
+    def _download(_c, _p, _s, _m, _r, _ch, _j, _jz, _mx, _pairs, irr_stage):
         trig = ctx.triggered_id
         if not any(t.get("value") for t in (ctx.triggered or [])):
             return no_update, no_update
 
         from ailr.exports.methods import build_methods_skeleton
         from ailr.exports.prisma import build_prisma_report, build_prisma_svg
+        from ailr.exports.reliability import screening_decisions_csv
         from ailr.exports.ris import export_includes_ris
         from ailr.exports.tables import extraction_table_csv, extraction_table_json, extraction_per_paper_zip
 
         proj = get_project()
         name = (proj.config.project.name or "review").replace(" ", "_")
+        stage = irr_stage or "abstract"
 
         # Per-paper JSON is delivered as a ZIP (binary), so it uses send_bytes rather than send_string.
         if trig == "report-dl-json-zip":
@@ -290,6 +407,7 @@ def register_callbacks(app: Any) -> None:
             "report-dl-methods": (lambda: build_methods_skeleton(proj), f"{name}_methods.md"),
             "report-dl-ris": (lambda: export_includes_ris(proj), f"{name}_includes.ris"),
             "report-dl-metrics": (lambda: _metrics_json(proj), f"{name}_metrics.json"),
+            "report-dl-pairs": (lambda: screening_decisions_csv(proj, stage=stage), f"{name}_screening_votes_{stage}.csv"),
         }
         if trig not in builders:
             return no_update, no_update

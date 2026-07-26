@@ -24,7 +24,7 @@ from ailr.exceptions import ConfigError, InputNotFoundError, ProjectNotFoundErro
 
 class ProjectMeta(BaseModel):
     name: str
-    type: Literal["scoping", "systematic", "methodological_scoping"] = "scoping"
+    type: Literal["scoping", "systematic"] = "scoping"
     description: str = ""
     mode: Literal["strict", "assisted", "custom"] = "assisted"
     mode_preset: Optional[str] = None
@@ -32,7 +32,9 @@ class ProjectMeta(BaseModel):
 
 class LLMConfig(BaseModel):
     provider: Literal["anthropic", "openai", "gemini"] = "anthropic"
-    model: str = "claude-sonnet-5"
+    # No default: model names date fast, and a stale one shipped as a default is worse than
+    # being asked to pick. Set it per stage in Settings -> Models.
+    model: Optional[str] = None
     temperature: float = 0.0
     seed: Optional[int] = 42
     max_retries: int = 3
@@ -252,6 +254,14 @@ def save_stage_llm_config(
             stage_block["llm"] = override
 
     _edit_config_block(project_dir, stage, mutate)
+
+
+def save_project_type(project_dir: Path, project_type: str) -> None:
+    """Update `project.type` (scoping / systematic). It is what the methods and PRISMA exports
+    call the review, so it has to be settable after `init`."""
+    if project_type not in ("scoping", "systematic"):
+        raise ConfigError(f"Unknown review type: {project_type}")
+    _edit_config_block(project_dir, "project", lambda block: block.update({"type": project_type}))
 
 
 def save_stage_workflow(project_dir: Path, stage: Literal["screening", "extraction"], workflow: str) -> None:

@@ -7,7 +7,7 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html, no_update
 
-from ailr.core.config import resolve_stage_llm, save_stage_llm_config
+from ailr.core.config import resolve_stage_llm, save_project_type, save_stage_llm_config
 from ailr.extraction import (
     compose_extraction_prompt,
     compose_schema,
@@ -33,6 +33,11 @@ _PROVIDERS = [
 ]
 
 _API_KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
+
+_REVIEW_TYPE_OPTIONS = [
+    {"label": "Scoping review", "value": "scoping"},
+    {"label": "Systematic review", "value": "systematic"},
+]
 
 
 def _read_file(project_root: Path, rel: str) -> str:
@@ -74,6 +79,19 @@ def layout() -> Any:
     db_url_set = bool(project.config.storage.database_url)
 
     project_block = [
+        dbc.Label("Review type", className="small fw-bold"),
+        dbc.Select(
+            id="settings-project-type",
+            options=_REVIEW_TYPE_OPTIONS,
+            value=project.config.project.type,
+            size="sm",
+            style={"maxWidth": "320px"},
+        ),
+        html.Small(
+            "How the review is described in the PRISMA report and the methods skeleton.",
+            className="text-muted d-block mb-1",
+        ),
+        html.Div(id="settings-project-type-saved", className="text-success small mb-3"),
         html.Div(
             [
                 html.Div([html.Span("Project folder: ", className="text-muted"), html.Code(str(project.root))]),
@@ -155,12 +173,17 @@ def layout() -> Any:
             open=any(not os.environ.get(env) for _p, env in key_badges),
             className="mt-1",
         ),
+        html.Small(
+            "Screening sees every record, so a cheap model there saves the most; extraction reads "
+            "whole papers and is worth a strong one.",
+            className="text-muted d-block mt-3 mb-2",
+        ),
         dbc.Row(
             [
                 dbc.Col([dbc.Label("Abstract screening — provider", className="small"),
                          dbc.Select(id="settings-screen-provider", options=_PROVIDERS, value=sc_eff.provider)], width=3),
                 dbc.Col([dbc.Label("Model", className="small"),
-                         dbc.Input(id="settings-screen-model", value=sc_eff.model)], width=5),
+                         dbc.Input(id="settings-screen-model", value=sc_eff.model or "", placeholder="not set")], width=5),
                 dbc.Col([dbc.Label("Temperature", className="small"),
                          dbc.Input(id="settings-screen-temp", type="number", min=0, max=2, step=0.1, value=sc_eff.temperature)], width=2),
             ],
@@ -171,7 +194,7 @@ def layout() -> Any:
                 dbc.Col([dbc.Label("Full-text extraction — provider", className="small"),
                          dbc.Select(id="settings-extract-provider", options=_PROVIDERS, value=ex_eff.provider)], width=3),
                 dbc.Col([dbc.Label("Model", className="small"),
-                         dbc.Input(id="settings-extract-model", value=ex_eff.model)], width=5),
+                         dbc.Input(id="settings-extract-model", value=ex_eff.model or "", placeholder="not set")], width=5),
                 dbc.Col([dbc.Label("Temperature", className="small"),
                          dbc.Input(id="settings-extract-temp", type="number", min=0, max=2, step=0.1, value=ex_eff.temperature)], width=2),
             ],
@@ -255,6 +278,21 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
+    @app.callback(
+        Output("settings-project-type-saved", "children"),
+        Input("settings-project-type", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_project_type(value):
+        if not value:
+            return no_update
+        project = get_project()
+        if value == project.config.project.type:
+            return no_update
+        save_project_type(project.root, value)
+        reload_project()
+        return f"Saved — this review is now reported as a {value.replace('_', ' ')} review."
+
     @app.callback(
         Output("settings-screen-prompt-view", "children"),
         Input("settings-screen-prompt-render", "value"),

@@ -90,6 +90,7 @@ class Project:
         root: Path,
         mode: str = "assisted",
         preset: Optional[Path] = None,
+        project_type: str = "scoping",
     ) -> "Project":
         root = Path(root).resolve()
         config_path = root / "lit_review.yaml"
@@ -98,6 +99,8 @@ class Project:
 
         if mode not in ("strict", "assisted", "custom"):
             raise ProjectNotFoundError(f"Unknown mode: {mode}")
+        if project_type not in ("scoping", "systematic"):
+            raise ProjectNotFoundError(f"Unknown review type: {project_type}")
 
         root.mkdir(parents=True, exist_ok=True)
         (root / "prompts").mkdir(exist_ok=True)
@@ -108,6 +111,7 @@ class Project:
         substitutions = {
             "project_name": root.name,
             "mode": mode,
+            "project_type": project_type,
         }
         if preset is not None:
             substitutions["mode_preset"] = str(preset)

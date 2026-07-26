@@ -4,15 +4,16 @@
 
 project:
   name: {{project_name}}
-  type: scoping              # scoping | systematic | methodological_scoping
+  type: {{project_type}}     # scoping | systematic
   description: ""
   mode: {{mode}}             # strict | assisted | custom
   mode_preset: null          # optional path to a user-defined preset YAML
 
-# Top-level LLM defaults. Per-stage overrides below.
+# Top-level LLM defaults, inherited by both stages.
+# `model` is unset on purpose: it follows the ailr version you run, rather than freezing a model
+# name here. Set one in Settings -> Models (or below) to pin it.
 llm:
   provider: anthropic        # anthropic | openai | gemini
-  model: claude-sonnet-5
   temperature: 0
   seed: 42
   max_retries: 3
@@ -22,8 +23,9 @@ screening:
   additional: prompts/screening_additional.txt
   criteria_structured: criteria.yaml   # the criteria the review runs on (edit them in Protocol -> Criteria)
   batch_size: 20
-  llm:                       # cheaper model for abstract screening
-    model: claude-haiku-4-5-20251001
+  # Screening sees every record — a cheap model here saves the most:
+  # llm:
+  #   model: <a cheap model from your provider>
   # workflow: assisted | independent
   #   assisted   = AI + 1 human, both blinded
   #   independent = 2 humans, AI optional reference (--include-ai to run)
@@ -38,8 +40,9 @@ extraction:
   #   verify     = AI extracts, human verifies/edits (PI-recommended)
   #   independent = human extracts blind, AI hidden until submit
   # output_format, flag_check, target_kappa, calibration inherit from mode preset
-  llm:                       # stronger model for full-text extraction
-    model: claude-sonnet-5
+  # Full text is worth the stronger model:
+  # llm:
+  #   model: <a strong model from your provider>
 
 preprocess:
   pdf_backend: pymupdf       # pymupdf | marker | grobid

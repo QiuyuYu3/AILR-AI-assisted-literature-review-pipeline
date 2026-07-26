@@ -54,21 +54,22 @@ Disagreements then surface on the **Conflicts** pages for reconciliation.
 
 ## Per-stage models
 
-Set one default model in **Settings**, or override it per stage, e.g. a cheaper model for abstract screening and a stronger one for full-text extraction. The top-level `llm:` block is the default; each stage may declare its own `llm:` sub-block that overrides only the fields it sets (the rest inherit). Token usage is logged per call; see **Reports → API usage** to track spend.
+Each stage runs on its own model, set in **Settings → Models**. There is no built-in default: model names date quickly, so ailr asks you to name the one you want rather than shipping a stale choice. Screening sees every record you import, so a cheap, fast model there saves the most; extraction reads whole papers, so it is worth a strong one. Token usage is logged per call; see **Reports → API usage** to track spend.
+
+The top-level `llm:` block holds the defaults both stages inherit; each stage may declare its own `llm:` sub-block that overrides only the fields it sets.
 
 ```yaml
 llm:
-  provider: anthropic
-  model: claude-sonnet-4-6   # default for every call
+  provider: anthropic        # anthropic | openai | gemini
 
 screening:
   llm:
-    model: claude-haiku-4-5  # cheaper for abstract screening
+    model: <a cheap model>   # abstract screening
   workers: 4                 # parallel AI calls (default 4; set 1 for one-at-a-time)
 
 extraction:
   llm:
-    model: claude-opus-4-8   # stronger for full-text extraction
+    model: <a strong model>  # full-text extraction
   workers: 2                 # parallel AI calls (default 2; full-paper prompts are large)
 ```
 

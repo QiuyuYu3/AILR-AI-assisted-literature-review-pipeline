@@ -2,14 +2,57 @@
 
 from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
-from ailr.metrics import cohen_kappa, percent_agreement
+from ailr.metrics import (
+    BINARY_CATEGORIES,
+    binarize,
+    cohen_kappa,
+    decisions_for_pair,
+    pabak,
+    percent_agreement,
+    rater_overlaps,
+)
+
+
+def _fmt(value: float) -> str:
+    return "undefined" if value != value else f"{value:.2f}"      # value != value catches NaN
+
+
+def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
+    """Agreement for the reviewer pair with the most shared records at this stage, plus a short
+    line for any further pairs. Votes are read pre-adjudication and `uncertain` counts as include
+    (an uncertain record carries forward), so the figures describe the screening decision itself."""
+    rows = db.latest_decisions_by_rater(pid, stage)
+    overlaps = rater_overlaps(rows)
+    if not overlaps:
+        return []
+
+    def _stats(rater_a: str, rater_b: str) -> tuple[list, float, float, float]:
+        pairs = binarize(decisions_for_pair(rows, rater_a, rater_b))
+        return (pairs, cohen_kappa(pairs, categories=BINARY_CATEGORIES),
+                pabak(pairs, categories=BINARY_CATEGORIES), percent_agreement(pairs))
+
+    a, b, _ = overlaps[0]
+    pairs, kappa, pb, agree = _stats(a, b)
+    agree_str = "undefined" if agree != agree else f"{agree:.1%}"
+    lines = [
+        "",
+        f"Agreement between {a} and {b} on the {len(pairs)} records both reviewers judged at "
+        f"{label} was Cohen's κ = {_fmt(kappa)} (prevalence-adjusted κ = {_fmt(pb)}; percent "
+        f"agreement = {agree_str}), computed on the votes as first cast, before conflicts were "
+        f"reconciled. Records voted uncertain were counted as includes, since an uncertain record "
+        f"carries forward to the next stage.",
+    ]
+    if len(overlaps) > 1:
+        extras = ", ".join(f"{x} vs {y}: κ = {_fmt(_stats(x, y)[1])} (n = {n})" for x, y, n in overlaps[1:])
+        lines.append("")
+        lines.append(f"Other reviewer pairs at {label} — {extras}.")
+    return lines
 
 
 def build_methods_skeleton(
     project: Project,
     counts: dict | None = None,
     api_summary: list | None = None,
-    pairs: list | None = None,
 ) -> str:
     db = project.db
     pid = project.project_id
@@ -17,16 +60,12 @@ def build_methods_skeleton(
 
     counts = counts if counts is not None else prisma_counts(project)
     api_summary = api_summary if api_summary is not None else db.api_call_summary(pid)
-    if pairs is None:
-        pairs = [(p["ai_decision"], p["human_decision"]) for p in db.paired_screening_decisions(pid)]
-    kappa = cohen_kappa(pairs, categories=["include", "exclude", "uncertain"])
-    agreement = percent_agreement(pairs)
 
     dbs = [d["source_database"] for d in counts["by_source_database"] if d["source_database"] != "unknown"]
     db_str = ", ".join(dbs) if dbs else "[searched databases]"
 
-    screen_model = cfg.screening.llm.model if cfg.screening.llm and cfg.screening.llm.model else cfg.llm.model
-    extract_model = cfg.extraction.llm.model if cfg.extraction.llm and cfg.extraction.llm.model else cfg.llm.model
+    screen_model = (cfg.screening.llm.model if cfg.screening.llm and cfg.screening.llm.model else cfg.llm.model) or "[model]"
+    extract_model = (cfg.extraction.llm.model if cfg.extraction.llm and cfg.extraction.llm.model else cfg.llm.model) or "[model]"
 
     total_calls = sum(row.get("calls") or 0 for row in api_summary)
     total_tokens = sum((row.get("input_tokens") or 0) + (row.get("output_tokens") or 0) for row in api_summary)
@@ -88,14 +127,8 @@ def build_methods_skeleton(
             f"({counts['ai_abstract_included']} include / {counts['ai_abstract_excluded']} exclude / {counts['ai_abstract_uncertain']} uncertain); "
             f"{counts['abstract_screened']} were human-screened."
         )
-    if pairs:
-        kappa_str = "undefined" if kappa != kappa else f"{kappa:.2f}"
-        agree_str = "undefined" if agreement != agreement else f"{agreement:.1%}"
-        lines.append("")
-        lines.append(
-            f"Inter-rater agreement on the {len(pairs)} doubly-reviewed records was Cohen's κ = {kappa_str} "
-            f"(percent agreement = {agree_str})."
-        )
+    lines.extend(_agreement_lines(db, pid, "abstract", "title/abstract screening"))
+    lines.extend(_agreement_lines(db, pid, "full_text", "full-text review"))
     lines.append("")
     lines.append("## Calibration")
     lines.append(

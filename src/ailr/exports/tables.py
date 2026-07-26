@@ -11,6 +11,7 @@ Wide CSV strategy:
 import csv
 import io
 import json
+import re
 from typing import Any
 
 from ailr.core.project import Project
@@ -66,6 +67,21 @@ def _cell_value(field_name: str, owning: FieldSpec, value: Any, *, is_leaf: bool
     return v_str, q
 
 
+def _group_by_extractor(ex_rows: list[dict]) -> dict[str, dict[str, Any]]:
+    """{extractor_id: {field_name: {value, quote} | raw}}. Grouping by extractor matters because
+    independent extraction leaves two humans' rows on the same paper — collapsing them into one
+    record would silently keep whichever was written last, per field."""
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in ex_rows:                      # ORDER BY id: within one extractor, later rows win
+        fields = grouped.setdefault(row.get("extractor_id") or "", {})
+        val = row["value"]
+        if isinstance(val, (dict, list)):
+            fields[row["field_name"]] = val
+        else:
+            fields[row["field_name"]] = {"value": val, "quote": row.get("source_quote")}
+    return grouped
+
+
 def extraction_table_rows(
     project: Project,
     *,
@@ -81,7 +97,7 @@ def extraction_table_rows(
     # (citation / first_author_year / year / doi / journal) is left to the schema columns
     # so values come from the extraction, not the ingest record.
     # Bibliographic identity columns are joined from the `sources` record (NOT AI-extracted).
-    base_cols = ["source_id", "first_author_year", "year", "doi", "journal", "ingest_title"]
+    base_cols = ["source_id", "extractor_id", "first_author_year", "year", "doi", "journal", "ingest_title"]
     field_cols: list[str] = []
     seen: set[str] = set(base_cols)
     for col_name, _, is_leaf in layout:
@@ -105,41 +121,32 @@ def extraction_table_rows(
 
     rows: list[dict[str, str]] = []
     for src in sources:
-        ex_rows = db.list_extractions(src.id, extractor_type=extractor_type)
-        if not ex_rows:
-            continue
         # Re-pair each leaf value with its verbatim quote (stored in a separate column) so the
         # <field>_quote columns are populated; nested fields keep their inner structure.
-        ex_by_field: dict[str, Any] = {}
-        for row in ex_rows:
-            val = row["value"]
-            if isinstance(val, (dict, list)):
-                ex_by_field[row["field_name"]] = val
-            else:
-                ex_by_field[row["field_name"]] = {"value": val, "quote": row.get("source_quote")}
-
-        out_row: dict[str, str] = {
-            "source_id": str(src.id),
-            "first_author_year": _short_author_year(src),
-            "year": str(src.year) if src.year else "",
-            "doi": src.doi or "",
-            "journal": src.journal or "",
-            "ingest_title": src.title or "",
-        }
-        written: set[str] = set(out_row.keys())
-        for col_name, owning, is_leaf in layout:
-            if col_name in written:
-                continue
-            value = _lookup_value(col_name, owning, ex_by_field)
-            v_str, q_str = _cell_value(col_name, owning, value, is_leaf=is_leaf)
-            out_row[col_name] = v_str
-            written.add(col_name)
-            if is_leaf:
-                qcol = f"{col_name}_quote"
-                if qcol not in written:
-                    out_row[qcol] = q_str
-                    written.add(qcol)
-        rows.append(out_row)
+        for extractor_id, ex_by_field in _group_by_extractor(db.list_extractions(src.id, extractor_type=extractor_type)).items():
+            out_row: dict[str, str] = {
+                "source_id": str(src.id),
+                "extractor_id": extractor_id,
+                "first_author_year": _short_author_year(src),
+                "year": str(src.year) if src.year else "",
+                "doi": src.doi or "",
+                "journal": src.journal or "",
+                "ingest_title": src.title or "",
+            }
+            written: set[str] = set(out_row.keys())
+            for col_name, owning, is_leaf in layout:
+                if col_name in written:
+                    continue
+                value = _lookup_value(col_name, owning, ex_by_field)
+                v_str, q_str = _cell_value(col_name, owning, value, is_leaf=is_leaf)
+                out_row[col_name] = v_str
+                written.add(col_name)
+                if is_leaf:
+                    qcol = f"{col_name}_quote"
+                    if qcol not in written:
+                        out_row[qcol] = q_str
+                        written.add(qcol)
+            rows.append(out_row)
 
     return columns, rows
 
@@ -194,30 +201,26 @@ def _extraction_records(
 
     out: list[dict[str, Any]] = []
     for src in sources:
-        ex_rows = db.list_extractions(src.id, extractor_type=extractor_type)
-        if not ex_rows:
-            continue
         # Leaf fields store the value and its verbatim quote separately; re-pair them as
         # {value, quote} so the JSON is self-contained. Nested fields already carry quotes inside.
-        fields: dict[str, Any] = {}
-        for row in ex_rows:
-            val = row["value"]
-            if isinstance(val, (dict, list)):
-                fields[row["field_name"]] = val
-            else:
-                fields[row["field_name"]] = {"value": val, "quote": row.get("source_quote")}
-        out.append(
-            {
-                "source_id": src.id,
-                "first_author_year": _short_author_year(src),
-                "year": src.year,
-                "doi": src.doi,
-                "title": src.title,
-                "extractor_type": extractor_type,
-                "fields": fields,
-                "flag_check": db.get_flag_check(src.id, extractor_type=extractor_type),
-            }
-        )
+        flag_check = None
+        grouped = _group_by_extractor(db.list_extractions(src.id, extractor_type=extractor_type))
+        for extractor_id, fields in grouped.items():
+            if flag_check is None:
+                flag_check = db.get_flag_check(src.id, extractor_type=extractor_type)
+            out.append(
+                {
+                    "source_id": src.id,
+                    "first_author_year": _short_author_year(src),
+                    "year": src.year,
+                    "doi": src.doi,
+                    "title": src.title,
+                    "extractor_type": extractor_type,
+                    "extractor_id": extractor_id,
+                    "fields": fields,
+                    "flag_check": flag_check,
+                }
+            )
     return out
 
 
@@ -243,10 +246,22 @@ def extraction_per_paper_zip(
     """A ZIP with one <source_id>.json per paper (same content as extraction_table_json, split per file)."""
     import zipfile
 
+    records = _extraction_records(project, extractor_type=extractor_type, only_includes=only_includes)
+    per_source: dict[int, int] = {}
+    for rec in records:
+        per_source[rec["source_id"]] = per_source.get(rec["source_id"], 0) + 1
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for rec in _extraction_records(project, extractor_type=extractor_type, only_includes=only_includes):
-            zf.writestr(f"{rec['source_id']}.json", json.dumps(rec, indent=2, ensure_ascii=False))
+        for rec in records:
+            sid = rec["source_id"]
+            # Two reviewers on one paper (independent extraction) would collide on <source_id>.json.
+            if per_source[sid] > 1:
+                safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(rec.get("extractor_id") or "unknown"))
+                fn = f"{sid}__{safe}.json"
+            else:
+                fn = f"{sid}.json"
+            zf.writestr(fn, json.dumps(rec, indent=2, ensure_ascii=False))
     return buf.getvalue()
 
 
@@ -270,6 +285,7 @@ def extraction_rows_long(
             out.append(
                 {
                     "source_id": src.id,
+                    "extractor_id": row.get("extractor_id"),
                     "first_author_year": _short_author_year(src),
                     "field_name": row["field_name"],
                     "value": row["value"],

@@ -19,6 +19,11 @@ _MODE_OPTIONS = [
     {"label": "Custom", "value": "custom"},
 ]
 
+_TYPE_OPTIONS = [
+    {"label": "Scoping review", "value": "scoping"},
+    {"label": "Systematic review", "value": "systematic"},
+]
+
 _STORAGE_OPTIONS = [
     {"label": "Local file (SQLite) — default, no setup", "value": "sqlite"},
     {"label": "Shared database (PostgreSQL) — for multi-person", "value": "postgres"},
@@ -68,6 +73,12 @@ def layout():
                                         value=str(Path.cwd()),
                                         size="sm",
                                         className="mb-2",
+                                    ),
+                                    dbc.Label("Review type", className="small fw-bold"),
+                                    dbc.Select(id="pm-new-type", options=_TYPE_OPTIONS, value="scoping", size="sm", className="mb-1"),
+                                    html.Div(
+                                        "Names the review in the PRISMA and methods exports. Changeable later in Settings.",
+                                        className="text-muted small mb-2",
                                     ),
                                     dbc.Label("Review mode", className="small fw-bold"),
                                     dbc.Select(id="pm-new-mode", options=_MODE_OPTIONS, value="assisted", size="sm", className="mb-2"),
@@ -142,11 +153,12 @@ def register_callbacks(app):
         State("pm-new-name", "value"),
         State("pm-new-parent", "value"),
         State("pm-new-mode", "value"),
+        State("pm-new-type", "value"),
         State("pm-new-storage", "value"),
         State("pm-new-pgurl", "value"),
         prevent_initial_call=True,
     )
-    def _create(_n, name, parent, mode, storage, pgurl):
+    def _create(_n, name, parent, mode, review_type, storage, pgurl):
         if not name or not name.strip():
             return no_update, dbc.Alert("Please enter a project name.", color="warning", className="py-2 mb-0")
         if not parent or not parent.strip():
@@ -155,7 +167,10 @@ def register_callbacks(app):
         if storage == "postgres" and (not db_url or not db_url.strip()):
             return no_update, dbc.Alert("Please enter the PostgreSQL connection URL.", color="warning", className="py-2 mb-0")
         try:
-            create_project(Path(parent.strip()), name.strip(), mode=mode or "assisted", database_url=db_url)
+            create_project(
+                Path(parent.strip()), name.strip(),
+                mode=mode or "assisted", database_url=db_url, project_type=review_type or "scoping",
+            )
         except AILRError as e:
             return no_update, dbc.Alert(f"Could not create project: {e}", color="danger", className="py-2 mb-0")
         except Exception as e:  # surface DB-connection errors (e.g. bad PG URL, missing psycopg)
