@@ -4,12 +4,20 @@ import json
 import sqlite3
 from typing import TYPE_CHECKING, Optional
 
+from ailr.core._db_calibration import CALIBRATION_STAGE
 from ailr.core._db_facade import _row_to_source
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError
 
 if TYPE_CHECKING:
     from ailr.reviewers import ScreeningDecision
+
+
+# The most recent calibration round for a stage. Takes (project_id, cal_stage, project_id, cal_stage).
+_LATEST_CALIBRATION_ROUND_SQL = (
+    "s.id IN (SELECT source_id FROM calibration_samples WHERE project_id = ? AND stage = ? "
+    "AND sample_round = (SELECT MAX(sample_round) FROM calibration_samples WHERE project_id = ? AND stage = ?))"
+)
 
 
 # "final full-text include with markdown" = reconciled-as-include, or human-included with no
@@ -512,11 +520,9 @@ class ScreeningMixin:
             )
             params += [reviewer_id, stage]
         elif status == "calibration":
-            where.append(
-                "s.id IN (SELECT source_id FROM calibration_samples WHERE project_id = ? AND stage = ? "
-                "AND sample_round = (SELECT MAX(sample_round) FROM calibration_samples WHERE project_id = ? AND stage = ?))"
-            )
-            params += [project_id, stage, project_id, stage]
+            where.append(_LATEST_CALIBRATION_ROUND_SQL)
+            cal_stage = CALIBRATION_STAGE.get(stage, stage)
+            params += [project_id, cal_stage, project_id, cal_stage]
 
         kw_sql, kw_params = _keyword_filter(keyword, within)
         if kw_sql:
@@ -577,6 +583,10 @@ class ScreeningMixin:
                          "AND e.extractor_type = 'human' AND e.field_name = '_submitted' "
                          "ORDER BY e.id DESC LIMIT 1) = ?")
             params.append(reviewer_id)
+        elif status == "calibration":
+            where.append(_LATEST_CALIBRATION_ROUND_SQL)
+            cal_stage = CALIBRATION_STAGE["full_text"]
+            params += [project_id, cal_stage, project_id, cal_stage]
 
         kw_sql, kw_params = _keyword_filter(keyword, within)
         if kw_sql:

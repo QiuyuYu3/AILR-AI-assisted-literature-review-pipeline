@@ -9,6 +9,7 @@ from ailr.core.config import resolve_stage_llm
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.criteria import load_screening_inputs, resolve_criteria
+from ailr.exceptions import AILRError
 from ailr.metrics import cohen_kappa, percent_agreement
 from ailr.reviewers import Reviewer, ScreeningDecision
 from ailr.reviewers import LLMReviewer
@@ -104,8 +105,8 @@ class QuickTestTask:
         return summary
 
 
-def sample_agreement(project: Project, sample_ids: list[int]) -> dict:
-    """AI-vs-human agreement on a set of sources (abstract screening decisions).
+def sample_agreement(project: Project, sample_ids: list[int], stage: str = "abstract") -> dict:
+    """AI-vs-human agreement on a set of sources at one decision stage (abstract / full_text).
     Used by the calibration UI to recompute κ after humans review the sample."""
     result = {
         "paired_count": 0,
@@ -123,10 +124,10 @@ def sample_agreement(project: Project, sample_ids: list[int]) -> dict:
     rows = project.db._conn.execute(
         f"""
         SELECT source_id, reviewer_type, decision FROM screening_decisions
-        WHERE source_id IN ({placeholders}) AND stage = 'abstract'
+        WHERE source_id IN ({placeholders}) AND stage = ?
         ORDER BY id
         """,
-        sample_ids,
+        [*sample_ids, stage],
     ).fetchall()
 
     by_source: dict[int, dict[str, str]] = {}
@@ -284,13 +285,22 @@ class ExtractionQuickTestTask:
         return summary
 
 
+_DECISION_STAGE = {"screening": "abstract", "extraction": "full_text"}
+
+
 class CalibrationTask:
+    """Draw a sample, let the AI decide on it, and report agreement once humans decide the same
+    records. At the screening stage the AI decision is a screening call; at the extraction stage
+    it is the full-text verdict the AI derives while extracting (flag_check), so a round there
+    costs one full-paper call per paper and leaves real extractions behind."""
+
     def __init__(self, project: Project, reviewer: Reviewer, stage: str = "screening") -> None:
         if stage not in ("screening", "extraction"):
             raise ValueError(f"Unknown stage: {stage}")
         self.project = project
         self.reviewer = reviewer
         self.stage = stage
+        self.decision_stage = _DECISION_STAGE[stage]
 
     def determine_sample_size(self, n_arg: Optional[int], candidates_available: int) -> int:
         if n_arg is not None:
@@ -314,9 +324,6 @@ class CalibrationTask:
         seed: Optional[int] = None,
         on_progress: Optional[ProgressCallback] = None,
     ) -> CalibrationSummary:
-        if self.stage == "extraction":
-            raise NotImplementedError("Extraction calibration arrives with Phase 4.")
-
         candidates = self.project.db.list_calibration_candidates(
             project_id=self.project.project_id, stage=self.stage
         )
@@ -347,6 +354,59 @@ class CalibrationTask:
             sample_round=sample_round,
         )
 
+        if self.stage == "extraction":
+            self._run_extraction_pass(sample_ids, summary, on_progress)
+        else:
+            self._run_screening_pass(sample, sample_size, summary, on_progress)
+
+        by_source = self._compute_agreement(summary, sample_ids)
+        if self.stage == "extraction":
+            # The screening pass counts the AI as it goes; extraction's verdicts are written
+            # inside ExtractionTask, so they are read back with the agreement rows.
+            for v in by_source.values():
+                if v.get("ai") in summary.ai_counts:
+                    summary.ai_counts[v["ai"]] += 1
+        return summary
+
+    def _run_extraction_pass(
+        self,
+        sample_ids: list[int],
+        summary: CalibrationSummary,
+        on_progress: Optional[ProgressCallback],
+    ) -> None:
+        """The AI's full-text verdict comes from extracting the paper (flag_check re-checks the
+        criteria against the full text), so calibrating it means running the real extraction on
+        the sample. The extractions it leaves behind are the ones the review needs anyway."""
+        from ailr.tasks.extract import ExtractionTask
+
+        if not self.project.config.extraction.flag_check:
+            raise AILRError(
+                "Full-text calibration needs extraction.flag_check enabled: the AI's full-text "
+                "verdict is derived from its per-criterion check, and with the check off there is "
+                "nothing to compare against your decisions."
+            )
+
+        result = ExtractionTask(self.project, self.reviewer).run(
+            source_ids=sample_ids, on_progress=on_progress
+        )
+        summary.failed += result.failed
+        summary.failures.extend(result.failures)
+        summary.total_cost_estimate += result.total_cost_estimate
+        # Candidates are filtered on markdown_path, so a skip here means the file is gone from
+        # disk. Left silent it would shrink the sample without saying so.
+        if result.skipped_no_markdown:
+            summary.failed += result.skipped_no_markdown
+            summary.failures.append(
+                {"error": f"{result.skipped_no_markdown} paper(s) in the sample have no markdown file on disk"}
+            )
+
+    def _run_screening_pass(
+        self,
+        sample: list[Source],
+        sample_size: int,
+        summary: CalibrationSummary,
+        on_progress: Optional[ProgressCallback],
+    ) -> None:
         prompt_template, criteria_text, criterion_ids, additional_text = load_screening_inputs(
             self.project.root, self.project.config.screening
         )
@@ -383,24 +443,26 @@ class CalibrationTask:
                 if on_progress:
                     on_progress(idx, sample_size, None, e)
 
-        self._compute_agreement(summary, sample_ids)
-        return summary
-
     def _existing_ai_decision(self, source_id: Optional[int]) -> Optional[str]:
         if source_id is None:
             return None
         row = self.project.db._conn.execute(
-            "SELECT decision FROM screening_decisions WHERE source_id = ? AND reviewer_type = 'ai' AND stage = 'abstract' ORDER BY id DESC LIMIT 1",
-            (source_id,),
+            "SELECT decision FROM screening_decisions WHERE source_id = ? AND reviewer_type = 'ai' "
+            "AND stage = ? ORDER BY id DESC LIMIT 1",
+            (source_id, self.decision_stage),
         ).fetchone()
         return row["decision"] if row else None
 
-    def _compute_agreement(self, summary: CalibrationSummary, sample_ids: list[int]) -> None:
+    def _compute_agreement(
+        self, summary: CalibrationSummary, sample_ids: list[int]
+    ) -> dict[int, dict[str, str]]:
+        """Fill in human counts, pairs, κ. Returns the latest decision per (source, reviewer type)
+        so callers can reuse it."""
         if not sample_ids:
-            return
+            return {}
 
         placeholders = ",".join("?" for _ in sample_ids)
-        # Abstract stage only (full_text decisions must not enter screening κ);
+        # One stage only (a full_text decision must not enter screening κ, and vice versa);
         # ORDER BY id so the latest decision per (source, reviewer_type) wins in the dict below.
         sql = f"""
             SELECT
@@ -408,10 +470,10 @@ class CalibrationTask:
                 d.reviewer_type,
                 d.decision
             FROM screening_decisions d
-            WHERE d.source_id IN ({placeholders}) AND d.stage = 'abstract'
+            WHERE d.source_id IN ({placeholders}) AND d.stage = ?
             ORDER BY d.id
         """
-        rows = self.project.db._conn.execute(sql, sample_ids).fetchall()
+        rows = self.project.db._conn.execute(sql, [*sample_ids, self.decision_stage]).fetchall()
 
         by_source: dict[int, dict[str, str]] = {}
         for r in rows:
@@ -430,3 +492,4 @@ class CalibrationTask:
         if pairs:
             summary.kappa = cohen_kappa(pairs, categories=["include", "exclude", "uncertain"])
             summary.agreement = percent_agreement(pairs)
+        return by_source

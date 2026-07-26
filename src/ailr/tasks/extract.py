@@ -43,6 +43,7 @@ class ExtractionTask:
         on_progress: Optional[ProgressCallback] = None,
         batch: bool = False,
         workers: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
     ) -> ExtractRunSummary:
         config = self.project.config
         prompt_path = self.project.root / config.extraction.prompt
@@ -60,6 +61,9 @@ class ExtractionTask:
         workers = max(1, workers)
 
         candidates = self._select_candidates(only_includes=only_includes)
+        if source_ids is not None:
+            wanted = set(source_ids)
+            candidates = [s for s in candidates if s.id in wanted]
         if limit is not None:
             candidates = candidates[:limit]
 

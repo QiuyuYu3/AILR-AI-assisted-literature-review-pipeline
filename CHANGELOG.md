@@ -4,10 +4,15 @@
 ## [Unreleased]
 
 ### Added
+- Full-text calibration: Full text → Workflow → AI extraction now offers the same Quick test / Full calibration choice as abstract screening. A round draws a sample from the full-text queue, runs the real extraction on it (the AI's full-text verdict comes from its per-criterion check), and reports κ against your decisions once you review the sample under Full-text review → "Calibration sample". Needs `extraction.flag_check` on; each paper is one full-text call.
 - 95% CI on Cohen's κ (Fleiss-Cohen-Everitt asymptotic variance, matches `vcd::Kappa`), shown on the reliability report and carried into the methods export and `ailr metrics`.
 
 ### Changed
 - Methods and PRISMA exports name the checklist that matches the review type: PRISMA-ScR for scoping, PRISMA 2020 for systematic.
+
+### Fixed
+- Screening's "Calibration sample" filter never matched anything: rounds are stored under stage `screening` but the filter queried for `abstract`.
+- `ailr calibrate --stage extraction` died with a raw traceback referring to a development phase that no longer exists.
 
 ---
 ## [0.28.0] – 2026-07-26

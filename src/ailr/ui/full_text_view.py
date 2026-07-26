@@ -28,6 +28,7 @@ _STATUS_FILTERS = [
     {"label": "Reviewed by me", "value": "reviewed"},
     {"label": "To extract", "value": "to_extract"},
     {"label": "Extracted by me", "value": "extracted_mine"},
+    {"label": "Calibration sample", "value": "calibration"},
     {"label": "All", "value": "all"},
 ]
 

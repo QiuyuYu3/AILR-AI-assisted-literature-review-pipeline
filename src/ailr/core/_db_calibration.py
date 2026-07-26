@@ -11,6 +11,11 @@ from ailr.exceptions import DatabaseError
 if TYPE_CHECKING:
     from ailr.llm.base import CallMetadata
 
+# calibration_samples.stage names the config section a round belongs to (screening / extraction),
+# while screening_decisions.stage names the review stage (abstract / full_text). Anything that
+# starts from a decision stage and needs the matching calibration rows goes through this.
+CALIBRATION_STAGE = {"abstract": "screening", "full_text": "extraction"}
+
 
 class CalibrationMixin:
     def insert_api_call(self, project_id: int, metadata: "CallMetadata") -> int:
@@ -44,12 +49,23 @@ class CalibrationMixin:
         project_id: int,
         stage: str,
     ) -> list[Source]:
-        """Sources eligible for a new calibration round: have abstract, not in any prior round."""
-        sql = """
+        """Sources eligible for a new calibration round, excluding any drawn in a prior round.
+        Screening draws from records with an abstract; extraction draws from the full-text
+        queue (abstract-included and converted to markdown), the same pool extraction runs on."""
+        if stage == "extraction":
+            eligible = """
+                EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id
+                        AND d.stage = 'abstract' AND d.decision = 'include')
+                AND s.markdown_path IS NOT NULL
+            """
+        else:
+            eligible = "s.abstract IS NOT NULL AND s.abstract != ''"
+
+        sql = f"""
             SELECT s.* FROM sources s
             WHERE s.project_id = ?
-              AND s.abstract IS NOT NULL
-              AND s.abstract != ''
+              AND COALESCE(s.is_duplicate, 0) = 0
+              AND {eligible}
               AND NOT EXISTS (
                   SELECT 1 FROM calibration_samples cs
                   WHERE cs.source_id = s.id AND cs.stage = ?

@@ -87,8 +87,9 @@ def start_quick_test(project: Any, n: int, mock: bool, stage: str = "abstract", 
     return _start(f"quicktest-{stage}", _run_quick_test, project, mock, n, stage, source_ids)
 
 
-def start_calibration(project: Any, n: int, mock: bool) -> bool:
-    return _start("calibration-abstract", _run_calibration, project, mock, n)
+def start_calibration(project: Any, n: int, mock: bool, stage: str = "screening") -> bool:
+    key = "calibration-abstract" if stage == "screening" else "calibration-extraction"
+    return _start(key, _run_calibration, project, mock, n, stage)
 
 
 def start_extraction(project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> bool:
@@ -194,18 +195,24 @@ def _run_quick_test(key: str, project: Any, mock: bool, n: int, stage: str, sour
             _jobs[key].update({"running": False, "error": str(e)})
 
 
-def _run_calibration(key: str, project: Any, mock: bool, n: int) -> None:
+def _run_calibration(key: str, project: Any, mock: bool, n: int, stage: str = "screening") -> None:
     try:
         from ailr.tasks.calibrate import CalibrationTask
 
-        client = _make_client(project, "screen", mock)
-        reviewer = LLMReviewer(client, prompt_version=_screening_prompt_version(project))
-        summary = CalibrationTask(project, reviewer, stage="screening").run(
+        if stage == "extraction":
+            client = _make_client(project, "extract", mock)
+            reviewer = LLMReviewer(client)
+            verdict = "full-text"
+        else:
+            client = _make_client(project, "screen", mock)
+            reviewer = LLMReviewer(client, prompt_version=_screening_prompt_version(project))
+            verdict = "abstract"
+        summary = CalibrationTask(project, reviewer, stage=stage).run(
             n=n, on_progress=_progress_cb(key)
         )
         text = (
             f"Calibration round {summary.sample_round}: AI on {summary.sample_size} — "
-            f"include {summary.ai_counts['include']}, exclude {summary.ai_counts['exclude']}, "
+            f"{verdict} include {summary.ai_counts['include']}, exclude {summary.ai_counts['exclude']}, "
             f"uncertain {summary.ai_counts['uncertain']}, failed {summary.failed}."
         )
         with _lock:
