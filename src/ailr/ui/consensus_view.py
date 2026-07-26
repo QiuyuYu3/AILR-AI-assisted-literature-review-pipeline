@@ -170,29 +170,34 @@ def _disagreement_row(field: FieldSpec, answers: list[tuple[str, Any, Any]], edi
     several reviewers collapse onto one option. `editable` adds a free-text alternative — offered
     for leaf fields only, since typing a repeating group by hand is not a sane interaction.
     """
-    options: list[dict] = []
     seen: dict[str, list[str]] = {}
     for rid, value, _quote in answers:
         seen.setdefault(_norm(value), []).append(rid)
-    for key, rids in seen.items():
-        value = next(v for r, v, _q in answers if _norm(v) == key and r == rids[0])
-        options.append({
-            "label": html.Span([
-                html.Span(", ".join(rids), className="badge bg-secondary me-2"),
-                _render_value(field, value),
-            ]),
-            "value": key,
-        })
-    if editable:
-        options.append({"label": html.Span("Something else — type it below", className="text-muted"), "value": _CUSTOM})
 
-    quotes = [
-        html.Details(
-            [html.Summary(html.Small(f"{rid}'s quote", className="text-muted")),
-             html.Small(f"“{quote}”", className="text-muted d-block fst-italic ms-3")],
+    # The answers are rendered above the picker rather than inside it: a RadioItems label is
+    # plain text, and a repeating group needs a table to be readable.
+    blocks: list[Any] = []
+    options: list[dict] = []
+    for key, rids in seen.items():
+        value, quote = next((v, q) for r, v, q in answers if _norm(v) == key and r == rids[0])
+        who = ", ".join(rids)
+        blocks.append(
+            html.Div(
+                [
+                    html.Div(html.Span(who, className="badge bg-secondary"), className="mb-1"),
+                    _render_value(field, value),
+                    html.Details(
+                        [html.Summary(html.Small("quote", className="text-muted")),
+                         html.Small(f"“{quote}”", className="text-muted d-block fst-italic ms-3")],
+                    ) if quote else None,
+                ],
+                className="mb-2 ps-2",
+                style={"borderLeft": "2px solid #e0e0e0"},
+            )
         )
-        for rid, _v, quote in answers if quote
-    ]
+        options.append({"label": who, "value": key})
+    if editable:
+        options.append({"label": "Something else", "value": _CUSTOM})
 
     custom_widgets: list[Any] = []
     if editable:
@@ -206,9 +211,10 @@ def _disagreement_row(field: FieldSpec, answers: list[tuple[str, Any, Any]], edi
             [
                 html.Div([html.Strong(field.name), html.Small(f"  ({field.type})", className="text-muted ms-1")]),
                 html.P(field.description, className="text-muted small mb-1") if field.description else None,
-                dbc.RadioItems(id={"type": "cons-pick", "field": field.name}, options=options, value=None, className="small"),
+                *blocks,
+                html.Small("Take:", className="text-muted d-block"),
+                dbc.RadioItems(id={"type": "cons-pick", "field": field.name}, options=options, value=None, inline=True, className="small"),
                 *custom_widgets,
-                *quotes,
             ]
         ),
         className="mb-2",
