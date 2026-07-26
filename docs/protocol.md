@@ -29,7 +29,7 @@ A **Preview** panel beside the editor shows the exact criteria text that is fill
 
 The **Variables** tab is the **data-extraction form**: the fields the AI fills for each included paper (the schema). Each field has a name, a **type** (text / number / enum / list / group), a **description**, options for enums, whether it is **required**, and whether a **human must verify** it.
 
-You can start from the **standard modules**, a set of ready-made common fields (publication type, country, study design, sample size, primary research goal, language, keywords) that you tick on. None of them are imposed, and any **custom field** you add sits alongside them.
+You can start from the **standard modules**, a set of ready-made common fields (publication type, country, study design, sample size, primary research goal, language, keywords) that you tick on. Two quality-appraisal modules sit in the same list — **rob2** (Cochrane RoB 2, for randomized trials) and **newcastle_ottawa** (for cohort and case-control studies) — so an appraisal is extracted, verified, and reconciled like any other variable; tick the one that matches your designs, or copy it and edit the domains. None of them are imposed, and any **custom field** you add sits alongside them.
 
 - **Edit any field in place.** Change its name, type, options, or required flag without deleting and re-adding.
 - **Import** a field list: paste JSON, or click **Import JSON file** to load `extraction_variables.json`, validate, then load into the editor to review before saving.

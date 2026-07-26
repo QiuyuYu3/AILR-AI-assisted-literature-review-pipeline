@@ -10,6 +10,7 @@ import pytest
 from ailr.ui import (
     calibration_view,
     conflicts_view,
+    consensus_view,
     dashboard_view,
     database_view,
     duplicates_view,
@@ -44,6 +45,7 @@ _LAYOUTS = [
     ("ft_conflicts", lambda: ft_conflicts_view.layout()),
     ("full_text", lambda: full_text_view.layout()),
     ("extract", lambda: extract_view.layout()),
+    ("consensus", lambda: consensus_view.layout()),
     ("template_variables", lambda: template_view.variables_layout()),
     ("template_prompt", lambda: template_view.prompt_layout()),
     ("protocol", lambda: protocol_view.layout()),
