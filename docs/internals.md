@@ -11,13 +11,15 @@ ailr/
   core/             config, project, database, source, audit
   ingest/           RIS / BibTeX / CSV readers, dedup, PDF linking, results import
   preprocess.py     PDF → markdown
-  tasks/            screen / extract / calibrate / preprocess — the pipeline steps
+  criteria.py       structured inclusion/exclusion criteria (criteria.yaml → {{criteria}})
+  extraction.py     schema → tool definition; unwrap tool call → rows
+  tasks/            screen / extract / calibrate / preprocess: the pipeline steps
   llm/              provider-agnostic client: base, factory, retry, mock, providers/
   modes/            built-in config presets (strict.yaml, assisted.yaml)
   exports/          prisma, methods, tables, ris
   metrics.py        Cohen's κ, confusion matrix
   reviewers.py      reviewer identity helpers
-  ui/               Dash app — one *_view.py per sidebar page, plus ai_runner
+  ui/               Dash app: one *_view.py per sidebar page (incl. protocol/criteria), plus ai_runner
 ```
 
 Rough data flow:
@@ -35,7 +37,9 @@ The UI is a thin layer: each sidebar page is a `*_view.py`, and AI runs are disp
 3. optional user preset file (`mode_preset` in the project config, or `--preset`)
 4. the project's own `lit_review.yaml`
 
-Per-stage LLM overrides are resolved separately: `resolve_stage_llm()` layers a stage's `llm:` sub-block over the top-level `llm:` block, so a stage inherits any field it doesn't set. The config is validated into pydantic models (`Config`, `ScreeningConfig`, `ExtractionConfig`, …); a bad file raises `ConfigError`, which the CLI/UI catches and presents cleanly.
+Per-stage LLM overrides are resolved separately: `resolve_stage_llm()` layers a stage's `llm:` sub-block over the top-level `llm:` block, so a stage inherits any field it doesn't set. Each stage also has a `workers` count (`screening.workers` default 4, `extraction.workers` default 2) for parallel AI calls. The config is validated into pydantic models (`Config`, `ScreeningConfig`, `ExtractionConfig`, and so on); a bad file raises `ConfigError`, which the CLI/UI catches and presents cleanly.
+
+**Domain-content files** referenced from the config live in the project folder and are edited in the UI (mostly on the **Protocol** page): `criteria.yaml` (structured criteria, single source of truth, shared by screening and extraction; `inclusion_criteria.md` is a legacy free-text fallback), `schema.yaml` (extraction variables, mirrored to `extraction_variables.json`), `prompts/screening.txt` / `prompts/extraction.txt` (the fixed scaffolds), and `prompts/extraction_additional.txt` (`{{additional}}`). Criteria, variables, and prompts are **versioned**: each save snapshots a new version (prompts store the fully-resolved `composed` text), so a decision traces to the exact wording in force.
 
 ## Database
 
@@ -43,11 +47,11 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 
 | Table | Holds |
 |-------|-------|
-| `projects` | one row per project (name, config hash) — namespaces everything else |
+| `projects` | one row per project (name, config hash); namespaces everything else |
 | `sources` | imported references + metadata, `pdf_path`, `markdown_path`, duplicate flag |
 | `screening_decisions` | every abstract/full-text verdict (AI and human), with reasoning, evidence, confidence, `prompt_version` |
 | `extractions` | one row per extracted field, with `source_quote`, page/section, `prompt_version` |
-| `reconciliations` | conflict resolutions — links the AI and human decisions and records the final value + rationale |
+| `reconciliations` | conflict resolutions; links the AI and human decisions and records the final value + rationale |
 | `prompt_versions` / `codebook_versions` | snapshots of prompts/codebook so each decision traces to the exact wording |
 | `tags` / `source_tags` | labels and their many-to-many links to sources |
 | `screening_actions` | per-source action log (move to/from a stage, undo) |
@@ -55,28 +59,28 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 | `duplicates` / `exclusion_reasons` | dedup pairs and recorded exclusion reasons (feed the PRISMA flow) |
 | `calibration_samples` | which sources are in each calibration sample |
 | `api_calls` | token usage per LLM call (drives the API-usage report) |
-| `test_runs` / `test_decisions` / `test_extractions` | isolated calibration "quick test" runs — kept separate from real decisions |
+| `test_runs` / `test_decisions` / `test_extractions` | isolated calibration "quick test" runs, kept separate from real decisions |
 
 ## The audit trail
 
 The primary audit trail is the **database itself**:
 
-- `screening_decisions` and `extractions` are **append-only** and stamped with `reviewer_type` / `reviewer_id` (or `extractor_*`), `timestamp`, `llm_params`, and `prompt_version`. Nothing is overwritten in place — a changed verdict is a new row.
+- `screening_decisions` and `extractions` are **append-only** and stamped with `reviewer_type` / `reviewer_id` (or `extractor_*`), `timestamp`, `llm_params`, and `prompt_version`. Nothing is overwritten in place; a changed verdict is a new row.
 - `reconciliations` records *who* adjudicated a conflict and *why*.
 - `prompt_versions` / `codebook_versions` make every decision reproducible against the exact prompt that produced it.
 - `api_calls` accounts for every token spent.
 
 Together these let the **exports** module derive a PRISMA flow, a methods skeleton, and inter-rater reliability entirely from stored rows.
 
-**JSONL backup.** Alongside the database, every decision and extraction is also appended to a plaintext log at `data/audit.jsonl` (path from `logging.audit_log`). This is a deliberate *second* copy — the database stays the primary store, and the JSONL write is **best-effort**: `core/audit.py`'s `log_event` swallows I/O errors so a failed log line can never break the primary DB write. It means the trail survives even if the database is lost, and `read_events()` can replay it.
+**JSONL backup.** Alongside the database, every decision and extraction is also appended to a plaintext log at `data/audit.jsonl` (path from `logging.audit_log`). This is a deliberate *second* copy: the database stays the primary store, and the JSONL write is **best-effort**. `core/audit.py`'s `log_event` swallows I/O errors so a failed log line can never break the primary DB write. It means the trail survives even if the database is lost, and `read_events()` can replay it.
 
 ## Exports & metrics
 
-`exports/` turns stored rows into reporting artifacts — `prisma.py` (flow counts), `methods.py` (methods prose), `tables.py` (CSV/JSON extraction table), `ris.py` (included set back to RIS). `metrics.py` computes Cohen's κ and the confusion matrix from paired decisions, used both in calibration and on the Reports page.
+`exports/` turns stored rows into reporting artifacts: `prisma.py` (flow counts), `methods.py` (methods prose), `tables.py` (CSV/JSON extraction table), `ris.py` (included set back to RIS). `metrics.py` computes Cohen's κ and the confusion matrix from paired decisions, used both in calibration and on the Reports page.
 
 ## CLI reference
 
-Everything below is also doable from the UI — the CLI is the power-user bypass, useful for scripting or batch runs.
+Everything below is also doable from the UI. The CLI is the power-user bypass, useful for scripting or batch runs.
 
 | Command | Does |
 |---------|------|
@@ -97,6 +101,6 @@ Add `--mock` to `screen` / `extract` / `calibrate` to run with no API call. Run 
 
 ## Pipeline diagram
 
-The full flow — main path plus the conflict, calibration, and exclusion branches — is shown on the [handbook home page](index.md).
+The full flow (main path plus the conflict, calibration, and exclusion branches) is shown on the [handbook home page](index.md).
 
 ![pipeline](figures/ailr.png)

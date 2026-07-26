@@ -13,6 +13,7 @@ project:
       children:
         - file: getting-started.md
         - file: concepts.md
+        - file: protocol.md
     - title: Running a review
       children:
         - file: workflow/import.md
