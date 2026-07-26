@@ -31,6 +31,16 @@ _STATUS_FILTERS = [
     {"label": "All", "value": "all"},
 ]
 
+# Reconciliation only exists when two people extract the same paper; under `verify` the filter
+# could never match, so it is not offered.
+_RECONCILE_FILTER = {"label": "To reconcile", "value": "to_reconcile"}
+
+
+def _status_filters(project: Any) -> list[dict]:
+    if project.config.extraction.workflow != "independent":
+        return _STATUS_FILTERS
+    return _STATUS_FILTERS[:4] + [_RECONCILE_FILTER] + _STATUS_FILTERS[4:]
+
 
 def pdf_tools_panel() -> list[Any]:
     """Full-text data-prep as clear steps: 1) link PDFs → 2) convert to markdown (or 3) import).
@@ -108,7 +118,7 @@ def layout() -> Any:
                     dbc.Label("Status", className="fw-bold"),
                     dbc.RadioItems(
                         id="ft-filter-status",
-                        options=_STATUS_FILTERS,
+                        options=_status_filters(get_project()),
                         value="to_review",
                         persistence=True,
                         persistence_type="session",
@@ -229,6 +239,18 @@ def register_callbacks(app: Any) -> None:
         # The extraction view is driven purely by this source id (no positional index), so opening a
         # card always lands on exactly that paper regardless of list order or page re-mounts.
         return "extract", {"sid": trig.get("source")}
+
+    @app.callback(
+        Output("tabs", "data", allow_duplicate=True),
+        Output("cons-store", "data", allow_duplicate=True),
+        Input({"type": "ft-open-consensus", "source": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _open_consensus(_clicks):
+        trig = ctx.triggered_id
+        if not isinstance(trig, dict) or not any(c.get("value") for c in (ctx.triggered or [])):
+            return no_update, no_update
+        return "consensus", {"sid": trig.get("source")}
 
     @app.callback(
         Output("ft-preprocess-poll", "disabled"),
@@ -687,6 +709,13 @@ def register_callbacks(app: Any) -> None:
                 cid for cid in db.full_text_candidate_ids(pid)
                 if _low_text_md(project.root, cid, threshold)
             }
+        # "To reconcile" is a state of the extraction records, not a screening column: resolve it to
+        # an id set and hand it to the SQL query as a whitelist (same trick as low-text).
+        if status == "to_reconcile":
+            pending = db.sources_needing_consensus(list(db.full_text_candidate_ids(pid)))
+            id_whitelist = pending if id_whitelist is None else (id_whitelist & pending)
+            status = "all"
+
         req_page = (page_state or {}).get("page", 0)
 
         total_candidates = db.count_full_text_candidates(pid)
@@ -731,6 +760,10 @@ def register_callbacks(app: Any) -> None:
         tags_by_source = db.get_tags_for_sources(page_ids)        # one-to-many, kept as its own query
         from ailr.ui.ai_runner import current_extraction_composed
         stale_ids = db.stale_ai_extraction_source_ids(pid, current_extraction_composed(project))
+        reconcile_ids = (
+            db.sources_needing_consensus(page_ids)
+            if project.config.extraction.workflow == "independent" else set()
+        )
 
         cards = [
             _ft_card(
@@ -743,6 +776,7 @@ def register_callbacks(app: Any) -> None:
                 ai_decision=ai_by_source.get(s.id),
                 note_count=note_counts.get(s.id, 0),
                 stale=s.id in stale_ids,
+                needs_reconcile=s.id in reconcile_ids,
             )
             for s in page_sources
         ]
@@ -783,6 +817,7 @@ def _ft_card(
     ai_decision: Optional[str] = None,
     note_count: int = 0,
     stale: bool = False,
+    needs_reconcile: bool = False,
 ) -> Any:
     sid = src.id
     decision_color = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -893,7 +928,19 @@ def _ft_card(
     )
 
     extract_row: Any = None
-    if can_extract:
+    if needs_reconcile:
+        extract_row = html.Div(
+            [
+                dbc.Button(
+                    "Open comparison →",
+                    id={"type": "ft-open-consensus", "source": sid},
+                    size="sm", color="warning", outline=True, className="me-2",
+                ),
+                dbc.Badge("Two extractions — needs reconciling", color="warning", className="align-middle"),
+            ],
+            className="mt-2",
+        )
+    elif can_extract:
         locked = extracted_by is not None and extracted_by != reviewer_id and extract_verify
         if extracted_by is None:
             status_badge = dbc.Badge("To extract", color="secondary", className="align-middle")

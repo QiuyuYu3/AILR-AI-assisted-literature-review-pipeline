@@ -67,12 +67,25 @@ def _cell_value(field_name: str, owning: FieldSpec, value: Any, *, is_leaf: bool
     return v_str, q
 
 
+def _source_extraction_rows(db: Any, source_id: int, extractor_type: str) -> list[dict]:
+    """Rows for one source. `final` means the adjudicated record when there is one, else the raw
+    human record(s) — so a reconciled paper exports as one agreed row, and an unreconciled one
+    still exports every reviewer separately rather than silently picking a winner."""
+    if extractor_type != "final":
+        return db.list_extractions(source_id, extractor_type=extractor_type)
+    consensus = db.list_extractions(source_id, extractor_type="consensus")
+    return consensus or db.list_extractions(source_id, extractor_type="human")
+
+
 def _group_by_extractor(ex_rows: list[dict]) -> dict[str, dict[str, Any]]:
     """{extractor_id: {field_name: {value, quote} | raw}}. Grouping by extractor matters because
     independent extraction leaves two humans' rows on the same paper — collapsing them into one
     record would silently keep whichever was written last, per field."""
     grouped: dict[str, dict[str, Any]] = {}
     for row in ex_rows:                      # ORDER BY id: within one extractor, later rows win
+        # `_submitted` / other reserved markers are bookkeeping, not extracted values.
+        if str(row["field_name"]).startswith("_"):
+            continue
         fields = grouped.setdefault(row.get("extractor_id") or "", {})
         val = row["value"]
         if isinstance(val, (dict, list)):
@@ -123,7 +136,7 @@ def extraction_table_rows(
     for src in sources:
         # Re-pair each leaf value with its verbatim quote (stored in a separate column) so the
         # <field>_quote columns are populated; nested fields keep their inner structure.
-        for extractor_id, ex_by_field in _group_by_extractor(db.list_extractions(src.id, extractor_type=extractor_type)).items():
+        for extractor_id, ex_by_field in _group_by_extractor(_source_extraction_rows(db, src.id, extractor_type)).items():
             out_row: dict[str, str] = {
                 "source_id": str(src.id),
                 "extractor_id": extractor_id,
@@ -204,10 +217,14 @@ def _extraction_records(
         # Leaf fields store the value and its verbatim quote separately; re-pair them as
         # {value, quote} so the JSON is self-contained. Nested fields already carry quotes inside.
         flag_check = None
-        grouped = _group_by_extractor(db.list_extractions(src.id, extractor_type=extractor_type))
+        rows = _source_extraction_rows(db, src.id, extractor_type)
+        # Under "final" the rows may be either the adjudicated record or the raw human ones;
+        # report which, rather than the word the caller asked with.
+        actual_type = rows[0]["extractor_type"] if rows else extractor_type
+        grouped = _group_by_extractor(rows)
         for extractor_id, fields in grouped.items():
             if flag_check is None:
-                flag_check = db.get_flag_check(src.id, extractor_type=extractor_type)
+                flag_check = db.get_flag_check(src.id, extractor_type=actual_type)
             out.append(
                 {
                     "source_id": src.id,
@@ -215,7 +232,7 @@ def _extraction_records(
                     "year": src.year,
                     "doi": src.doi,
                     "title": src.title,
-                    "extractor_type": extractor_type,
+                    "extractor_type": actual_type,
                     "extractor_id": extractor_id,
                     "fields": fields,
                     "flag_check": flag_check,
@@ -281,7 +298,7 @@ def extraction_rows_long(
 
     out: list[dict[str, Any]] = []
     for src in sources:
-        for row in db.list_extractions(src.id, extractor_type=extractor_type):
+        for row in _source_extraction_rows(db, src.id, extractor_type):
             out.append(
                 {
                     "source_id": src.id,

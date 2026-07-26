@@ -11,6 +11,7 @@ from ailr.exceptions import DuplicateError
 from ailr.ui import (
     calibration_view,
     conflicts_view,
+    consensus_view,
     dashboard_view,
     database_view,
     duplicates_view,
@@ -132,6 +133,9 @@ def build_app() -> Dash:
             dcc.Store(id="screen-store", data={"idx": 0}),
             dcc.Store(id="extract-store", data={"sid": None}, storage_type="session"),
             dcc.Store(id="extract-refresh", data={"ts": 0}),
+            dcc.Store(id="cons-store", data={"sid": None}, storage_type="session"),
+            dcc.Store(id="cons-refresh", data={"ts": 0}),
+            dcc.Store(id="cons-state", data={}),
             dcc.Store(id="screen-page", data={"page": 0}),
             dcc.Store(id="screen-refresh", data={"ts": 0}),
             dcc.Store(id="screen-last-action", data=None),
@@ -340,6 +344,8 @@ def build_app() -> Dash:
             return dashboard_view.layout(reviewer or "")
         if tab == "extract":
             return extract_view.layout()
+        if tab == "consensus":
+            return consensus_view.layout()
         if tab == "sources":
             return sources_view.layout()
         if tab == "conflicts":
@@ -410,6 +416,7 @@ def build_app() -> Dash:
     calibration_view.register_callbacks(app, "abstract")
     calibration_view.register_callbacks(app, "extraction")
     extract_view.register_callbacks(app)
+    consensus_view.register_callbacks(app)
     sources_view.register_callbacks(app)
     conflicts_view.register_callbacks(app)
     dashboard_view.register_callbacks(app)

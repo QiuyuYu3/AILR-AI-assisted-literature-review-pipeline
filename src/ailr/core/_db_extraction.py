@@ -227,6 +227,71 @@ class ExtractionMixin:
         ).fetchall()
         return {r["source_id"]: r["extractor_id"] for r in rows}
 
+    # ── Consensus (independent extraction: reconcile two reviewers into one record) ──────
+
+    def sources_with_consensus(self, source_ids: list[int]) -> set[int]:
+        """Subset of source_ids that already have an adjudicated consensus extraction."""
+        if not source_ids:
+            return set()
+        placeholders = ",".join("?" for _ in source_ids)
+        rows = self._conn.execute(
+            f"SELECT DISTINCT source_id FROM extractions "
+            f"WHERE source_id IN ({placeholders}) AND extractor_type = 'consensus'",
+            source_ids,
+        ).fetchall()
+        return {r["source_id"] for r in rows}
+
+    def consensus_adjudicator(self, source_id: int) -> Optional[str]:
+        row = self._conn.execute(
+            "SELECT extractor_id FROM extractions WHERE source_id = ? AND extractor_type = 'consensus' "
+            "ORDER BY id DESC LIMIT 1",
+            (source_id,),
+        ).fetchone()
+        return row["extractor_id"] if row else None
+
+    def sources_needing_consensus(self, source_ids: list[int], required: int = 2) -> set[int]:
+        """Sources where enough reviewers have SUBMITTED an independent extraction but nobody has
+        adjudicated yet. Drives the full-text 'To reconcile' queue."""
+        if not source_ids:
+            return set()
+        placeholders = ",".join("?" for _ in source_ids)
+        rows = self._conn.execute(
+            f"SELECT source_id FROM extractions "
+            f"WHERE source_id IN ({placeholders}) AND extractor_type = 'human' AND field_name = '_submitted' "
+            f"GROUP BY source_id HAVING COUNT(DISTINCT extractor_id) >= ?",
+            [*source_ids, required],
+        ).fetchall()
+        return {r["source_id"] for r in rows} - self.sources_with_consensus(source_ids)
+
+    def save_consensus(self, source_id: int, adjudicator: str, results: list["ExtractionResult"]) -> None:
+        """Replace this source's consensus record in one go (delete then insert), so re-adjudicating
+        never leaves half of an older decision behind."""
+        try:
+            self._conn.execute(
+                "DELETE FROM extractions WHERE source_id = ? AND extractor_type = 'consensus'",
+                (source_id,),
+            )
+            self._conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to clear previous consensus: {e}") from e
+        for r in results:
+            r.extractor_type = "consensus"
+            r.extractor_id = adjudicator
+            r.source_id = source_id
+        self.insert_extractions(results)
+
+    def delete_consensus(self, source_id: int) -> int:
+        """Undo an adjudication: the source returns to the 'To reconcile' queue."""
+        try:
+            cur = self._conn.execute(
+                "DELETE FROM extractions WHERE source_id = ? AND extractor_type = 'consensus'",
+                (source_id,),
+            )
+            self._conn.commit()
+            return cur.rowcount
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to delete consensus: {e}") from e
+
     def clear_mock_ai_extractions(self, project_id: int) -> int:
         """Delete mock AI extractions (provider 'mock', incl. their _flag_check rows) in a project,
         AND the full-text AI screening decisions extraction derived from them; real AI and human kept."""

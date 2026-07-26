@@ -4,6 +4,7 @@
 ## [0.28.0] – 2026-07-26
 
 ### Added
+- Consensus for independent extraction: once two reviewers submit, the paper appears under Full-text review → "To reconcile" → "Open comparison", where agreed variables are carried over and only disagreements ask for a decision (take a reviewer's answer with its quote, or type your own). Saved as an adjudicated record that "Extraction — final" exports; Undo puts the paper back in the queue.
 - Reliability report covers any reviewer pair at either stage: pick abstract or full-text and the two reviewers (AI vs human, or human vs human), instead of only AI vs human at the abstract stage.
 - PABAK (prevalence-adjusted κ) alongside Cohen's κ, since κ reads low at screening's typical include rate.
 - "Download the votes behind this (CSV)" on the reliability report: every reviewer's vote per record, for computing agreement under other conventions.
@@ -12,6 +13,7 @@
 ### Fixed
 - Agreement paired the latest human vote regardless of who cast it, so with two reviewers on a paper the AI was compared against whichever human voted last. Pairing is now per reviewer.
 - Extraction exports merged two reviewers' values into one row, silently keeping whichever was written last; CSV/JSON/ZIP now carry an `extractor_id` and emit one record per extractor.
+- Human extraction exports no longer include the internal `_submitted` marker as if it were a variable.
 - `project.type` was hardcoded to `scoping` with no way to change it, so every methods export called the review a scoping review.
 
 ### Changed

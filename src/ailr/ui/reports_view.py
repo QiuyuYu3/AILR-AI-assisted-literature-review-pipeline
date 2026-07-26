@@ -400,7 +400,7 @@ def register_callbacks(app: Any) -> None:
 
         builders = {
             "report-dl-csv": (lambda: extraction_table_csv(proj, extractor_type="ai", only_includes=True), f"{name}_extraction_ai.csv"),
-            "report-dl-csv-human": (lambda: extraction_table_csv(proj, extractor_type="human", only_includes=True), f"{name}_extraction_final.csv"),
+            "report-dl-csv-human": (lambda: extraction_table_csv(proj, extractor_type="final", only_includes=True), f"{name}_extraction_final.csv"),
             "report-dl-json": (lambda: extraction_table_json(proj, extractor_type="ai", only_includes=True), f"{name}_extraction_ai.json"),
             "report-dl-prisma": (lambda: build_prisma_report(proj), f"{name}_prisma.md"),
             "report-dl-svg": (lambda: build_prisma_svg(proj), f"{name}_prisma.svg"),

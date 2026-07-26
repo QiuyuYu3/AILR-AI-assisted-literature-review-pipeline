@@ -23,7 +23,7 @@ The single highest-leverage thing you can do for extraction quality is a **clear
 Set the workflow on the full-text **Workflow** page:
 
 - `verify`: the AI extracts and the **human verifies/edits** each value (the AI value is shown). Fastest path; the human is a checker.
-- `independent`: the **human extracts blind** and the AI's values stay hidden until submit. Use when you need a true second independent pass.
+- `independent`: the **human extracts blind** and the AI's values stay hidden until submit. Use when you need a true second independent pass. Two reviewers extract each paper and then reconcile — see [Reconcile two extractions](#reconcile-two-extractions) below.
 
 See [workflow modes](../concepts.md#workflow-modes).
 
@@ -60,5 +60,17 @@ After you submit, the form prefills **your saved values**, not the AI's, so re-o
 ![verify queue](../figures/ft_extraction1.png)
 
 ![verify form](../figures/ft_extraction2.png)
+
+## 5. Reconcile two extractions
+
+Only in `independent` mode. Once two reviewers have submitted their own extraction of a paper, it moves to **To reconcile** on the Full-text review list (the filter is not shown in `verify` mode, where one person extracts each paper). Click **Open comparison →**.
+
+The comparison keeps the same split screen as extraction: the paper on the left, the decisions on the right. Variables the two reviewers answered identically are **carried over untouched** and folded away behind a "show the agreed fields" toggle, so the page opens on the handful that actually need a decision. A multi-select answered in a different order counts as agreement, not a difference.
+
+For each disagreement, pick one reviewer's answer — its supporting quote comes along — or type a different final value with your own quote. Repeating groups and nested objects are decided **whole**: both reviewers' versions render as small tables so you can see how they differ, and you choose one. Aligning individual rows across two reviewers would mean guessing which row corresponds to which, and reviewers usually disagree about *how many* entries there are rather than about one cell.
+
+**Save consensus** writes the agreed record and takes the paper out of the queue; **Undo consensus** removes it and puts the paper back. Anyone can adjudicate, including one of the two extractors; whoever does is recorded on the record.
+
+The consensus record is what **Extraction — final** exports. A paper that has not been reconciled yet exports as one row per reviewer (each labelled in the `extractor_id` column) rather than a silently merged row, so unfinished reconciliation is visible in the data.
 
 When extraction is verified, generate your [reports and exports](reports.md).

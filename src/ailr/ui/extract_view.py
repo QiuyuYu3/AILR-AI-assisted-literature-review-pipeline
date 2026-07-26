@@ -272,25 +272,7 @@ def register_callbacks(app: Any) -> None:
         sid = (store or {}).get("sid")
         if not sid:
             return html.Small("Open a paper from the Full-text review page.", className="text-muted")
-        proj = get_project()
-        src = proj.db.get_source(int(sid))
-        if src is None:
-            return ""
-        # height:100% fills the flex pane the reader sits in (see layout()).
-        if mode == "pdf":
-            if not src.pdf_path:
-                return dbc.Alert("No PDF linked for this source.", color="warning")
-            return html.Iframe(src=f"/pdf/{sid}", style={"width": "100%", "height": "100%", "border": "none"})
-        md_text = None
-        if src.markdown_path:
-            p = Path(src.markdown_path)
-            if not p.is_absolute():
-                p = proj.root / p
-            if p.exists():
-                md_text = p.read_text(encoding="utf-8")
-        if not md_text:
-            return dbc.Alert("No markdown yet for this source.", color="info")
-        return dcc.Markdown(md_text, style={"height": "100%", "overflow": "auto"})
+        return reader_body(get_project(), int(sid), mode)
 
     @app.callback(
         Output("extract-ai-poll", "disabled"),
@@ -502,6 +484,28 @@ def register_callbacks(app: Any) -> None:
                 rows.append({})
             out.append(rows)
         return out
+
+
+def reader_body(project: Any, sid: int, mode: str) -> Any:
+    """The full-text reader pane (PDF iframe or rendered markdown). Shared with the consensus
+    comparison view; height:100% fills the flex pane it sits in."""
+    src = project.db.get_source(int(sid))
+    if src is None:
+        return ""
+    if mode == "pdf":
+        if not src.pdf_path:
+            return dbc.Alert("No PDF linked for this source.", color="warning")
+        return html.Iframe(src=f"/pdf/{sid}", style={"width": "100%", "height": "100%", "border": "none"})
+    md_text = None
+    if src.markdown_path:
+        p = Path(src.markdown_path)
+        if not p.is_absolute():
+            p = project.root / p
+        if p.exists():
+            md_text = p.read_text(encoding="utf-8")
+    if not md_text:
+        return dbc.Alert("No markdown yet for this source.", color="info")
+    return dcc.Markdown(md_text, style={"height": "100%", "overflow": "auto"})
 
 
 def _source_card(root: Path, src: Source) -> Any:
