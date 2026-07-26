@@ -1,47 +1,36 @@
 # Example review setup
 
-Starter **criteria** and **prompts** for an ailr review. This particular example is for a
-scoping review of *quality-control (QC) methods in fNIRS studies*, but it's just a
-starting point — adapt the wording to your own review.
-
-> Prompts and criteria are **yours to own**. ailr only provides the editors; these files
-> are a reference you can copy and edit, not something the tool enforces.
-
-## What's here
+A deliberately tiny but complete setup: two criteria, two extraction variables, two prompts. The
+review is a scoping review of *quality-control methods in fNIRS studies*. Copy the shape, not the
+content.
 
 | File | Goes into |
 |------|-----------|
-| `inclusion_criteria.md` | Settings → criteria editor (or your project's `inclusion_criteria.md`) |
-| `prompts/screening.txt` | Abstract → Workflow → AI screening → **Step 1** prompt box (or `prompts/screening.txt`) |
-| `prompts/extraction.txt` | Full text → Workflow → **Template** → prompt box (or `prompts/extraction.txt`) |
+| `criteria.yaml` / `criteria.json` | **Protocol → Criteria** (paste the YAML, or use Import JSON file) |
+| `schema.yaml` / `extraction_variables.json` | **Protocol → Variables** (same: paste or import) |
+| `prompts/screening.txt` | **Abstract → Workflow → Prompt** |
+| `prompts/extraction.txt` | **Full text → Workflow → Prompt** |
 
-## How to use
+The YAML and JSON versions hold the same content. Importing the JSON validates it first and loads
+the editor for review, so it is the safer route.
 
-1. Create a project (`ailr ui` → Project manager → New project, or `ailr init <name>`).
-2. Paste each file's contents into the matching editor in the UI, **or** copy the files
-   into your project folder at the paths shown above.
-3. Edit the wording for your own review.
+## Placeholders, filled in by ailr
 
-## Placeholders (filled in automatically by ailr)
+| Placeholder | Filled with |
+|-------------|-------------|
+| `{{criteria}}` | your criteria, with their locked IDs |
+| `{{schema_md}}` | your extraction variables (extraction prompt only) |
+| `{{additional}}` | the **Additional instructions** box on the same Workflow page |
 
-- `{{criteria}}` — your inclusion/exclusion criteria.
-- `{{schema_md}}` — your extraction schema (defined in the **Template** editor / `schema.yaml`).
+Keep the markers as they are, and do not paste the criteria or the field list into the prompt
+yourself: ailr injects them, so a hand-pasted copy just goes stale.
 
-## Customizing with your own AI
+## Why the prompts look thin
 
-A common workflow is to hand a starter prompt to your own AI (ChatGPT/Claude/Gemini)
-with your needs and paste the result back into ailr. If you do, tell the AI to:
+The output structure is enforced by a tool schema, not by the prompt text, so the prompts do not
+list the JSON fields to return. Screening returns a decision with reasoning, confidence, matched
+criteria (constrained to your real IDs) and quotes; extraction returns one `{value, quote}` per
+variable; both also return a PASS / FAIL / UNCERTAIN verdict per criterion. Describe the
+*judgement* in the prompt and the *fields* in the Variables editor.
 
-- **Keep `{{criteria}}` and `{{schema_md}}` exactly as-is** — don't paste the criteria
-  text or the field list into the prompt; ailr injects them.
-- **Define extraction fields in the schema editor, not in the prompt** — the output
-  structure is enforced from `schema.yaml`, so describing fields in prose alone won't
-  capture them. (ailr also adds a verbatim `quote` to each field and the `_flag_check`
-  re-verification automatically — no need to add those by hand.)
-
-## Note on extraction
-
-`prompts/extraction.txt` references `{{schema_md}}`, so extraction also needs a matching
-**schema** that defines the fields you want to pull (e.g. for QC: quantitative metrics like
-CV / SCI, qualitative checks like visual inspection, other data-collection QC). Define those
-in the Template editor. No example `schema.yaml` is shipped here — design it for your review.
+See [How AI extraction works](../docs/ai-extraction.md) for the full picture.

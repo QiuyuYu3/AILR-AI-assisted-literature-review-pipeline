@@ -52,7 +52,7 @@ def init(
         typer.echo("Next steps:")
         typer.echo(f"  cd {name}")
         typer.echo("  # Drop your RIS / BibTeX exports into data/raw/")
-        typer.echo("  # Edit prompts/, inclusion_criteria.md, schema.yaml")
+        typer.echo("  # Edit criteria.yaml, schema.yaml, prompts/")
         typer.echo(f"  ailr ingest . data/raw/<your-file>.ris")
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)

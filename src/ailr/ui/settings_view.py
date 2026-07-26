@@ -32,8 +32,6 @@ _PROVIDERS = [
     {"label": "Gemini", "value": "gemini"},
 ]
 
-_COMMON_MODELS = "Common: claude-opus-4-8 · claude-sonnet-4-6 · claude-haiku-4-5"
-
 _API_KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 
 
@@ -179,7 +177,6 @@ def layout() -> Any:
             ],
             className="g-2 mt-1",
         ),
-        html.Small(_COMMON_MODELS, className="text-muted"),
         html.Div(dbc.Button("Save models", id="settings-stage-save", color="primary", size="sm", className="mt-2")),
         html.Div(id="settings-stage-feedback", className="small mt-2"),
     ]

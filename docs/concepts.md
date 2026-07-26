@@ -7,7 +7,7 @@ A few ideas to understand before you start. They explain why the app behaves the
 | | Folder | Database |
 |---|--------|----------|
 | Holds | config, prompts, criteria, schema | references, decisions, extractions, audit trail |
-| Files | `lit_review.yaml`, `prompts/`, `inclusion_criteria.md`, `schema.yaml` | SQLite file (default) or PostgreSQL |
+| Files | `lit_review.yaml`, `prompts/`, `criteria.yaml`, `schema.yaml` | SQLite file (default) or PostgreSQL |
 | Shared by a team? | yes, everyone needs the **same folder** | yes, over PostgreSQL |
 
 The config that defines *how* the review runs lives in the folder; the data the review *produces* lives in the database. One database can hold **many projects**, namespaced by project name.
@@ -88,7 +88,7 @@ The criteria, variables, and prompts are **yours**; the tool never writes them. 
 | the **extraction prompt** | `prompts/extraction.txt` | **Full text → Workflow → Prompt** |
 | optional value definitions | `codebook.yaml` | n/a |
 
-The structured criteria (`criteria.yaml`) are the single source of truth; a free-text `inclusion_criteria.md` is only a fallback for older projects. Because both stages reference the criteria by the same locked IDs, every AI decision is recorded **per criterion** (PASS / FAIL / UNCERTAIN, with reason and quote). See [Set up your protocol](protocol.md).
+The structured criteria (`criteria.yaml`) are the single source of truth. Because both stages reference the criteria by the same locked IDs, every AI decision is recorded **per criterion** (PASS / FAIL / UNCERTAIN, with reason and quote). See [Set up your protocol](protocol.md).
 
 If you open a prompt file to edit it, leave the markers `{{criteria}}` and `{{schema_md}}` in place; the app fills them in with your criteria and schema at run time (see [How AI extraction works](ai-extraction.md)).
 

@@ -1,0 +1,16 @@
+# Criteria for the example review (fNIRS quality-control scoping review).
+# Paste or import into Protocol -> Criteria.
+criteria:
+- id: C1
+  name: Empirical fNIRS study
+  pass_if: The record reports original collection and/or analysis of (f)NIRS data.
+  fail_if: The record is a review, meta-analysis, or commentary with no original (f)NIRS data of its
+    own.
+  uncertain_if: The abstract does not make clear whether (f)NIRS data were collected or analysed.
+- id: C2
+  name: Quality control reported
+  pass_if: The paper describes at least one signal- or data-quality procedure, such as a quantitative
+    metric (CV, SCI, SQI, GVTD), visual inspection, or channel rejection.
+  fail_if: The paper reports no quality-control step anywhere in the methods.
+  uncertain_if: Preprocessing is mentioned only in general terms, with no identifiable quality-control
+    step.

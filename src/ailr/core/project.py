@@ -32,9 +32,11 @@ def _record_score(src: Source) -> tuple:
 TEMPLATE_FILES = [
     ("config.yaml.tmpl", "lit_review.yaml"),
     ("screening_prompt.txt.tmpl", "prompts/screening.txt"),
+    ("screening_additional.txt.tmpl", "prompts/screening_additional.txt"),
     ("extraction_prompt.txt.tmpl", "prompts/extraction.txt"),
+    ("extraction_additional.txt.tmpl", "prompts/extraction_additional.txt"),
     ("schema.yaml.tmpl", "schema.yaml"),
-    ("inclusion_criteria.md.tmpl", "inclusion_criteria.md"),
+    ("criteria.yaml.tmpl", "criteria.yaml"),
     ("gitignore.tmpl", ".gitignore"),
 ]
 

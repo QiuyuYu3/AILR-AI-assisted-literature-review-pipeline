@@ -131,14 +131,9 @@ def import_from_text(text: str) -> list[dict]:
 
 def resolve_criteria(root: Path, screening_cfg) -> tuple[str, list[str]]:
     """The single source of truth for a run: (criteria_text_for_prompt, criterion_ids).
-    Prefers the structured criteria.yaml; falls back to the legacy free-text file (no IDs)."""
-    structured = root / getattr(screening_cfg, "criteria_structured", "criteria.yaml")
-    cs = load_criteria(structured)
-    if cs.criteria:
-        return render_criteria_markdown(cs), criterion_ids(cs)
-    legacy = root / screening_cfg.criteria
-    text = legacy.read_text(encoding="utf-8") if legacy.exists() else ""
-    return text, []
+    Empty until the project has criteria."""
+    cs = load_criteria(root / getattr(screening_cfg, "criteria_structured", "criteria.yaml"))
+    return render_criteria_markdown(cs), criterion_ids(cs)
 
 
 def load_screening_inputs(root: Path, screening_cfg) -> tuple[str, str, list[str], str]:

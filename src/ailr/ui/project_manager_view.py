@@ -64,7 +64,7 @@ def layout():
                                     dbc.Label("Parent folder (where to create it)", className="small fw-bold"),
                                     dbc.Input(
                                         id="pm-new-parent",
-                                        placeholder=r"e.g. C:\research_projects\LR_pipeline",
+                                        placeholder=r"e.g. C:\reviews",
                                         value=str(Path.cwd()),
                                         size="sm",
                                         className="mb-2",
@@ -106,7 +106,7 @@ def layout():
                                     dbc.Label("Project folder (contains lit_review.yaml)", className="small fw-bold"),
                                     dbc.InputGroup(
                                         [
-                                            dbc.Input(id="pm-open-path", placeholder=r"e.g. C:\research_projects\LR_pipeline\test", size="sm"),
+                                            dbc.Input(id="pm-open-path", placeholder=r"e.g. C:\reviews\my-review", size="sm"),
                                             dbc.Button("Open", id="pm-open-btn", color="secondary", size="sm"),
                                         ],
                                         className="mb-2",

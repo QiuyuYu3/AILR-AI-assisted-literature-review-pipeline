@@ -2,6 +2,10 @@
 
 The **Protocol** page (top of the sidebar, right after Projects) holds your review's **shared definitions**: the **criteria** and the **extraction variables**. You set these up *once*, near the start, because everything downstream depends on them. The criteria drive both screening and extraction, and the variables are the data-extraction form.
 
+:::{tip}
+If you would rather start from something concrete, the repository's [`examples/`](https://github.com/QiuyuYu3/AILR-AI-assisted-literature-review-pipeline/tree/main/examples) folder holds a small complete set: criteria, variables, and both prompts, in both the YAML the app writes and the JSON the importers read.
+:::
+
 > Define once, used everywhere. Each *stage's prompt* is configured separately on its own Workflow page. Protocol is just the definitions.
 
 ## Criteria
@@ -13,7 +17,7 @@ Those IDs are what make decisions auditable end to end:
 - **Both stages reference the same criteria by ID.** Abstract screening and full-text extraction re-check the *same* named criteria, so a paper is judged against one consistent rule set.
 - **Every AI decision is recorded per criterion.** For each paper the AI reports a **PASS / FAIL / UNCERTAIN verdict, a confidence, and a supporting quote for each criterion**, not just an overall include/exclude. You can see exactly *why* it decided, on the Screening, Conflicts, and Calibration views.
 
-To fill the criteria in, type them in the form, **paste** them, or click **Import JSON file** to load a `criteria.json` you (or your own AI) prepared. It validates and fills the editor for review before you save. The saved criteria are the single source of truth (`criteria.yaml`); a free-text `inclusion_criteria.md` is only a fallback for older projects.
+To fill the criteria in, type them in the form, **paste** them, or click **Import JSON file** to load a `criteria.json` you (or your own AI) prepared. It validates and fills the editor for review before you save. The saved criteria (`criteria.yaml`) are the single source of truth: until they exist, screening and extraction run with no criteria at all.
 
 ## Variables
 

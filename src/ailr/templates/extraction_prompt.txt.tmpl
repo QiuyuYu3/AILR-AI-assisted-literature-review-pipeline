@@ -4,9 +4,9 @@ You are an expert research assistant extracting structured data from a full pape
 
 {{criteria}}
 
-# EXTRACTION SCHEMA
+# EXTRACTION VARIABLES
 
-For the paper in the user message, extract the following fields using the `record_extraction` tool.
+Extract the following fields from the paper in the user message.
 
 {{schema_md}}
 
@@ -14,20 +14,15 @@ For the paper in the user message, extract the following fields using the `recor
 
 - Base every answer on what is explicitly stated in the paper. Do not infer, guess, or paraphrase.
 - If a field's information is not stated, output null. Do not invent values.
-- For each leaf field, also include a `quote` — a verbatim sentence (or short passage) from the paper supporting the value. If not stated, set the quote to null.
-- For list-of-objects fields (e.g. multiple findings per paper), include one object per occurrence.
+- For each leaf field, also give a `quote`: a verbatim sentence or short passage from the paper supporting the value. If nothing supports it, set the quote to null.
+- For repeating groups (e.g. multiple findings per paper), output one entry per occurrence.
+
+# INCLUSION RE-CHECK
+
+After extraction, re-verify the paper against the criteria above using the full text, since the abstract may have been misleading. You will be asked for one verdict per criterion (PASS / FAIL / UNCERTAIN) with a one-sentence reason, a confidence from 1 to 10, and a supporting quote.
+
+Judge each criterion on its own. Use UNCERTAIN sparingly, only when the full text is genuinely ambiguous on that criterion.
 
 # ADDITIONAL INSTRUCTIONS
 
 {{additional}}
-
-# INCLUSION RE-CHECK (`_flag_check`)
-
-After extraction, re-verify the paper against the inclusion / exclusion criteria above using the full text (the abstract may have been misleading).
-For each criterion, output an item under `_flag_check` with:
-- `criterion_id` (e.g. "B1" or a short label)
-- `verdict`: PASS / FAIL / UNCERTAIN
-- `reason`: one sentence
-- `confidence`: integer 1-10
-
-Use UNCERTAIN sparingly — only when the paper is genuinely ambiguous on the criterion.

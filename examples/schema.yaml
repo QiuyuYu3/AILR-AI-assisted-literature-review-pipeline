@@ -1,0 +1,33 @@
+# Extraction variables for the example review. This is what Protocol -> Variables writes.
+# Bibliographic metadata (title, authors, year, journal, doi) comes from the imported record
+# and is joined into exports automatically, so it is not listed here.
+include_core: false
+include_suggested:
+- sample_size
+skip_verify: []
+fields:
+- name: visual_inspection
+  description: Whether the paper reports visual inspection of the raw or preprocessed signal.
+  type: string
+  enum:
+  - reported
+  - not-reported
+  - unclear
+- name: qc_metrics
+  description: One entry per quantitative quality-control metric the paper applies.
+  type: list
+  item_type: object
+  item_fields:
+  - name: metric_name
+    description: Name of the metric as the paper calls it.
+    type: string
+    enum:
+    - CV
+    - SCI
+    - SQI
+    - GVTD
+    - other
+  - name: threshold
+    description: The cut-off value used, verbatim (e.g. "CV > 15%").
+    type: string
+    required: false   # fields are required by default; set false where the paper may stay silent

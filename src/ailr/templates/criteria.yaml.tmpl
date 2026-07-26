@@ -1,0 +1,19 @@
+# Inclusion / exclusion criteria for {{project_name}}.
+#
+# This is the file the review runs on: both abstract screening and full-text extraction
+# reference these criteria by their locked IDs, so every AI decision is recorded per criterion.
+# Edit them in the app under Protocol -> Criteria (typing, pasting, or importing a criteria.json).
+#
+# Each criterion states when it PASSES, when it FAILS, and when it is genuinely UNCERTAIN:
+#
+# criteria:
+# - id: C1
+#   name: Empirical study
+#   pass_if: The record reports original data collected or analysed by the authors.
+#   fail_if: The record is a review, meta-analysis, or commentary with no original data.
+#   uncertain_if: The abstract does not make clear whether original data were collected.
+#
+# IDs are assigned on save and kept stable afterwards. While this file is empty, screening and
+# extraction run with no criteria at all, so fill it in before your first AI run.
+
+criteria: []

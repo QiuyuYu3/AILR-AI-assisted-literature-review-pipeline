@@ -120,6 +120,7 @@ Creating a project drops a few starter files into the folder. They are **yours t
 | `schema.yaml` | the **variables** to extract, the structure of your extraction (mirrored to `extraction_variables.json`) | **Protocol → Variables** |
 | `prompts/screening.txt` | the instruction the AI follows when screening titles & abstracts | **Abstract → Workflow → Prompt** |
 | `prompts/extraction.txt` | the instruction the AI follows when extracting data from full text | **Full text → Workflow → Prompt** |
+| `prompts/*_additional.txt` | free-form extra notes appended to each stage's prompt (start out empty) | **Workflow → Prompt**, Additional instructions |
 | `data/raw/` | holds the reference files you import | n/a |
 | `data/pdfs/` | export your Zotero PDFs here; they're auto-linked when you open the full-text pages | n/a |
 | `data/markdown/` | holds the full text converted from PDF to markdown | n/a |

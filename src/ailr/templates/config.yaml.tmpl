@@ -12,14 +12,15 @@ project:
 # Top-level LLM defaults. Per-stage overrides below.
 llm:
   provider: anthropic        # anthropic | openai | gemini
-  model: claude-sonnet-4-6
+  model: claude-sonnet-5
   temperature: 0
   seed: 42
   max_retries: 3
 
 screening:
   prompt: prompts/screening.txt
-  criteria: inclusion_criteria.md
+  additional: prompts/screening_additional.txt
+  criteria_structured: criteria.yaml   # the criteria the review runs on (edit them in Protocol -> Criteria)
   batch_size: 20
   llm:                       # cheaper model for abstract screening
     model: claude-haiku-4-5-20251001
@@ -30,15 +31,15 @@ screening:
 
 extraction:
   prompt: prompts/extraction.txt
-  schema_path: schema.yaml
-  codebook: codebook.yaml    # set to null to disable emergent codebook
+  additional: prompts/extraction_additional.txt
+  schema_path: schema.yaml   # the extraction variables (edit them in Protocol -> Variables)
   chunk_strategy: full       # full | methods_only | custom
   # workflow: verify | independent
   #   verify     = AI extracts, human verifies/edits (PI-recommended)
   #   independent = human extracts blind, AI hidden until submit
   # output_format, flag_check, target_kappa, calibration inherit from mode preset
   llm:                       # stronger model for full-text extraction
-    model: claude-sonnet-4-6
+    model: claude-sonnet-5
 
 preprocess:
   pdf_backend: pymupdf       # pymupdf | marker | grobid

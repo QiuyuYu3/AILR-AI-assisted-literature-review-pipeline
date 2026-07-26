@@ -32,7 +32,7 @@ class ProjectMeta(BaseModel):
 
 class LLMConfig(BaseModel):
     provider: Literal["anthropic", "openai", "gemini"] = "anthropic"
-    model: str = "claude-sonnet-4-6"
+    model: str = "claude-sonnet-5"
     temperature: float = 0.0
     seed: Optional[int] = 42
     max_retries: int = 3
@@ -56,8 +56,7 @@ class ScreeningConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     prompt: str = "prompts/screening.txt"
     additional: str = "prompts/screening_additional.txt"
-    criteria: str = "inclusion_criteria.md"  # legacy free-text fallback (used if criteria_structured is empty)
-    criteria_structured: str = "criteria.yaml"  # structured criteria (single source of truth) — shared by both stages
+    criteria_structured: str = "criteria.yaml"  # the criteria the review runs on — shared by both stages
     batch_size: int = 20
     workflow: Literal["assisted", "independent"] = Field(
         default="assisted",

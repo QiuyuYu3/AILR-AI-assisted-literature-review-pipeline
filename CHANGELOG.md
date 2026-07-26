@@ -8,6 +8,11 @@
 
 ### Changed
 - Database tab paginates (25/50/100/200 per page) and loads the whole table so sort/filter/paging span all rows, not just the first 500.
+- `criteria.yaml` is now the only criteria source: the free-text `inclusion_criteria.md` fallback and the `screening.criteria` config key are gone (a stale key in an old `lit_review.yaml` is ignored).
+- `ailr init` now writes `criteria.yaml` and the two `prompts/*_additional.txt` files.
+- Starter prompts and `lit_review.yaml` template updated to the current pipeline: `{{additional}}` on both stages, per-criterion re-check wording, `criteria_structured` / `additional` paths, no `codebook` line.
+- `examples/` rewritten as a complete minimal setup (criteria, variables, and both prompts, in YAML and importable JSON) and linked from the protocol docs.
+- Default model updated to `claude-sonnet-5`; dropped the hardcoded "Common models" hint under the Settings model inputs.
 
 ---
 ## [0.26.0] – 2026-07-20
