@@ -5,8 +5,6 @@ and these helpers decide who is paired with whom, so the same rows serve AI-vs-h
 human-vs-human, and any further reviewer combination.
 """
 
-# TODO: double check computation
-
 import math
 from typing import Any, Iterable, Optional
 
@@ -68,6 +66,48 @@ def cohen_kappa(
     if p_e == 1.0:
         return 1.0 if p_o == 1.0 else math.nan
     return (p_o - p_e) / (1.0 - p_e)
+
+
+_Z95 = 1.959964
+
+
+def cohen_kappa_ci(
+    pairs: Iterable[tuple[str, str]],
+    categories: Optional[list[str]] = None,
+    z: float = _Z95,
+) -> tuple[float, float]:
+    """Asymptotic 95% CI for Cohen's kappa, using the Fleiss-Cohen-Everitt (1969) variance —
+    the one R's vcd::Kappa reports, not the simplified form that treats the marginals as fixed.
+    Not clamped to [-1, 1]: with few paired records the normal approximation runs past the range,
+    and that is itself the signal that the estimate is unstable.
+    """
+    cats, matrix = confusion_matrix(list(pairs), categories)
+    n = sum(sum(row) for row in matrix)
+    if n == 0:
+        return math.nan, math.nan
+
+    k = len(cats)
+    p = [[matrix[i][j] / n for j in range(k)] for i in range(k)]
+    row = [sum(p[i]) for i in range(k)]
+    col = [sum(p[i][j] for i in range(k)) for j in range(k)]
+
+    p_o = sum(p[i][i] for i in range(k))
+    p_e = sum(row[i] * col[i] for i in range(k))
+    if p_e == 1.0:
+        return math.nan, math.nan
+    kappa = (p_o - p_e) / (1.0 - p_e)
+
+    a = sum(p[i][i] * ((1.0 - p_e) - (row[i] + col[i]) * (1.0 - p_o)) ** 2 for i in range(k))
+    b = (1.0 - p_o) ** 2 * sum(
+        p[i][j] * (col[i] + row[j]) ** 2 for i in range(k) for j in range(k) if i != j
+    )
+    c = (p_o * p_e - 2.0 * p_e + p_o) ** 2
+    variance = (a + b - c) / (n * (1.0 - p_e) ** 4)
+    if variance <= 0:      # perfect agreement, or float noise around it
+        return kappa, kappa
+
+    se = math.sqrt(variance)
+    return kappa - z * se, kappa + z * se
 
 
 def pabak(pairs: Iterable[tuple[str, str]], categories: Optional[list[str]] = None) -> float:

@@ -6,6 +6,7 @@ from ailr.metrics import (
     BINARY_CATEGORIES,
     binarize,
     cohen_kappa,
+    cohen_kappa_ci,
     decisions_for_pair,
     pabak,
     percent_agreement,
@@ -17,6 +18,19 @@ def _fmt(value: float) -> str:
     return "undefined" if value != value else f"{value:.2f}"      # value != value catches NaN
 
 
+def _fmt_ci(ci: tuple[float, float]) -> str:
+    lo, hi = ci
+    return "undefined" if lo != lo or hi != hi else f"[{lo:.2f}, {hi:.2f}]"
+
+
+def reporting_guideline(project_type: str) -> str:
+    """The checklist a review of this type reports against. Scoping reviews follow PRISMA-ScR,
+    not PRISMA 2020."""
+    if project_type == "scoping":
+        return "PRISMA-ScR, the PRISMA extension for scoping reviews"
+    return "the PRISMA 2020 statement"
+
+
 def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
     """Agreement for the reviewer pair with the most shared records at this stage, plus a short
     line for any further pairs. Votes are read pre-adjudication and `uncertain` counts as include
@@ -26,24 +40,30 @@ def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
     if not overlaps:
         return []
 
-    def _stats(rater_a: str, rater_b: str) -> tuple[list, float, float, float]:
+    def _stats(rater_a: str, rater_b: str) -> tuple[list, float, tuple[float, float], float, float]:
         pairs = binarize(decisions_for_pair(rows, rater_a, rater_b))
         return (pairs, cohen_kappa(pairs, categories=BINARY_CATEGORIES),
+                cohen_kappa_ci(pairs, categories=BINARY_CATEGORIES),
                 pabak(pairs, categories=BINARY_CATEGORIES), percent_agreement(pairs))
 
     a, b, _ = overlaps[0]
-    pairs, kappa, pb, agree = _stats(a, b)
+    pairs, kappa, ci, pb, agree = _stats(a, b)
     agree_str = "undefined" if agree != agree else f"{agree:.1%}"
     lines = [
         "",
         f"Agreement between {a} and {b} on the {len(pairs)} records both reviewers judged at "
-        f"{label} was Cohen's κ = {_fmt(kappa)} (prevalence-adjusted κ = {_fmt(pb)}; percent "
+        f"{label} was Cohen's κ = {_fmt(kappa)} (95% CI {_fmt_ci(ci)}, Fleiss-Cohen-Everitt "
+        f"asymptotic variance; prevalence-adjusted κ = {_fmt(pb)}; percent "
         f"agreement = {agree_str}), computed on the votes as first cast, before conflicts were "
         f"reconciled. Records voted uncertain were counted as includes, since an uncertain record "
         f"carries forward to the next stage.",
     ]
     if len(overlaps) > 1:
-        extras = ", ".join(f"{x} vs {y}: κ = {_fmt(_stats(x, y)[1])} (n = {n})" for x, y, n in overlaps[1:])
+        others = [(x, y, n, _stats(x, y)) for x, y, n in overlaps[1:]]
+        extras = ", ".join(
+            f"{x} vs {y}: κ = {_fmt(st[1])} (95% CI {_fmt_ci(st[2])}, n = {n})"
+            for x, y, n, st in others
+        )
         lines.append("")
         lines.append(f"Other reviewer pairs at {label} — {extras}.")
     return lines
@@ -75,7 +95,8 @@ def build_methods_skeleton(
     lines.append("")
     lines.append(
         f"We conducted a {cfg.project.type.replace('_', ' ')} review titled \"{cfg.project.name}\", "
-        f"following the PRISMA 2020 reporting guidelines extended for AI-assisted screening (PRISMA-trAIce). "
+        f"reported in accordance with {reporting_guideline(cfg.project.type)}, with the AI-assisted "
+        f"screening steps reported following PRISMA-trAIce."
     )
     lines.append("")
     lines.append("## Search and ingestion")

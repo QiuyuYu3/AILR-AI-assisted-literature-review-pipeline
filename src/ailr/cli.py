@@ -15,6 +15,7 @@ from ailr.metrics import (
     BINARY_CATEGORIES,
     binarize,
     cohen_kappa,
+    cohen_kappa_ci,
     confusion_matrix,
     decisions_for_pair,
     pabak,
@@ -481,6 +482,7 @@ def metrics(
                 pairs = binarize(decisions_for_pair(rows, rater_a, rater_b))
                 cats, matrix = confusion_matrix(pairs, categories=categories)
                 k = cohen_kappa(pairs, categories=categories)
+                lo, hi = cohen_kappa_ci(pairs, categories=categories)
                 pb = pabak(pairs, categories=categories)
                 ag = percent_agreement(pairs)
                 entries.append({
@@ -488,6 +490,7 @@ def metrics(
                     "rater_b": rater_b,
                     "paired_count": len(pairs),
                     "cohen_kappa": None if k != k else k,
+                    "cohen_kappa_ci": None if lo != lo or hi != hi else [lo, hi],
                     "pabak": None if pb != pb else pb,
                     "percent_agreement": None if ag != ag else ag,
                     "confusion_matrix": {"rows_a": cats, "cols_b": cats, "matrix": matrix},
@@ -518,7 +521,10 @@ def metrics(
                 typer.echo(f"  {stage}:")
                 for e in entries:
                     k, pb, ag = e["cohen_kappa"], e["pabak"], e["percent_agreement"]
+                    ci = e["cohen_kappa_ci"]
                     parts = [f"kappa={k:.3f}" if k is not None else "kappa=undefined"]
+                    if k is not None and ci:
+                        parts.append(f"95%CI=[{ci[0]:.3f}, {ci[1]:.3f}]")
                     if pb is not None:
                         parts.append(f"PABAK={pb:.3f}")
                     if ag is not None:

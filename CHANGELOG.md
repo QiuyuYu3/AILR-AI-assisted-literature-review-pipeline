@@ -1,6 +1,15 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Added
+- 95% CI on Cohen's κ (Fleiss-Cohen-Everitt asymptotic variance, matches `vcd::Kappa`), shown on the reliability report and carried into the methods export and `ailr metrics`.
+
+### Changed
+- Methods and PRISMA exports name the checklist that matches the review type: PRISMA-ScR for scoping, PRISMA 2020 for systematic.
+
+---
 ## [0.28.0] – 2026-07-26
 
 ### Added

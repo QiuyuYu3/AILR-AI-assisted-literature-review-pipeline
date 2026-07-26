@@ -11,6 +11,7 @@ from ailr.metrics import (
     THREE_WAY_CATEGORIES,
     binarize,
     cohen_kappa,
+    cohen_kappa_ci,
     confusion_matrix,
     decisions_for_pair,
     pabak,
@@ -62,10 +63,16 @@ def _round(x: float) -> Any:
     return None if x != x else round(x, 3)      # x != x catches NaN
 
 
+def _round_ci(ci: tuple[float, float]) -> Any:
+    lo, hi = ci
+    return None if lo != lo or hi != hi else [round(lo, 3), round(hi, 3)]
+
+
 def _reliability(pairs: list, categories: list[str]) -> dict:
     return {
         "n_pairs": len(pairs),
         "cohen_kappa": _round(cohen_kappa(pairs, categories=categories)),
+        "cohen_kappa_ci": _round_ci(cohen_kappa_ci(pairs, categories=categories)),
         "pabak": _round(pabak(pairs, categories=categories)),
         "percent_agreement": _round(percent_agreement(pairs)),
     }
@@ -102,12 +109,16 @@ def _reliability_body(rows: list, pair_value: Any, cats_mode: str) -> Any:
         return html.Span([html.Span(f"{label}: ", className="text-muted"), html.Strong(shown)], className="me-4")
 
     pct = rel["percent_agreement"]
+    kappa_shown = rel["cohen_kappa"]
+    ci = rel["cohen_kappa_ci"]
+    if kappa_shown is not None and ci:
+        kappa_shown = f"{kappa_shown}  [{ci[0]}, {ci[1]}]"
     return html.Div(
         [
             html.Div(
                 [
                     _stat("Records judged by both", rel["n_pairs"]),
-                    _stat("Cohen's κ", rel["cohen_kappa"]),
+                    _stat("Cohen's κ (95% CI)", kappa_shown),
                     _stat("PABAK", rel["pabak"]),
                     _stat("% agreement", None if pct is None else round(pct * 100, 1), "%"),
                 ],
@@ -115,7 +126,8 @@ def _reliability_body(rows: list, pair_value: Any, cats_mode: str) -> Any:
             ),
             html.Small(
                 "PABAK is the prevalence-adjusted form: when almost everything is excluded, κ can look "
-                "poor even at high agreement, and PABAK shows that.",
+                "poor even at high agreement, and PABAK shows that. The κ interval is the "
+                "Fleiss-Cohen-Everitt asymptotic one; on few paired records it can run past ±1.",
                 className="text-muted d-block mb-3",
             ),
             html.H6("Confusion matrix", className="mt-3"),
