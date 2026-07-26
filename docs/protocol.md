@@ -19,6 +19,8 @@ Those IDs are what make decisions auditable end to end:
 
 To fill the criteria in, type them in the form, **paste** them, or click **Import JSON file** to load a `criteria.json` you (or your own AI) prepared. It validates and fills the editor for review before you save. The saved criteria (`criteria.yaml`) are the single source of truth: until they exist, screening and extraction run with no criteria at all.
 
+A **Preview** panel beside the editor shows the exact criteria text that is filled into both the screening and the extraction prompt, so you can check what the AI will read before you save.
+
 ![criteria editor, with the preview of what the AI receives](figures/protocol_criteria.png)
 
 ![criteria: paste existing text, or draft the JSON with your own AI](figures/protocol_criteria1.png)
@@ -26,6 +28,8 @@ To fill the criteria in, type them in the form, **paste** them, or click **Impor
 ## Variables
 
 The **Variables** tab is the **data-extraction form**: the fields the AI fills for each included paper (the schema). Each field has a name, a **type** (text / number / enum / list / group), a **description**, options for enums, whether it is **required**, and whether a **human must verify** it.
+
+You can start from the **standard modules**, a set of ready-made common fields (publication type, country, study design, sample size, primary research goal, language, keywords) that you tick on. None of them are imposed, and any **custom field** you add sits alongside them.
 
 - **Edit any field in place.** Change its name, type, options, or required flag without deleting and re-adding.
 - **Import** a field list: paste JSON, or click **Import JSON file** to load `extraction_variables.json`, validate, then load into the editor to review before saving.

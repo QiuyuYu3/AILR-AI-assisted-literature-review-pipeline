@@ -170,7 +170,7 @@ A project is a **folder** plus a **database**:
 - The **folder** holds your configuration: `lit_review.yaml`, prompts, criteria, and the extraction schema.
 - The **database** holds your data: references, decisions, extractions, and the audit trail. By default this is a local SQLite file inside the folder; set `storage.database_url` in `lit_review.yaml` to a PostgreSQL database to share it with a team.
 
-**Settings** (sidebar) groups the project's own config into **Project / Models / Prompts / Danger zone** sub-tabs. *Danger zone* can clear all of a project's data, or delete the project entirely, each guarded by typing the project name to confirm.
+**Settings** (sidebar) groups the project's own config into **Project / Models / Prompts / Danger zone** sub-tabs. *Prompts* is a read-only view of what each stage actually sends to the AI, with the criteria, schema, and additional instructions already filled in, so you can check the finished prompt without opening each Workflow page. *Danger zone* can clear all of a project's data, or delete the project entirely, each guarded by typing the project name to confirm.
 
 ![settings, project folder and database](figures/settings1.png)
 

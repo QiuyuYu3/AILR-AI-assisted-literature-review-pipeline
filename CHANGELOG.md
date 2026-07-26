@@ -1,7 +1,7 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.27.0] – 2026-07-26
 
 ### Added
 - Full-text conflicts page: "Read full text" button on each card opens the PDF/markdown in the shared reader modal, matching the full-text review tab.
@@ -18,6 +18,7 @@
 - Starter prompts and `lit_review.yaml` template updated to the current pipeline: `{{additional}}` on both stages, per-criterion re-check wording, `criteria_structured` / `additional` paths, no `codebook` line.
 - `examples/` rewritten as a complete minimal setup (criteria, variables, and both prompts, in YAML and importable JSON) and linked from the protocol docs.
 - Default model updated to `claude-sonnet-5`; dropped the hardcoded "Common models" hint under the Settings model inputs.
+- Docs screenshots refreshed to the current UI; Protocol criteria/variables, both Prompt tabs, Settings Prompts, and the data-exports tab are now documented.
 
 ---
 ## [0.26.0] – 2026-07-20

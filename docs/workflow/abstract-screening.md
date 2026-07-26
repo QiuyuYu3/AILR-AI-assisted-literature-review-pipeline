@@ -7,7 +7,7 @@ Title & abstract screening with the AI as a second reviewer. This is where the b
 The **Workflow** page (abstract) has four tabs:
 
 - **Workflow.** Choose the screening workflow, `assisted` (AI + 1 human) or `independent` (2 humans). See [workflow modes](../concepts.md#workflow-modes). This decides who reviews what and what stays blinded.
-- **Prompt.** Edit the screening prompt and optional **additional instructions** (stage-specific guidance). Your **criteria** are *not* here: they are shared with extraction and defined once on the [Protocol](../protocol.md) page; the prompt references them via `{{criteria}}`, filled in when the AI runs.
+- **Prompt.** Edit the screening prompt and optional **additional instructions** (stage-specific guidance). Your **criteria** are *not* here: they are shared with extraction and defined once on the [Protocol](../protocol.md) page; the prompt references them via `{{criteria}}`, filled in when the AI runs. A **Full prompt preview** below the editor shows the finished prompt exactly as sent, with the criteria already filled in.
 - **Calibration.** Test the prompt on a sample before committing to it (see below).
 - **AI screening.** Run the AI, or import results you ran externally.
 
