@@ -187,17 +187,54 @@ def _stage_row(main: Any, side: Any) -> Any:
 
 
 def _identification_box(c: dict) -> Any:
-    children: list[Any] = [
-        html.Div([html.Strong(f"{c['records_identified']} ", className="me-1"), "records identified"]),
-    ]
-    if c["by_source_database"]:
+    two_arms = c["other_arm"]["identified"] > 0
+    n = c["database_arm"]["identified"] if two_arms else c["records_identified"]
+    listed = c["by_route"].get("database", []) if two_arms else c["by_source_database"]
+    children: list[Any] = []
+    if two_arms:
+        children.append(html.Div("Via databases and registers", className="small text-muted"))
+    children.append(html.Div([html.Strong(f"{n} ", className="me-1"), "records identified"]))
+    if listed:
         children.append(
             html.Ul(
-                [html.Li(f"{d['source_database']}: {d['n']}", className="small") for d in c["by_source_database"]],
+                [html.Li(f"{d['source_database']}: {d['n']}", className="small") for d in listed],
                 className="mb-0 mt-1",
             )
         )
     return html.Div(children, style=_MAIN_BOX)
+
+
+def _other_arm_block(c: dict) -> Any:
+    """PRISMA 2020's second identification arm, shown only when something was found that way."""
+    other = c["other_arm"]
+    if not other["identified"]:
+        return None
+    rows = [
+        ("Records identified", other["identified"]),
+        ("Reports sought for retrieval", other["sought"]),
+        ("Reports assessed for eligibility", other["assessed"]),
+        ("Studies included", other["included"]),
+    ]
+    return html.Div(
+        [
+            html.Div("Identified via other methods", className="fw-bold mb-1"),
+            html.Ul(
+                [html.Li(f"{d['source_database']}: {d['n']}", className="small") for d in c["by_route"].get("other", [])],
+                className="mb-2 mt-0",
+            ),
+            dbc.Table(
+                [html.Tbody([html.Tr([html.Td(label), html.Td(html.Strong(str(n)))]) for label, n in rows])],
+                bordered=False, size="sm", className="mb-0",
+            ),
+            html.Small(
+                "Citation searching, hand searching, and grey literature are reported as a separate "
+                "arm; both arms feed the same included set.",
+                className="text-muted",
+            ),
+        ],
+        style=_MAIN_BOX,
+        className="mt-3",
+    )
 
 
 def _prisma_diagram(db: Any, pid: int, c: dict) -> Any:
@@ -225,6 +262,7 @@ def _prisma_diagram(db: Any, pid: int, c: dict) -> Any:
             _stage_row(_box(f"{c['full_text_assessed']}", "full-text studies assessed for eligibility", _MAIN_BOX), ft_side),
             dbc.Row(dbc.Col(_down_arrow(), width=6)),
             _stage_row(_box(f"{c['studies_included']}", "studies included", _MAIN_BOX), None),
+            _other_arm_block(c),
         ]
     )
 

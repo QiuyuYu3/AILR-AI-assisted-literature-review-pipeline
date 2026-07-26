@@ -14,7 +14,7 @@ The **Reports** page (split into **PRISMA & methods**, **Reliability & API**, an
 
 | Report | What it gives you |
 |--------|-------------------|
-| **PRISMA flow** | records identified → deduplicated → screened → excluded (with reasons) → included; the identification box breaks down **records per source database**, and the diagram **exports as SVG** (vector) for your manuscript |
+| **PRISMA flow** | records identified → deduplicated → screened → excluded (with reasons) → included; the identification box breaks down **records per source**, records found by [citation searching or hand searching](import.md#records-found-outside-a-database-search) get their own arm, and the diagram **exports as SVG** (vector) for your manuscript |
 | **Methods skeleton** | a prose outline of how the review was run (workflow, models, criteria), including the **search strategies** you recorded at import |
 | **Inter-rater reliability** | Cohen's κ, PABAK, percent agreement, and a **confusion matrix** for any pair of reviewers at either stage |
 | **API usage** | token counts and calls per stage, for cost reporting |
@@ -61,6 +61,10 @@ ailr export <project-folder> --format csv          # also: json · ris · prisma
 Bibliographic metadata is joined into every export by `source_id`, so each row carries both the trusted citation and the AI-extracted full-text data: one table, ready to analyse, with the source quote available for any value you need to defend.
 
 Each row also carries an **`extractor_id`**. Normally there is one row per paper, but in `independent` extraction two reviewers extract the same paper, and their answers are exported side by side as two rows (two files in the ZIP) rather than merged into one. Deciding which value is final is still a manual step — pick the rows you want, or reconcile them in your analysis script.
+
+## Out of scope
+
+Meta-analysis and GRADE certainty ratings are not part of ailr. Export the extraction table and run those in R (`metafor`), RevMan, or GRADEpro.
 
 ## Browse the raw data
 

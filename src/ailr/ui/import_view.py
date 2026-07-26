@@ -24,8 +24,22 @@ _DB_OPTIONS = [
     {"label": "PubMed", "value": "PubMed"},
     {"label": "Embase", "value": "Embase"},
     {"label": "PsycINFO", "value": "PsycINFO"},
-    {"label": "Other (type below)", "value": "__other__"},
+    {"label": "Trial register", "value": "Trial register"},
+    {"label": "Other database (type below)", "value": "__other__"},
+    # PRISMA 2020 reports these separately from database searching, as a second identification arm.
+    {"label": "— Found another way —", "value": "__sep__", "disabled": True},
+    {"label": "Citation searching / snowballing", "value": "Citation searching"},
+    {"label": "Hand searching", "value": "Hand searching"},
+    {"label": "Websites / organisations / grey literature", "value": "Grey literature"},
+    {"label": "Other non-database source (type below)", "value": "__other_route__"},
 ]
+
+# Which choices belong to PRISMA's "identified via other methods" arm.
+_OTHER_ROUTE_VALUES = {"Citation searching", "Hand searching", "Grey literature", "__other_route__"}
+
+
+def _resolve_route(db_choice: Any) -> str:
+    return "other" if db_choice in _OTHER_ROUTE_VALUES else "database"
 
 
 _UNSET = object()
@@ -33,7 +47,7 @@ _UNSET = object()
 
 def _resolve_source_db(db_choice: Any, db_custom: Any) -> Any:
     custom = (db_custom or "").strip()
-    if db_choice == "__other__":
+    if db_choice in ("__other__", "__other_route__"):
         return custom or _UNSET
     if db_choice == "__auto__":
         return None  # fall back to detect_source_database
@@ -88,9 +102,15 @@ def layout() -> Any:
                 "Duplicates are detected automatically by DOI and fuzzy title.",
                 className="text-muted small",
             ),
-            dbc.Label("Source database", className="fw-bold small"),
-            dcc.Dropdown(id="import-ref-db", options=_DB_OPTIONS, placeholder="Required — select before importing", className="mb-2"),
-            dbc.Input(id="import-ref-db-custom", placeholder="Custom database name", className="mb-3", style={"maxWidth": "320px"}),
+            dbc.Label("Where these records came from", className="fw-bold small"),
+            dcc.Dropdown(id="import-ref-db", options=_DB_OPTIONS, placeholder="Required — select before importing", className="mb-1"),
+            html.Small(
+                "Records found by citation searching, hand searching, or on websites are reported "
+                "as a separate arm of the PRISMA flow, so pick the matching option rather than "
+                "typing them in as a database.",
+                className="text-muted d-block mb-2",
+            ),
+            dbc.Input(id="import-ref-db-custom", placeholder="Custom source name", className="mb-3", style={"maxWidth": "320px"}),
             dbc.Label("Search details (optional — archived for your methods / PRISMA)", className="fw-bold small"),
             dbc.Textarea(id="import-ref-query", placeholder="Search query / strategy for this database", style={"height": "70px"}, className="mb-2"),
             dbc.Row(
@@ -152,7 +172,7 @@ def register_callbacks(app: Any) -> None:
             tmp_path = Path(tmp.name)
         project = get_project()
         try:
-            r = project.ingest(tmp_path, source_database=source_db)
+            r = project.ingest(tmp_path, source_database=source_db, identification_route=_resolve_route(db_choice))
         except AILRError as e:
             return dbc.Alert(f"Import failed: {e}", color="danger"), no_update
         finally:

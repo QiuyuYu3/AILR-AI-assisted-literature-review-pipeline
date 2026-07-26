@@ -333,6 +333,14 @@ def _make_engine(url: str):
     return create_engine(url, future=True, pool_pre_ping=True, connect_args=connect_args)
 
 
+def _opt_col(row, name: str):
+    """A column that may be absent because the query selected a subset (rows are plain dicts)."""
+    try:
+        return row[name]
+    except (KeyError, IndexError):
+        return None
+
+
 def _row_to_source(row) -> Source:
     authors_raw = row["authors"]
     metadata_raw = row["metadata_json"]
@@ -349,6 +357,7 @@ def _row_to_source(row) -> Source:
         year=row["year"],
         journal=row["journal"],
         source_database=row["source_database"],
+        identification_route=_opt_col(row, "identification_route") or "database",
         pdf_path=Path(row["pdf_path"]) if row["pdf_path"] else None,
         markdown_path=Path(row["markdown_path"]) if row["markdown_path"] else None,
         metadata=json.loads(metadata_raw) if metadata_raw else {},

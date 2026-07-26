@@ -149,6 +149,7 @@ class Project:
         self,
         file_path: Path,
         source_database: Optional[str] = None,
+        identification_route: str = "database",
     ) -> IngestResult:
         file_path = Path(file_path).expanduser().resolve()
 
@@ -174,6 +175,7 @@ class Project:
         sources, batch_dups = dedup.dedup_by_doi(sources)
         for s in sources:
             s.project_id = self._project_id
+            s.identification_route = identification_route
 
         # Collect every dropped record (with its full JSON so it can be restored later) and
         # write them in one bulk transaction instead of one INSERT+commit per duplicate.

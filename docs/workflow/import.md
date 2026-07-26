@@ -20,6 +20,16 @@ CLI equivalent:
 ailr ingest <project-folder> results.ris --source-db PubMed
 ```
 
+## Records found outside a database search
+
+PRISMA 2020 reports studies found by **citation searching** (snowballing), **hand searching**, or on **websites and organisation pages** as a *separate arm* of the flow diagram, not mixed in with the database results. The source selector on the Import page has these as their own options, below the databases. Pick the matching one instead of typing it in as a custom database name: that is what puts those records in the second arm.
+
+Both arms then run through exactly the same screening and full-text queues — the split only affects reporting. If a review has no such records, the flow diagram stays single-column as before.
+
+:::{note}
+Deduplication runs across both arms together, so the "duplicates removed" number is reported once, on the database arm. If a citation-searched record was already in your database results, it is dropped as a duplicate rather than counted twice.
+:::
+
 ## Record your search strategy
 
 For a reproducible review, PRISMA expects you to report *what you searched and how*. On the **Import** page you can **archive each database's search**: the query string, the date, any limits (years, language, and so on), and the number of records it returned. Recorded searches are listed on the page under **Recorded searches**, and are emitted in the **methods export**, so the search appendix writes itself instead of being reconstructed from memory.

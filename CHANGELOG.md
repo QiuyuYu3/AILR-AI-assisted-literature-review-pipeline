@@ -4,6 +4,8 @@
 ## [0.28.0] – 2026-07-26
 
 ### Added
+- PRISMA 2020's second identification arm: records found by citation searching, hand searching, or on websites are picked as such on Import and reported as their own arm in the flow diagram, the SVG, and the PRISMA export. Reviews without any such records keep the single-column diagram. Existing projects migrate with everything marked as database-identified.
+- README and the reports docs note that meta-analysis and GRADE are out of scope.
 - `rob2` (Cochrane RoB 2) and `newcastle_ottawa` ship as opt-in variable modules on Protocol → Variables, so a quality appraisal goes through the same extraction, verification, and consensus flow as any other variable. Neither is on by default.
 - Summary's extraction card counts papers awaiting reconciliation; Settings → Project shows which mode preset the project was created with.
 - Consensus for independent extraction: once two reviewers submit, the paper appears under Full-text review → "To reconcile" → "Open comparison", where agreed variables are carried over and only disagreements ask for a decision (take a reviewer's answer with its quote, or type your own). Saved as an adjudicated record that "Extraction — final" exports; Undo puts the paper back in the queue.

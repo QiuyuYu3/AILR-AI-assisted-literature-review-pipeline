@@ -77,6 +77,10 @@ The key lives only in that shell session (gone when you close it) — nothing is
 
 ![Summary dashboard](docs/figures/summary.png)
 
+## Scope
+
+Meta-analysis and GRADE are out of scope: export the extraction table and run those in R (`metafor`), RevMan, or GRADEpro.
+
 ## Workflow modes
 
 - **Screening** — `assisted` (AI + 1 human, both blinded — PRISMA-trAIce) or `independent` (2 humans, blinded — Cochrane).

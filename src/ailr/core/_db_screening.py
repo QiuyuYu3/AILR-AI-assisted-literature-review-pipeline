@@ -24,6 +24,17 @@ FT_FINAL_INCLUDE_MD_SQL = """(s.markdown_path IS NOT NULL AND (
                         WHERE r.source_id = s.id AND r.stage = 'full_text_screening'))
 ))"""
 
+def _route_filter(route: Optional[str]) -> str:
+    """PRISMA 2020 reports two identification arms; every flow count can be scoped to one of them.
+    Rows written before the column existed default to 'database', so `route='database'` also picks
+    up NULLs. Inlined rather than parameterised so callers keep their existing positional args."""
+    if route is None:
+        return ""
+    if route == "database":
+        return "AND COALESCE(s.identification_route, 'database') = 'database'"
+    return "AND COALESCE(s.identification_route, 'database') = 'other'"
+
+
 def _ai_confidence_asc(stage: str) -> str:
     """ORDER BY fragment: latest AI decision confidence ascending (least-confident first), nulls last."""
     return (
@@ -270,14 +281,16 @@ class ScreeningMixin:
             params = (project_id,)
         return self._conn.execute(sql, params).fetchone()["n"]
 
-    def screening_summary(self, project_id: int, reviewer_type: str = "ai", stage: str = "abstract") -> dict[str, int]:
+    def screening_summary(self, project_id: int, reviewer_type: str = "ai", stage: str = "abstract",
+                          route: Optional[str] = None) -> dict[str, int]:
         # Count only the latest decision per (source, reviewer); superseded re-votes are excluded.
         rows = self._conn.execute(
-            """
+            f"""
             SELECT d.decision AS decision, COUNT(*) AS n
             FROM screening_decisions d
             JOIN sources s ON d.source_id = s.id
             WHERE s.project_id = ? AND d.reviewer_type = ? AND d.stage = ?
+              {_route_filter(route)}
               AND d.id = (
                   SELECT MAX(id) FROM screening_decisions
                   WHERE source_id = d.source_id
@@ -294,13 +307,15 @@ class ScreeningMixin:
             out[r["decision"]] = r["n"]
         return out
 
-    def count_sources_screened(self, project_id: int, reviewer_type: str = "human", stage: str = "abstract") -> int:
+    def count_sources_screened(self, project_id: int, reviewer_type: str = "human", stage: str = "abstract",
+                               route: Optional[str] = None) -> int:
         return self._conn.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT d.source_id) AS n
             FROM screening_decisions d
             JOIN sources s ON d.source_id = s.id
             WHERE s.project_id = ? AND d.reviewer_type = ? AND d.stage = ?
+              {_route_filter(route)}
             """,
             (project_id, reviewer_type, stage),
         ).fetchone()["n"]
@@ -620,7 +635,8 @@ class ScreeningMixin:
         sql = f"SELECT s.id FROM sources s WHERE s.id IN ({ph}) AND {FT_FINAL_INCLUDE_MD_SQL}"
         return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
 
-    def count_final_includes(self, project_id: int, stage: str = "abstract", require_markdown: bool = False) -> int:
+    def count_final_includes(self, project_id: int, stage: str = "abstract", require_markdown: bool = False,
+                             route: Optional[str] = None) -> int:
         """PAPERS (not decisions) whose final decision at this stage is include: reconciled-as-include,
         or at least one human's LATEST verdict is include with no reconciliation recorded. For the
         PRISMA flow, where two reviewers including the same paper must count once."""
@@ -628,7 +644,7 @@ class ScreeningMixin:
         md = "AND s.markdown_path IS NOT NULL" if require_markdown else ""
         sql = f"""
             SELECT COUNT(*) AS n FROM sources s
-            WHERE s.project_id = ? {md}
+            WHERE s.project_id = ? {md} {_route_filter(route)}
               AND (
                 EXISTS (SELECT 1 FROM reconciliations r
                         WHERE r.source_id = s.id AND r.stage = ? AND r.final_value = 'include')

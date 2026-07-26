@@ -11,9 +11,9 @@ from ailr.exceptions import DatabaseError, DuplicateError
 _INSERT_SOURCE_COLS = (
     "INSERT INTO sources "
     "(project_id, doi, pmid, title, abstract, authors, year, journal, "
-    "source_database, pdf_path, markdown_path, metadata_json)"
+    "source_database, identification_route, pdf_path, markdown_path, metadata_json)"
 )
-_INSERT_SOURCE_SQL = _INSERT_SOURCE_COLS + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+_INSERT_SOURCE_SQL = _INSERT_SOURCE_COLS + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 _EDITABLE_SOURCE_COLUMNS = {"doi", "title", "year", "journal", "authors", "abstract", "source_database"}
 
@@ -29,6 +29,7 @@ def _source_params(source: "Source") -> tuple:
         source.year,
         source.journal,
         source.source_database,
+        source.identification_route or "database",
         str(source.pdf_path) if source.pdf_path else None,
         str(source.markdown_path) if source.markdown_path else None,
         json.dumps(source.metadata) if source.metadata else None,
@@ -51,7 +52,7 @@ class SourcesMixin:
         for s in batch:
             if s.project_id is None:
                 raise DatabaseError("Cannot insert source without project_id")
-        row_ph = "(" + ", ".join(["?"] * 12) + ")"
+        row_ph = "(" + ", ".join(["?"] * 13) + ")"
         sql = _INSERT_SOURCE_COLS + " VALUES " + ", ".join([row_ph] * len(batch))
         params: list = []
         for s in batch:
@@ -185,11 +186,30 @@ class SourcesMixin:
         ).fetchall()
         return [_row_to_source(r) for r in rows]
 
-    def count_sources(self, project_id: int) -> int:
+    def count_sources(self, project_id: int, route: Optional[str] = None) -> int:
+        clause = ""
+        if route is not None:
+            op = "=" if route == "database" else "!="
+            clause = f" AND COALESCE(identification_route, 'database') {op} 'database'"
         row = self._conn.execute(
-            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ?", (project_id,)
+            f"SELECT COUNT(*) AS n FROM sources WHERE project_id = ?{clause}", (project_id,)
         ).fetchone()
         return row["n"]
+
+    def sources_by_route_and_database(self, project_id: int) -> dict[str, list[dict]]:
+        """{route: [{source_database, n}]} for the two PRISMA identification boxes."""
+        rows = self._conn.execute(
+            """SELECT COALESCE(identification_route, 'database') AS route,
+                      COALESCE(source_database, 'unknown') AS source_database,
+                      COUNT(*) AS n
+               FROM sources WHERE project_id = ?
+               GROUP BY route, source_database ORDER BY n DESC""",
+            (project_id,),
+        ).fetchall()
+        out: dict[str, list[dict]] = {"database": [], "other": []}
+        for r in rows:
+            out.setdefault(r["route"], []).append({"source_database": r["source_database"], "n": r["n"]})
+        return out
 
     def count_sources_with_markdown(self, project_id: int) -> int:
         row = self._conn.execute(

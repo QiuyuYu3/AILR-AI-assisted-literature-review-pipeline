@@ -18,6 +18,9 @@ class Source:
     year: Optional[int] = None
     journal: Optional[str] = None
     source_database: Optional[str] = None
+    # PRISMA 2020 identification arm: 'database' (databases and registers) or 'other'
+    # (citation searching, hand searching, websites, organisations).
+    identification_route: str = "database"
     pdf_path: Optional[Path] = None
     markdown_path: Optional[Path] = None
     metadata: dict[str, Any] = field(default_factory=dict)

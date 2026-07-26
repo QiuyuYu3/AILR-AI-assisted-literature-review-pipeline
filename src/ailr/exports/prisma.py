@@ -8,6 +8,24 @@ from typing import Any
 from ailr.core.project import Project
 
 
+def _arm_counts(db: Any, pid: int, route: str) -> dict[str, int]:
+    """The boxes PRISMA 2020 draws for one identification arm. The 'other methods' arm has no
+    deduplication or title/abstract box in the template, but ailr screens both arms through the
+    same queue, so the same numbers are reported for each."""
+    sought = db.count_final_includes(pid, "abstract", route=route)
+    retrieved = db.count_final_includes(pid, "abstract", require_markdown=True, route=route)
+    return {
+        "identified": db.count_sources(pid, route=route),
+        "screened": db.count_sources_screened(pid, "human", stage="abstract", route=route),
+        "excluded_abstract": db.screening_summary(pid, "human", stage="abstract", route=route)["exclude"],
+        "sought": sought,
+        "retrieved": retrieved,
+        "not_retrieved": max(sought - retrieved, 0),
+        "assessed": db.count_sources_screened(pid, "human", stage="full_text", route=route),
+        "included": db.count_final_includes(pid, "full_text", route=route),
+    }
+
+
 def prisma_counts(project: Project) -> dict[str, Any]:
     db = project.db
     pid = project.project_id
@@ -34,6 +52,11 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         "project_name": project.config.project.name,
         "project_type": project.config.project.type,
         "by_source_database": db.stats(pid)["by_source_database"],
+        # PRISMA 2020's two identification arms. `other_arm` is empty for a database-only review,
+        # in which case the diagram stays single-column.
+        "by_route": db.sources_by_route_and_database(pid),
+        "database_arm": _arm_counts(db, pid, "database"),
+        "other_arm": _arm_counts(db, pid, "other"),
         "records_identified": total_sources + duplicates_removed,
         "duplicates_removed": duplicates_removed,
         "records_after_dedup": total_sources,
@@ -67,7 +90,23 @@ def build_prisma_report(project: Project) -> str:
 
     lines.append("## Identification")
     lines.append("")
-    if c["by_source_database"]:
+    by_route = c["by_route"]
+    if c["other_arm"]["identified"]:
+        lines.append("### Via databases and registers")
+        lines.append("")
+        for d in by_route.get("database", []):
+            lines.append(f"- {d['source_database']}: {d['n']}")
+        lines.append("")
+        lines.append(f"**Records identified:** {c['database_arm']['identified']}")
+        lines.append("")
+        lines.append("### Via other methods")
+        lines.append("")
+        for d in by_route.get("other", []):
+            lines.append(f"- {d['source_database']}: {d['n']}")
+        lines.append("")
+        lines.append(f"**Records identified:** {c['other_arm']['identified']}")
+        lines.append("")
+    elif c["by_source_database"]:
         lines.append("Records identified by database:")
         for d in c["by_source_database"]:
             lines.append(f"- {d['source_database']}: {d['n']}")
@@ -109,6 +148,21 @@ def build_prisma_report(project: Project) -> str:
             lines.append("_Some reports were excluded for more than one reason, so the reasons sum to more than the total._")
         lines.append("")
 
+    if c["other_arm"]["identified"]:
+        lines.append("### Per identification arm")
+        lines.append("")
+        lines.append("| | Databases and registers | Other methods |")
+        lines.append("|---|---|---|")
+        for label, key in (
+            ("Records identified", "identified"),
+            ("Records screened", "screened"),
+            ("Reports sought for retrieval", "sought"),
+            ("Reports assessed for eligibility", "assessed"),
+            ("Studies included", "included"),
+        ):
+            lines.append(f"| {label} | {c['database_arm'][key]} | {c['other_arm'][key]} |")
+        lines.append("")
+
     lines.append("## Included")
     lines.append("")
     lines.append(f"**Studies included:** {c['studies_included']}")
@@ -124,6 +178,7 @@ def build_prisma_report(project: Project) -> str:
 
 _MAIN_X, _MAIN_W = 40, 360
 _SIDE_X, _SIDE_W = 440, 250
+_OTHER_X, _OTHER_W = 710, 260      # second identification arm, drawn only when it has records
 _PAD, _LINE_H, _GAP = 12, 20, 34
 
 
@@ -149,23 +204,45 @@ def build_prisma_svg(project: Project) -> str:
     c = prisma_counts(project)
     ft_excl = project.db.full_text_exclusion_counts(project.project_id)
 
-    ident_lines: list[tuple[str, bool]] = [(f"{c['records_identified']} records identified", True)]
-    ident_lines += [(f"{d['source_database']}: {d['n']}", False) for d in c["by_source_database"]]
+    # PRISMA 2020 draws a second identification arm for records found outside database searching.
+    # With none of those, the diagram stays single-column and the main column carries the totals.
+    two_arms = c["other_arm"]["identified"] > 0
+    main = c["database_arm"] if two_arms else None
+
+    if two_arms:
+        ident_lines = [("Via databases and registers", True),
+                       (f"{main['identified']} records identified", True)]
+        ident_lines += [(f"{d['source_database']}: {d['n']}", False) for d in c["by_route"].get("database", [])]
+    else:
+        ident_lines = [(f"{c['records_identified']} records identified", True)]
+        ident_lines += [(f"{d['source_database']}: {d['n']}", False) for d in c["by_source_database"]]
 
     dup_side = [(f"{c['duplicates_removed']} duplicates removed", False)] if c["duplicates_removed"] else None
     abs_side = [(f"{c['abstract_excluded']} excluded at title/abstract", False)]
     notret_side = [(f"{c['reports_not_retrieved']} reports not retrieved", False)] if c["reports_not_retrieved"] else None
     ftx_side = [(f"{c['full_text_excluded_reports']} excluded, with reasons:", False)] + [(f"  {r['reason']}: {r['n']}", False) for r in ft_excl]
 
-    stages: list[tuple[list[tuple[str, bool]], Any]] = [
-        (ident_lines, dup_side),
-        ([(f"{c['records_after_dedup']} records after duplicates removed", True)], abs_side),
-        ([(f"{c['reports_sought']} reports sought for retrieval", True)], notret_side),
-        ([(f"{c['full_text_assessed']} full-text studies assessed", True)], ftx_side),
-        ([(f"{c['studies_included']} studies included", True), (f"of which extracted: {c['studies_extracted']}", False)], None),
-    ]
+    if two_arms:
+        after_dedup = f"{max(main['identified'] - c['duplicates_removed'], 0)} records after duplicates removed"
+        stage_rows = [
+            ([("Via databases and registers", True)] + ident_lines[1:], dup_side),
+            ([(after_dedup, True)], abs_side),
+            ([(f"{main['sought']} reports sought for retrieval", True)], notret_side),
+            ([(f"{main['assessed']} full-text studies assessed", True)], ftx_side),
+            ([(f"{c['studies_included']} studies included", True), (f"of which extracted: {c['studies_extracted']}", False)], None),
+        ]
+        stages: list[tuple[list[tuple[str, bool]], Any]] = stage_rows
+    else:
+        stages = [
+            (ident_lines, dup_side),
+            ([(f"{c['records_after_dedup']} records after duplicates removed", True)], abs_side),
+            ([(f"{c['reports_sought']} reports sought for retrieval", True)], notret_side),
+            ([(f"{c['full_text_assessed']} full-text studies assessed", True)], ftx_side),
+            ([(f"{c['studies_included']} studies included", True), (f"of which extracted: {c['studies_extracted']}", False)], None),
+        ]
 
     body: list[str] = []
+    stage_geom: list[tuple[float, float]] = []      # (top, height) per stage, for the second arm
     y = 20.0
     main_cx = _MAIN_X + _MAIN_W / 2
     for i, (main_lines, side_lines) in enumerate(stages):
@@ -177,12 +254,37 @@ def build_prisma_svg(project: Project) -> str:
             side_svg, _ = _svg_box(_SIDE_X, main_cy - side_h / 2, _SIDE_W, side_lines, dashed=True)
             body.append(side_svg)
             body.append(f'<line x1="{_MAIN_X + _MAIN_W}" y1="{main_cy}" x2="{_SIDE_X}" y2="{main_cy}" stroke="#888" marker-end="url(#ah)"/>')
+        stage_geom.append((y, mh))
         next_y = y + mh + _GAP
         if i < len(stages) - 1:
             body.append(f'<line x1="{main_cx}" y1="{y + mh}" x2="{main_cx}" y2="{next_y}" stroke="#888" marker-end="url(#ah)"/>')
         y = next_y
 
-    width = _SIDE_X + _SIDE_W + 20
+    if two_arms:
+        # Second column, aligned to the same stage rows, merging into the shared "included" box.
+        other = c["other_arm"]
+        other_cx = _OTHER_X + _OTHER_W / 2
+        rows = [
+            (0, [("Via other methods", True), (f"{other['identified']} records identified", True)]
+                + [(f"{d['source_database']}: {d['n']}", False) for d in c["by_route"].get("other", [])]),
+            (2, [(f"{other['sought']} reports sought for retrieval", True)]),
+            (3, [(f"{other['assessed']} full-text studies assessed", True)]),
+        ]
+        drawn: list[tuple[float, float]] = []
+        for stage_i, box_lines in rows:
+            top, _mh = stage_geom[stage_i]
+            svg, h = _svg_box(_OTHER_X, top, _OTHER_W, box_lines)
+            body.append(svg)
+            drawn.append((top, h))
+        for (top, h), (next_top, _nh) in zip(drawn, drawn[1:]):
+            body.append(f'<line x1="{other_cx}" y1="{top + h}" x2="{other_cx}" y2="{next_top}" stroke="#888" marker-end="url(#ah)"/>')
+        last_top, last_h = drawn[-1]
+        inc_top, inc_h = stage_geom[4]
+        inc_cy = inc_top + inc_h / 2
+        body.append(f'<path d="M{other_cx},{last_top + last_h} L{other_cx},{inc_cy} L{_MAIN_X + _MAIN_W},{inc_cy}" '
+                    f'fill="none" stroke="#888" marker-end="url(#ah)"/>')
+
+    width = (_OTHER_X + _OTHER_W if two_arms else _SIDE_X + _SIDE_W) + 20
     height = y - _GAP + 20
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height:.0f}" '

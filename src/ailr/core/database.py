@@ -101,6 +101,16 @@ class Database(
         if "flag_check" not in td_cols:
             with self._engine.begin() as conn:
                 conn.exec_driver_sql("ALTER TABLE test_decisions ADD COLUMN flag_check TEXT")
+        src_cols = {c["name"] for c in inspect(self._engine).get_columns("sources")}
+        if "identification_route" not in src_cols:
+            # Everything imported before this column existed came from a database search.
+            with self._engine.begin() as conn:
+                conn.exec_driver_sql(
+                    "ALTER TABLE sources ADD COLUMN identification_route TEXT DEFAULT 'database'"
+                )
+                conn.exec_driver_sql(
+                    "UPDATE sources SET identification_route = 'database' WHERE identification_route IS NULL"
+                )
         # composite indexes speed the screening list / status filters / vote locks and the
         # extraction marker lookups (existing DBs only; fresh ones get them from create_all).
         # CREATE INDEX IF NOT EXISTS works on SQLite + PostgreSQL.
