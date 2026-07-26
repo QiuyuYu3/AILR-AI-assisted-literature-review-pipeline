@@ -73,6 +73,8 @@ Handy controls on this page:
 
 ![full-text exclude with reason](../figures/ft_screening_exclude.png)
 
+![the reader pane, PDF or markdown, without leaving the page](../figures/ft_pdf.png)
+
 :::{note}
 AI extraction runs on the **abstract-screening includes**, and its `flag_check` verdict (an AI re-check of the inclusion criteria against the full text) is available here as a reference for your full-text decision. The **human** full-text decision is what actually advances a paper to extraction.
 :::

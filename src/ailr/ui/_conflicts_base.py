@@ -36,8 +36,9 @@ class ConflictConfig:
     votes_label: str
     blank_reasonings: tuple[str, ...]
     show_flag_check: bool       # full-text: show AI flag_check verdicts
-    show_abstract_extras: bool  # abstract: DOI link, abstract collapse, history button
+    show_abstract_extras: bool  # DOI link + collapsible abstract (both stages)
     show_read_fulltext: bool = False  # full-text: "Read full text" button (opens the global reader modal)
+    show_history: bool = False  # abstract only: the History button (its modal callback is keyed on 'conflict-history-btn')
 
 
 def ai_detail_block(ai: dict, flag_check: Any = None) -> Any:
@@ -104,29 +105,19 @@ def initial_payload(cfg: ConflictConfig) -> tuple[Any, str, Any]:
 def build_layout(cfg: ConflictConfig) -> Any:
     cards, count_text, resolved_ui = initial_payload(cfg)
     assisted = get_project().config.screening.workflow == "assisted"
-    return dbc.Row(
+    return html.Div(
         [
-            dbc.Col(
-                [
-                    html.H6(cfg.title, className="fw-bold"),
-                    html.P(
-                        cfg.assisted_desc if assisted else cfg.independent_desc,
-                        className="small text-muted",
-                    ),
-                    html.Hr(),
-                    html.Div(count_text, id=f"{cfg.store_prefix}-counts", className="small text-muted"),
-                ],
-                width=3,
+            html.H6(cfg.title, className="fw-bold mb-1"),
+            html.P(
+                cfg.assisted_desc if assisted else cfg.independent_desc,
+                className="small text-muted mb-1",
             ),
-            dbc.Col(
-                [
-                    html.Div(cards, id=f"{cfg.store_prefix}-cards"),
-                    html.Hr(className="mt-4"),
-                    html.H6("Recently resolved", className="fw-bold"),
-                    html.Div(resolved_ui, id=f"{cfg.store_prefix}-resolved"),
-                ],
-                width=9,
-            ),
+            html.Div(count_text, id=f"{cfg.store_prefix}-counts", className="small text-muted"),
+            html.Hr(className="mt-2 mb-3"),
+            html.Div(cards, id=f"{cfg.store_prefix}-cards"),
+            html.Hr(className="mt-4"),
+            html.H6("Recently resolved", className="fw-bold"),
+            html.Div(resolved_ui, id=f"{cfg.store_prefix}-resolved"),
         ]
     )
 
@@ -307,6 +298,8 @@ def _abstract_extras(cfg: ConflictConfig, src: Source, sid: Any) -> list[Any]:
         id={"type": f"{cfg.prefix}-abstract-body", "source": sid},
         is_open=False,
     )
+    if not cfg.show_history:
+        return [doi_el, abstract_btn, abstract_body]
     history_btn = html.Div(
         dbc.Button("History", id={"type": f"{cfg.prefix}-history-btn", "source": sid}, size="sm", color="link", className="p-0"),
         className="mt-1",

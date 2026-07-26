@@ -6,7 +6,12 @@
 ### Added
 - Full-text conflicts page: "Read full text" button on each card opens the PDF/markdown in the shared reader modal, matching the full-text review tab.
 
+### Fixed
+- Prompt version dropdowns refresh after an AI run: the full-text side never refreshed, and both sides left the "Compare the selected version with" list stale.
+
 ### Changed
+- FT Conflicts cards now show the DOI link and a collapsed abstract, matching the abstract-stage conflicts card.
+- Conflicts and FT Conflicts: title, description, and unresolved count moved to the top of the page; the cards now use the full width instead of a 9-column strip.
 - Database tab paginates (25/50/100/200 per page) and loads the whole table so sort/filter/paging span all rows, not just the first 500.
 - `criteria.yaml` is now the only criteria source: the free-text `inclusion_criteria.md` fallback and the `screening.criteria` config key are gone (a stale key in an old `lit_review.yaml` is ignored).
 - `ailr init` now writes `criteria.yaml` and the two `prompts/*_additional.txt` files.

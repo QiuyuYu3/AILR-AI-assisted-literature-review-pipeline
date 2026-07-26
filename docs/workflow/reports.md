@@ -43,6 +43,8 @@ CLI equivalent:
 ailr export <project-folder> --format csv          # also: json · ris · prisma-svg
 ```
 
+![reports, data exports tab](../figures/reports3.png)
+
 Bibliographic metadata is joined into every export by `source_id`, so each row carries both the trusted citation and the AI-extracted full-text data: one table, ready to analyse, with the source quote available for any value you need to defend.
 
 ## Browse the raw data

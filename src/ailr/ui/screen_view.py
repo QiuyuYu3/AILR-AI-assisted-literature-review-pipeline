@@ -384,6 +384,7 @@ def register_callbacks(app: Any) -> None:
         Output("screen-ai-poll", "disabled", allow_duplicate=True),
         Output("screen-refresh", "data", allow_duplicate=True),
         Output("screen-prompt-ver-select", "options", allow_duplicate=True),
+        Output("screen-prompt-ver-b", "options", allow_duplicate=True),
         Input("screen-ai-poll", "n_intervals"),
         prevent_initial_call=True,
     )
@@ -393,13 +394,14 @@ def register_callbacks(app: Any) -> None:
             done, total = st.get("done", 0), st.get("total", 0)
             pct = int(done / total * 100) if total else 0
             bar = dbc.Progress(value=pct, label=f"{done}/{total}", striped=True, animated=True, className="mt-1")
-            return html.Div(["Running AI screening…", bar]), False, no_update, no_update
+            return html.Div(["Running AI screening…", bar]), False, no_update, no_update, no_update
         if st.get("error"):
-            return dbc.Alert(f"AI screening failed: {st['error']}", color="danger", className="py-1 mb-0"), True, no_update, no_update
+            return dbc.Alert(f"AI screening failed: {st['error']}", color="danger", className="py-1 mb-0"), True, no_update, no_update, no_update
         if st.get("started") and st.get("summary"):
-            # A run may have just snapshotted a new prompt version — refresh the dropdown.
-            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}, _prompt_version_options()
-        return no_update, True, no_update, no_update
+            # A run may have just snapshotted a new prompt version — refresh both dropdowns.
+            opts = _prompt_version_options()
+            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}, opts, opts
+        return no_update, True, no_update, no_update, no_update
 
     @app.callback(
         Output("screen-importai-status", "children"),

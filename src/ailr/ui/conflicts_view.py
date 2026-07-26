@@ -20,6 +20,7 @@ _CFG = ConflictConfig(
     blank_reasonings=("(inline screening)",),
     show_flag_check=True,
     show_abstract_extras=True,
+    show_history=True,
 )
 
 

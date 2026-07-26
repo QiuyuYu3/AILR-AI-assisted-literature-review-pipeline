@@ -148,7 +148,7 @@ ailr ui <project-folder>
 The key lives only in that shell session; it is gone when you close the terminal. **Nothing is written to the project folder or database.** To avoid re-typing it each session, add the `export` line to your `~/.bashrc`. The **Settings** page shows `ANTHROPIC_API_KEY: set` once it is in the environment.
 :::
 
-![settings, API key status](figures/settings1.png)
+![settings, API key status](figures/setting2.png)
 
 You can always work without a key using **Mock** mode, which fabricates schema-shaped values so you can click through the whole UI with no API call and no token cost.
 
@@ -171,5 +171,11 @@ A project is a **folder** plus a **database**:
 - The **database** holds your data: references, decisions, extractions, and the audit trail. By default this is a local SQLite file inside the folder; set `storage.database_url` in `lit_review.yaml` to a PostgreSQL database to share it with a team.
 
 **Settings** (sidebar) groups the project's own config into **Project / Models / Prompts / Danger zone** sub-tabs. *Danger zone* can clear all of a project's data, or delete the project entirely, each guarded by typing the project name to confirm.
+
+![settings, project folder and database](figures/settings1.png)
+
+![settings, the prompts as actually sent to the AI](figures/settings3.png)
+
+![settings, danger zone](figures/settings4.png)
 
 See [Core concepts](concepts.md) for the details. Then, before importing anything, [set up your protocol](protocol.md): the criteria and extraction variables everything else depends on.

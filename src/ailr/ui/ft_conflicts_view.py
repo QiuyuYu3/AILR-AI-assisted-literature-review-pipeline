@@ -17,7 +17,7 @@ _CFG = ConflictConfig(
     votes_label="Reviewer votes (full-text stage)",
     blank_reasonings=("(full-text review)", "(inline screening)"),
     show_flag_check=True,
-    show_abstract_extras=False,
+    show_abstract_extras=True,
     show_read_fulltext=True,
 )
 

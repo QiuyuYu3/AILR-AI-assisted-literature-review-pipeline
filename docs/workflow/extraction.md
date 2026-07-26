@@ -8,6 +8,10 @@ Pull structured data out of the included full texts. This is the step that turns
 
 **The prompt** (how to read the paper) lives on the **Prompt** tab of this Workflow page. Only two parts are worth editing: your **criteria** (shown here, but edited on Protocol) and free-form **additional instructions** (`{{additional}}`, stage-specific guidance). The rest is a fixed scaffold ailr fills in, tucked under *Advanced*, and a live preview shows the full prompt exactly as sent.
 
+![extraction prompt tab, with the full prompt preview](../figures/ft_prompt.png)
+
+![extraction prompt: the advanced scaffold and the draft-with-your-AI helper](../figures/ft_prompt1.png)
+
 The variables set the *structure* and the prompt sets the *quality*. These are independent, and understanding why is worth a few minutes: see [How AI extraction works](../ai-extraction.md). You can let your own AI draft the [variables](../ai-extraction.md#define-your-variables-with-your-own-ai) or, if you rewrite the scaffold, the [prompt](../ai-extraction.md#rewriting-the-whole-scaffold-advanced), or run the model [entirely outside the app](../ai-extraction.md#run-the-ai-externally-and-import).
 
 :::{tip}

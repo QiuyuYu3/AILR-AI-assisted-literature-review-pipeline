@@ -13,6 +13,8 @@ The **Workflow** page (abstract) has four tabs:
 
 ![abstract workflow](../figures/abstract_workflow.png)
 
+![abstract prompt tab, with the full prompt preview](../figures/abstract_workflow_prompt.png)
+
 ![abstract AI screening tab](../figures/abstract_workflow_ai.png)
 
 ![abstract calibration tab](../figures/abstract_workflow_calibration.png)
@@ -65,4 +67,4 @@ When the AI's verdict is revealed, it comes with a **per-criterion breakdown**: 
 
 Where the AI and human (or two humans) disagree, the pair appears on the **Conflicts** page. Read both verdicts side by side. The card shows the AI's **per-criterion** PASS / FAIL / UNCERTAIN verdicts (with confidence and quote) under its rationale, so you can see exactly which criterion drove the disagreement. Then record the final decision. This is the adjudication step that PRISMA expects to be documented. Included papers move on to [full text](full-text.md); excluded papers are counted on the PRISMA diagram with their reason.
 
-![abstract conflicts](../figures/abstract_screening3.png)
+![abstract conflicts](../figures/abstract_conflicts.png)
