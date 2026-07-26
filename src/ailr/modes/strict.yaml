@@ -1,6 +1,6 @@
 # Strict mode - for systematic reviews.
 # Two independent human reviewers for screening (Cochrane gold standard).
-# AI-extract + human-verify for extraction (PI-confirmed industry practice).
+# Two independent human extractors, reconciled into a consensus record.
 # Any field below can be overridden in the project's lit_review.yaml.
 
 screening:
@@ -11,7 +11,7 @@ screening:
     min: 50
 
 extraction:
-  workflow: verify
+  workflow: independent
   target_kappa: 0.8
   output_format: with_quotes
   flag_check: true

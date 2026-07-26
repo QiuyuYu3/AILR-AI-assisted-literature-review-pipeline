@@ -34,6 +34,14 @@ _PROVIDERS = [
 
 _API_KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 
+# The preset a project was created with only seeds its defaults; the workflows it set are edited
+# on each stage's Workflow page, so this is shown as a fact about the project, not a control.
+_MODE_BLURB = {
+    "strict": "two independent human reviewers at screening and extraction, reconciled.",
+    "assisted": "AI plus one human at screening, AI-extract then human-verify.",
+    "custom": "defaults from your own preset file.",
+}
+
 _REVIEW_TYPE_OPTIONS = [
     {"label": "Scoping review", "value": "scoping"},
     {"label": "Systematic review", "value": "systematic"},
@@ -91,7 +99,16 @@ def layout() -> Any:
             "How the review is described in the PRISMA report and the methods skeleton.",
             className="text-muted d-block mb-1",
         ),
-        html.Div(id="settings-project-type-saved", className="text-success small mb-3"),
+        html.Div(id="settings-project-type-saved", className="text-success small mb-2"),
+        html.Div(
+            [
+                html.Span("Created with the ", className="text-muted"),
+                html.Strong(project.config.project.mode),
+                html.Span(" preset: ", className="text-muted"),
+                html.Span(_MODE_BLURB.get(project.config.project.mode, ""), className="text-muted"),
+            ],
+            className="small mb-3",
+        ),
         html.Div(
             [
                 html.Div([html.Span("Project folder: ", className="text-muted"), html.Code(str(project.root))]),

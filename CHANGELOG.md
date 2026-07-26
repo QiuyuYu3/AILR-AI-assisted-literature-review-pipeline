@@ -4,6 +4,8 @@
 ## [0.28.0] – 2026-07-26
 
 ### Added
+- `rob2` (Cochrane RoB 2) and `newcastle_ottawa` ship as opt-in variable modules on Protocol → Variables, so a quality appraisal goes through the same extraction, verification, and consensus flow as any other variable. Neither is on by default.
+- Summary's extraction card counts papers awaiting reconciliation; Settings → Project shows which mode preset the project was created with.
 - Consensus for independent extraction: once two reviewers submit, the paper appears under Full-text review → "To reconcile" → "Open comparison", where agreed variables are carried over and only disagreements ask for a decision (take a reviewer's answer with its quote, or type your own). Saved as an adjudicated record that "Extraction — final" exports; Undo puts the paper back in the queue.
 - Reliability report covers any reviewer pair at either stage: pick abstract or full-text and the two reviewers (AI vs human, or human vs human), instead of only AI vs human at the abstract stage.
 - PABAK (prevalence-adjusted κ) alongside Cohen's κ, since κ reads low at screening's typical include rate.
@@ -14,12 +16,14 @@
 - Agreement paired the latest human vote regardless of who cast it, so with two reviewers on a paper the AI was compared against whichever human voted last. Pairing is now per reviewer.
 - Extraction exports merged two reviewers' values into one row, silently keeping whichever was written last; CSV/JSON/ZIP now carry an `extractor_id` and emit one record per extractor.
 - Human extraction exports no longer include the internal `_submitted` marker as if it were a variable.
+- A full-text report excluded for several reasons counted as one combined category in the PRISMA table instead of once under each reason. The excluded box now also counts reports rather than votes, and skips reports a reconciliation turned into includes.
 - `project.type` was hardcoded to `scoping` with no way to change it, so every methods export called the review a scoping review.
 
 ### Changed
 - No built-in default model: the project template and the config no longer name one, and an AI run without a model set stops with a message pointing at Settings → Models (Mock is unaffected). Settings notes that screening is where a cheap model pays off.
 - Agreement counts `uncertain` as include (it carries a record forward) with a three-way toggle; figures use votes as first cast, ignoring reconciliations.
 - Methods export reports agreement for both stages and names the reviewer pair; `ailr metrics --json` returns an `agreement` block per stage and pair.
+- The `strict` preset now sets independent extraction (two reviewers, reconciled) to match its independent screening; it previously left extraction as AI-extract-then-verify.
 
 ---
 ## [0.27.0] – 2026-07-26

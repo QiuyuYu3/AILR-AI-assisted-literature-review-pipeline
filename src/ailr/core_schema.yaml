@@ -56,3 +56,76 @@ fields:
     item_type: string
     required: false
     core: false
+
+  # ----- Quality assessment / risk of bias (opt-in) ---------------------
+  # A quality appraisal is just a group of extraction variables: tick one of these on and it
+  # goes through the same extraction, verification, and consensus flow as the rest of the form.
+  # Pick the instrument that fits your designs, or copy one of these as a starting point and
+  # edit it — these are two common defaults, not a prescription.
+
+  - name: rob2
+    description: >-
+      Cochrane RoB 2 judgement per domain, for randomized trials. Each domain is judged
+      'Low' (low risk of bias), 'Some concerns', or 'High' (high risk of bias); the overall
+      judgement follows RoB 2's algorithm (low only if every domain is low; high if any
+      domain is high or several raise some concerns).
+    type: object
+    required: false
+    core: false
+    fields:
+      - name: d1_randomization
+        description: "Domain 1 — bias arising from the randomization process (allocation sequence, concealment, baseline imbalances)"
+        type: string
+        enum: [Low, Some concerns, High]
+        required: false
+      - name: d2_deviations
+        description: "Domain 2 — bias due to deviations from intended interventions (blinding of participants/carers, co-interventions, analysis approach)"
+        type: string
+        enum: [Low, Some concerns, High]
+        required: false
+      - name: d3_missing_data
+        description: "Domain 3 — bias due to missing outcome data (completeness of outcome data, whether missingness depends on the true value)"
+        type: string
+        enum: [Low, Some concerns, High]
+        required: false
+      - name: d4_outcome_measurement
+        description: "Domain 4 — bias in measurement of the outcome (appropriateness of the measure, blinding of outcome assessors)"
+        type: string
+        enum: [Low, Some concerns, High]
+        required: false
+      - name: d5_selective_reporting
+        description: "Domain 5 — bias in selection of the reported result (pre-specified analysis plan, selective reporting of outcomes or analyses)"
+        type: string
+        enum: [Low, Some concerns, High]
+        required: false
+      - name: overall
+        description: "Overall risk-of-bias judgement across the five domains"
+        type: string
+        enum: [Low, Some concerns, High]
+        required: false
+
+  - name: newcastle_ottawa
+    description: >-
+      Newcastle-Ottawa Scale star rating, for non-randomized cohort and case-control studies.
+      Stars are awarded per item within three categories; record the count per category.
+      Maximum 4 (selection) + 2 (comparability) + 3 (outcome/exposure) = 9.
+    type: object
+    required: false
+    core: false
+    fields:
+      - name: selection
+        description: "Selection stars, 0-4 (representativeness of the cohort / case definition, selection of controls, ascertainment of exposure, outcome not present at start)"
+        type: integer
+        required: false
+      - name: comparability
+        description: "Comparability stars, 0-2 (comparability of cohorts or of cases and controls on design or analysis, e.g. matching or adjustment for confounders)"
+        type: integer
+        required: false
+      - name: outcome_or_exposure
+        description: "Outcome stars for a cohort study, or exposure stars for a case-control study, 0-3 (assessment method, adequacy of follow-up or non-response rate)"
+        type: integer
+        required: false
+      - name: total
+        description: "Total stars, 0-9"
+        type: integer
+        required: false

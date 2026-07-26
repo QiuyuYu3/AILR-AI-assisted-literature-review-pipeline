@@ -23,7 +23,7 @@ _WORKFLOW_OPTIONS = [
     {"label": "independent (you extract blind)", "value": "independent"},
 ]
 
-_INDEP_TEAM_SIZE = 2  # independent extraction: reveal/compare once this many humans have submitted
+_REQUIRED_EXTRACTORS = 2  # independent extraction: how many humans must extract each paper
 
 _APP_CHROME_PX = 115  # height of the app header + tab bar above this view; the panes flex-fill the rest
 
@@ -965,7 +965,7 @@ def _compute_locked(db: Any, src: Source, rid: str, workflow: str) -> tuple[bool
         return (other is not None), ([other] if other else [])
     if workflow == "independent":
         submitters = db.extraction_submitters(src.id)
-        return (len(submitters) >= _INDEP_TEAM_SIZE), submitters
+        return (len(submitters) >= _REQUIRED_EXTRACTORS), submitters
     return False, []
 
 

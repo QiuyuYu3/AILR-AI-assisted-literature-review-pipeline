@@ -57,6 +57,11 @@ def _build_content(reviewer: Optional[str]) -> Any:
     eligible_ext_ids = [s.id for s in db.list_full_text_final_includes_with_markdown(pid) if s.id not in _ft_conflict_ids]
     ai_extracted = len(db.sources_with_extraction(eligible_ext_ids, "ai"))
     human_extracted = len(db.sources_with_submission(eligible_ext_ids))
+    # Only independent extraction produces papers waiting on an adjudicated consensus.
+    awaiting_consensus = (
+        len(db.sources_needing_consensus(eligible_ext_ids))
+        if cfg.extraction.workflow == "independent" else 0
+    )
 
     my_done = db.count_reviewer_decisions(pid, rid) if rid else 0
 
@@ -119,7 +124,7 @@ def _build_content(reviewer: Optional[str]) -> Any:
             sub_metrics=[
                 ("with markdown", with_md, "info"),
                 ("verified by human", human_extracted, "primary"),
-            ],
+            ] + ([("awaiting reconciliation", awaiting_consensus, "warning")] if awaiting_consensus else []),
         ),
         _stage_card(
             title="API usage",

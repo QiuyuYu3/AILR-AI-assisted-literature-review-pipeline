@@ -49,6 +49,8 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         "reports_not_retrieved": max(reports_sought - reports_retrieved, 0),
         "full_text_assessed": full_text_assessed,
         "full_text_excluded": full_text["exclude"],
+        # Papers, not votes: two reviewers excluding the same report is one excluded report.
+        "full_text_excluded_reports": db.count_full_text_excluded_reports(pid),
         "studies_included": studies_included,
         "studies_extracted": sources_extracted,
     }
@@ -98,10 +100,13 @@ def build_prisma_report(project: Project) -> str:
 
     exclusion_counts = project.db.full_text_exclusion_counts(project.project_id)
     if exclusion_counts:
-        total_excluded = sum(r["n"] for r in exclusion_counts)
+        total_excluded = c["full_text_excluded_reports"]
         lines.append(f"**Full-text reports excluded, with reasons:** {total_excluded}")
         for r in exclusion_counts:
             lines.append(f"- {r['reason']}: {r['n']}")
+        if sum(r["n"] for r in exclusion_counts) > total_excluded:
+            lines.append("")
+            lines.append("_Some reports were excluded for more than one reason, so the reasons sum to more than the total._")
         lines.append("")
 
     lines.append("## Included")
@@ -150,7 +155,7 @@ def build_prisma_svg(project: Project) -> str:
     dup_side = [(f"{c['duplicates_removed']} duplicates removed", False)] if c["duplicates_removed"] else None
     abs_side = [(f"{c['abstract_excluded']} excluded at title/abstract", False)]
     notret_side = [(f"{c['reports_not_retrieved']} reports not retrieved", False)] if c["reports_not_retrieved"] else None
-    ftx_side = [(f"{c['full_text_excluded']} excluded, with reasons:", False)] + [(f"  {r['reason']}: {r['n']}", False) for r in ft_excl]
+    ftx_side = [(f"{c['full_text_excluded_reports']} excluded, with reasons:", False)] + [(f"  {r['reason']}: {r['n']}", False) for r in ft_excl]
 
     stages: list[tuple[list[tuple[str, bool]], Any]] = [
         (ident_lines, dup_side),

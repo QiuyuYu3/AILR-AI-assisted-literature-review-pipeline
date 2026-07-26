@@ -72,7 +72,7 @@ def layout() -> Any:
     )
 
 
-# ── Comparing two reviewers' answers ────────────────────────────────────────────────────────
+# ----- Comparing two reviewers' answers -----------------------------------------------------
 
 
 def _norm(value: Any) -> str:
@@ -246,7 +246,7 @@ def _compare(project: Any, sid: int) -> tuple[list[tuple[FieldSpec, Any, Any]], 
     return agreed, cards, state
 
 
-# ── Callbacks ───────────────────────────────────────────────────────────────────────────────
+# ----- Callbacks ----------------------------------------------------------------------------
 
 
 def register_callbacks(app: Any) -> None:

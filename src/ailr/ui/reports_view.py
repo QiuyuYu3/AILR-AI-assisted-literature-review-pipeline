@@ -207,7 +207,7 @@ def _prisma_diagram(db: Any, pid: int, c: dict) -> Any:
     abs_side = _box(f"{c['abstract_excluded']}", "studies excluded at title/abstract", _SIDE_BOX)
     retrieval_side = _box(f"{c['reports_not_retrieved']}", "reports not retrieved (no full text)", _SIDE_BOX) if c["reports_not_retrieved"] else None
 
-    ft_side_children: list[Any] = [html.Div([html.Strong(f"{c['full_text_excluded']} "), "studies excluded, with reasons:"])]
+    ft_side_children: list[Any] = [html.Div([html.Strong(f"{c['full_text_excluded_reports']} "), "studies excluded, with reasons:"])]
     if ft_excl_counts:
         ft_side_children.append(
             html.Ul([html.Li(f"{r['reason']}: {r['n']}", className="small") for r in ft_excl_counts], className="mb-0 mt-1")

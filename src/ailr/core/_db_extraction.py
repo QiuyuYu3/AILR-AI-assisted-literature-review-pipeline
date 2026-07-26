@@ -227,7 +227,7 @@ class ExtractionMixin:
         ).fetchall()
         return {r["source_id"]: r["extractor_id"] for r in rows}
 
-    # ── Consensus (independent extraction: reconcile two reviewers into one record) ──────
+    # ----- Consensus (independent extraction: two reviewers -> one record) -----------
 
     def sources_with_consensus(self, source_ids: list[int]) -> set[int]:
         """Subset of source_ids that already have an adjudicated consensus extraction."""

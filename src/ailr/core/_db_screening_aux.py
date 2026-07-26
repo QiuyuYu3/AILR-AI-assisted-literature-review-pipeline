@@ -6,6 +6,17 @@ from typing import Optional
 
 from ailr.exceptions import DatabaseError
 
+# A report counts as excluded at full text when adjudication says so, or — with no adjudication —
+# when a human vote says so. Mirrors the final-include rule, so PRISMA's excluded and included
+# boxes are read the same way and a reconciled disagreement is not counted on both sides.
+_FT_FINAL_EXCLUDE_SQL = """(
+    EXISTS (SELECT 1 FROM reconciliations r
+            WHERE r.source_id = d.source_id AND r.stage = 'full_text_screening'
+              AND r.final_value = 'exclude')
+    OR NOT EXISTS (SELECT 1 FROM reconciliations r
+                   WHERE r.source_id = d.source_id AND r.stage = 'full_text_screening')
+)"""
+
 
 class ScreeningAuxMixin:
     def insert_screening_action(
@@ -261,20 +272,57 @@ class ScreeningAuxMixin:
             raise DatabaseError(f"Failed to delete exclusion reason: {e}") from e
 
     def full_text_exclusion_counts(self, project_id: int) -> list[dict]:
-        """Full-text exclusions grouped by reason (human reviewers), for PRISMA reporting."""
-        sql = """
-            SELECT COALESCE(NULLIF(TRIM(d.reasoning), ''), '(no reason given)') AS reason,
-                   COUNT(DISTINCT d.source_id) AS n
+        """Full-text exclusions counted per reason (human reviewers), for PRISMA reporting.
+
+        The exclude dialog joins a multi-select with "; ", so a report excluded for two reasons is
+        stored as one string. PRISMA wants it counted under each reason, so the string is split
+        back apart — but only when every part is a reason this project actually defines, so a
+        free-text note containing a semicolon is left as one bucket rather than shredded.
+
+        A report counted under two reasons appears in two rows: the counts can sum to more than
+        the number of excluded reports (see count_full_text_excluded_reports).
+        """
+        sql = f"""
+            SELECT DISTINCT d.source_id AS source_id,
+                   COALESCE(NULLIF(TRIM(d.reasoning), ''), '(no reason given)') AS reason
             FROM screening_decisions d
             JOIN sources s ON s.id = d.source_id
             WHERE s.project_id = ?
               AND d.stage = 'full_text'
               AND d.decision = 'exclude'
               AND d.reviewer_type = 'human'
-            GROUP BY reason
-            ORDER BY n DESC, reason
+              AND {_FT_FINAL_EXCLUDE_SQL}
         """
-        return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
+        known = {r["name"] for r in self.list_exclusion_reasons(project_id)}
+        per_reason: dict[str, set] = {}
+        for row in self._conn.execute(sql, (project_id,)).fetchall():
+            parts = [p.strip() for p in str(row["reason"]).split(";") if p.strip()]
+            if len(parts) < 2 or not all(p in known for p in parts):
+                parts = [row["reason"]]
+            for part in parts:
+                per_reason.setdefault(part, set()).add(row["source_id"])
+        return [
+            {"reason": reason, "n": len(sources)}
+            for reason, sources in sorted(per_reason.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+        ]
+
+    def count_full_text_excluded_reports(self, project_id: int) -> int:
+        """Distinct reports excluded at full text. The PRISMA box needs this, not the sum of the
+        per-reason counts, which double-counts a report excluded for more than one reason."""
+        row = self._conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT d.source_id) AS n
+            FROM screening_decisions d
+            JOIN sources s ON s.id = d.source_id
+            WHERE s.project_id = ?
+              AND d.stage = 'full_text'
+              AND d.decision = 'exclude'
+              AND d.reviewer_type = 'human'
+              AND {_FT_FINAL_EXCLUDE_SQL}
+            """,
+            (project_id,),
+        ).fetchone()
+        return row["n"] if row else 0
 
     def has_screening_reconciliation(self, source_id: int) -> bool:
         row = self._conn.execute(

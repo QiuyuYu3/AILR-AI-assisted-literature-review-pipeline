@@ -12,6 +12,12 @@ Pull structured data out of the included full texts. This is the step that turns
 
 ![extraction prompt: the advanced scaffold and the draft-with-your-AI helper](../figures/ft_prompt1.png)
 
+### Quality assessment / risk of bias
+
+There is no separate risk-of-bias module, and that is deliberate: an appraisal is a group of extraction variables, so it goes through the same extraction, verification, and consensus flow as everything else. Two common instruments ship as opt-in modules on **Protocol → Variables** — **rob2** (Cochrane RoB 2 for randomized trials: five domains plus an overall judgement, each Low / Some concerns / High) and **newcastle_ottawa** (star counts for cohort and case-control studies). Neither is ticked by default. Tick the one that fits your designs, or copy it as a starting point and edit the domains to match the instrument your protocol specifies.
+
+In `independent` extraction, this means the appraisal is done by two reviewers and reconciled like any other variable, which is what appraisal guidance asks for.
+
 The variables set the *structure* and the prompt sets the *quality*. These are independent, and understanding why is worth a few minutes: see [How AI extraction works](../ai-extraction.md). You can let your own AI draft the [variables](../ai-extraction.md#define-your-variables-with-your-own-ai) or, if you rewrite the scaffold, the [prompt](../ai-extraction.md#rewriting-the-whole-scaffold-advanced), or run the model [entirely outside the app](../ai-extraction.md#run-the-ai-externally-and-import).
 
 :::{tip}
