@@ -1,6 +1,7 @@
 """Dash app: review UI with a left-side nav. Launched by `ailr ui`."""
 
 import os
+import time
 from pathlib import Path
 
 import dash_bootstrap_components as dbc
@@ -599,8 +600,7 @@ def build_app() -> Dash:
             get_project().db.set_study_group(int(sid), primary)
         except Exception:
             return no_update, no_update
-        import time as _t
-        return False, {"ts": _t.time()}
+        return False, {"ts": time.time()}
 
     @app.callback(
         Output("tags-refresh", "data", allow_duplicate=True),
@@ -640,7 +640,6 @@ def build_app() -> Dash:
         options = [{"label": t["name"], "value": t["id"]} for t in all_tags]
         new_checked = list({*(current_checked or []), tag_id})
 
-        import time
         return (
             {"ts": time.time()},
             options,
@@ -671,7 +670,6 @@ def build_app() -> Dash:
         for tag_id in to_remove:
             db.untag_source(int(sid), int(tag_id))
         if to_add or to_remove:
-            import time
             return {"ts": time.time()}
         return no_update
 
@@ -797,7 +795,6 @@ def build_app() -> Dash:
         prevent_initial_call=True,
     )
     def _mutate_notes(_add, _del, text, data, reviewer):
-        import time
         db = get_project().db
 
         if ctx.triggered_id == "note-add":

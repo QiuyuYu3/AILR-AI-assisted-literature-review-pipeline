@@ -375,10 +375,9 @@ def register_callbacks(app: Any) -> None:
     def _clear_mock(n):
         if not n:
             return no_update, no_update
-        import time as _t
         project = get_project()
         cleared = project.db.clear_mock_ai_decisions(project.project_id)
-        return dbc.Alert(f"Cleared {cleared} mock AI screening decision(s).", color="success", className="py-1 mb-0"), {"ts": _t.time()}
+        return dbc.Alert(f"Cleared {cleared} mock AI screening decision(s).", color="success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("screen-ai-status", "children", allow_duplicate=True),
@@ -715,11 +714,7 @@ def register_callbacks(app: Any) -> None:
         sid = last.get("sid")
         if sid is None:
             return no_update, no_update
-        db = get_project().db
-        db.delete_screening_decision(int(sid), rid, reviewer_type="human")
-        db.delete_reconciliations_for_source(int(sid), "abstract_screening")
-        db.insert_screening_action(int(sid), rid, action="reset")
-        return {"ts": time.time()}, None
+        return _apply_reset(get_project().db, int(sid), rid)
 
     @app.callback(
         Output({"type": "screen-abstract-body", "source": ALL}, "is_open"),
@@ -728,12 +723,11 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _toggle_abstract(clicks, is_open_list):
-        from dash import callback_context
-        triggered = ctx.triggered_id
+        triggered = triggered_click_id()
         if triggered is None:
             return no_update
         target_sid = triggered.get("source")
-        ids = [t["id"] for t in callback_context.inputs_list[0]]
+        ids = [t["id"] for t in ctx.inputs_list[0]]
         out = []
         for i, comp_id in enumerate(ids):
             if comp_id.get("source") == target_sid:

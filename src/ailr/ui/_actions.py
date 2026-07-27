@@ -71,10 +71,7 @@ def _apply_resolve(db: Any, source_id: int, decision: str, rid: str, rationale: 
 def _apply_undo_resolve(db: Any, rec_id: int) -> dict:
     """Undo a reconciliation, so the conflict re-enters the queue. Returns the refresh payload."""
     # Fetch the row to learn source_id + adjudicator before deleting (for the audit trail).
-    row = db._conn.execute(
-        "SELECT source_id, adjudicator FROM reconciliations WHERE id = ?",
-        (rec_id,),
-    ).fetchone()
+    row = db.get_reconciliation(rec_id)
     db.delete_reconciliation(rec_id)
     if row:
         db.insert_screening_action(row["source_id"], row["adjudicator"], action="reconcile_undo")

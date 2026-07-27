@@ -1245,6 +1245,13 @@ class ScreeningMixin:
         """
         return [dict(r) for r in self._conn.execute(sql, (project_id, stage, limit)).fetchall()]
 
+    def get_reconciliation(self, reconciliation_id: int) -> Optional[dict]:
+        """One reconciliation row. Read before deleting it, so the undo can be attributed."""
+        row = self._conn.execute(
+            "SELECT * FROM reconciliations WHERE id = ?", (reconciliation_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
     def delete_reconciliation(self, reconciliation_id: int) -> int:
         try:
             cur = self._conn.execute("DELETE FROM reconciliations WHERE id = ?", (reconciliation_id,))

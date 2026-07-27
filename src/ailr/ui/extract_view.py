@@ -298,10 +298,9 @@ def register_callbacks(app: Any) -> None:
     def _clear_mock(n):
         if not n:
             return no_update, no_update
-        import time as _t
         project = get_project()
         cleared = project.db.clear_mock_ai_extractions(project.project_id)
-        return dbc.Alert(f"Cleared {cleared} mock AI extraction row(s).", color="success", className="py-1 mb-0"), {"ts": _t.time()}
+        return dbc.Alert(f"Cleared {cleared} mock AI extraction row(s).", color="success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("extract-ai-status", "children", allow_duplicate=True),
@@ -434,17 +433,26 @@ def register_callbacks(app: Any) -> None:
         fields = compose_schema(project.root / project.config.extraction.schema_path)
         workflow = project.config.extraction.workflow
 
-        if trigger == "extract-save" and save:
+        if (trigger == "extract-save" and save) or (trigger == "extract-submit" and submit):
             locked, _ = _compute_locked(db, src, rid, workflow)
             if locked:
                 return no_update, no_update, no_update
+            # The form on screen was built from the schema as it stood when the page rendered. If the
+            # variables were edited since (Protocol tab, another window), the new fields have no widget
+            # and would be written as null — refuse rather than silently wipe them.
+            missing = _missing_form_fields(fields, val_ids, grid_ids)
+            if missing:
+                return no_update, dbc.Alert(
+                    f"The extraction variables changed since this paper was opened — no input for: "
+                    f"{', '.join(missing)}. Go back to the full-text list and reopen it before saving.",
+                    color="danger", className="py-1 mb-0",
+                ), no_update
+
+        if trigger == "extract-save" and save:
             _save_extraction(db, src, rid, fields, val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids, include_autoaccept=False)
             return no_update, "Draft saved.", no_update
 
         if trigger == "extract-submit" and submit:
-            locked, _ = _compute_locked(db, src, rid, workflow)
-            if locked:
-                return no_update, no_update, no_update
             ai_rows = {r["field_name"]: r for r in db.list_extractions(src.id, extractor_type="ai")}
             _save_extraction(db, src, rid, fields, val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids, ai_rows=ai_rows, include_autoaccept=True)
             db.mark_extraction_submitted(src.id, rid)
@@ -872,6 +880,31 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
             if fc.get("reason"):
                 items.append(html.Div(fc["reason"], className="small ms-3 mb-1"))
     return dbc.Card(dbc.CardBody(items), color="light")
+
+
+def _expected_form_keys(fields: list[FieldSpec]) -> tuple[set[str], set[str]]:
+    """The (ex-value, ex-grid) ids _build_form renders for these fields. Mirrors _field_block's
+    four branches, so a change there must be reflected here."""
+    values: set[str] = set()
+    grids: set[str] = set()
+    for f in fields:
+        if f.type == "object":
+            values.update(f"{f.name}.{sub.name}" for sub in f.fields or [])
+        elif f.type == "list" and f.item_type == "object":
+            grids.add(f.name)
+        else:
+            values.add(f.name)
+    return values, grids
+
+
+def _missing_form_fields(fields: list[FieldSpec], val_ids: list, grid_ids: list) -> list[str]:
+    """Schema fields that _save_extraction would write but which have no widget on screen.
+    Extra widgets are harmless (the save reads the schema, not the form), so this only looks
+    for what is absent."""
+    want_values, want_grids = _expected_form_keys([f for f in fields if f.verify])
+    have_values = {i["field"] for i in val_ids if isinstance(i, dict)}
+    have_grids = {i["field"] for i in grid_ids if isinstance(i, dict)}
+    return sorted((want_values - have_values) | (want_grids - have_grids))
 
 
 def _save_extraction(

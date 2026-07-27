@@ -7,24 +7,21 @@ A domain-agnostic, AI-pluggable, PRISMA-auditable framework for literature revie
 
 ### A `runs` table (one row per screening/extraction run, decisions keyed to it)
 Decided 2026-07 to NOT add one. The case for it was that the methods export described runs from
-the config file rather than from what happened; that is now solved more cheaply, since decisions
-record their own model and temperature in `llm_params` (a JSON column, so no migration) and the
-export aggregates those. Prompt and criteria snapshots already existed: every run resolves a
-`prompt_versions` row whose `composed` column holds the fully-resolved prompt, and the version is
-stamped on each decision.
+the config file rather than from what happened. That is now solved more cheaply: decisions record
+their own model and temperature in `llm_params`, a JSON column that needed no migration, and the
+export aggregates those. Prompt and criteria snapshots already existed, since every run resolves a
+`prompt_versions` row whose `composed` column holds the fully-resolved prompt and stamps that
+version on each decision it writes.
 
-What a runs table would still add is a run as an entity — extent, wall-clock, failure count,
-which rows a given invocation produced. That is operational convenience, not reporting accuracy.
-Note the cost is not the new table (`create_all` adds missing tables safely) but the `run_id`
-COLUMN on `screening_decisions` / `extractions`, which existing databases would need altered by
-hand; see the alembic entry below.
+What the table would still add is a run as an entity: extent, wall-clock, failure count, which
+rows one invocation produced. Quick tests already have exactly that (`test_runs` plus
+`test_decisions.run_id`), so comparing two prompt versions on the same records needs a comparison
+view rather than this table; production screening and extraction are what lack a run entity. The
+cost is also not the new table, which `create_all` adds safely, but the `run_id` column on
+`screening_decisions` and `extractions`, which existing databases would need altered by hand. See
+the alembic entry below.
 
-Note that quick tests already have a run entity (`test_runs` + `test_decisions.run_id`), so
-comparing two prompt versions on the same records needs a comparison view, not this table —
-prompt text already diffs in the UI, and each test run's decisions are already retrievable.
-Production screening and extraction are what have no run entity.
-
-Revisit when two PRODUCTION runs need comparing against each other, or when a batch that failed
+Revisit when two production runs need comparing against each other, or when a batch that failed
 part-way needs identifying and re-running as a unit.
 
 ### Schema migrations (alembic) + a version gate on open

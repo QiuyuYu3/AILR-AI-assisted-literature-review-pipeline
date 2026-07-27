@@ -171,9 +171,8 @@ def register_callbacks(app: Any) -> None:
         triggered = triggered_click_id()  # a tag-delete (open) button on a re-rendering list
         if triggered is not None and triggered.get("type") == "tag-delete":
             tag_id = int(triggered["id"])
-            db = get_project().db
-            row = db._conn.execute("SELECT name FROM tags WHERE id = ?", (tag_id,)).fetchone()
-            name = row["name"] if row else f"id {tag_id}"
+            tag = get_project().db.get_tag(tag_id)
+            name = tag["name"] if tag else f"id {tag_id}"
             body = html.P(
                 [
                     "Delete tag ",

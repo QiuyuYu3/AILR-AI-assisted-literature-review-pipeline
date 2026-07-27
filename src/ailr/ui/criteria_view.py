@@ -75,8 +75,7 @@ def _write_criteria_json(root, cs) -> Any:
 
 def _to_content(rows) -> str:
     """crit-store rows -> the JSON snapshot stored as a version (IDs assigned, like a real Save)."""
-    specs = _specs(rows or [])
-    assign_ids(specs)
+    specs = assign_ids(_specs(rows or []))  # assign_ids is pure — the return value IS the result
     return json.dumps({"criteria": [s.model_dump() for s in specs]}, ensure_ascii=False)
 
 
@@ -116,8 +115,7 @@ def _render_list(rows: list[dict]) -> Any:
 
 
 def _render_preview(rows: list[dict]) -> str:
-    specs = [s for s in _specs(rows) if s.name.strip() or s.pass_if.strip() or s.fail_if.strip()]
-    assign_ids(specs)
+    specs = assign_ids([s for s in _specs(rows) if s.name.strip() or s.pass_if.strip() or s.fail_if.strip()])
     return render_criteria_markdown(CriteriaSet(criteria=specs)) or "(nothing yet)"
 
 

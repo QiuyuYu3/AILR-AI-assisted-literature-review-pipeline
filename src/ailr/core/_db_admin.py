@@ -216,6 +216,10 @@ class AdminMixin:
         """
         return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
+    def get_tag(self, tag_id: int) -> Optional[dict]:
+        row = self._conn.execute("SELECT * FROM tags WHERE id = ?", (tag_id,)).fetchone()
+        return dict(row) if row else None
+
     def get_tag_by_name(self, project_id: int, name: str) -> Optional[dict]:
         row = self._conn.execute(
             "SELECT * FROM tags WHERE project_id = ? AND name = ?",

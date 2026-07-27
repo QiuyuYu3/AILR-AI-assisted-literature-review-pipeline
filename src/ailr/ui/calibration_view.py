@@ -7,6 +7,8 @@ stage="extraction" — test the EXTRACTION prompt:
     which the AI derives while extracting).
 """
 
+import json
+import time
 from typing import Any
 
 import dash_bootstrap_components as dbc
@@ -312,8 +314,7 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
         if not n:
             return no_update
         get_project().db.clear_test_runs(get_project().project_id, test_stage)
-        import time as _t
-        return {"ts": _t.time()}
+        return {"ts": time.time()}
 
     @app.callback(
         Output(f"{p}-refresh", "data", allow_duplicate=True),
@@ -323,8 +324,7 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
     def _manual_refresh(n):
         if not n:
             return no_update
-        import time as _t
-        return {"ts": _t.time()}
+        return {"ts": time.time()}
 
 
 def _poll_common(key: str):
@@ -337,8 +337,7 @@ def _poll_common(key: str):
     if st.get("error"):
         return dbc.Alert(f"Failed: {st['error']}", color="danger", className="py-1 mb-0"), True, no_update
     if st.get("started") and st.get("summary"):
-        import time as _t
-        return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": _t.time()}
+        return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}
     return no_update, True, no_update
 
 
@@ -453,8 +452,7 @@ def _scalar_str(v: Any) -> str:
     if v is None:
         return "—"
     if isinstance(v, (dict, list)):
-        import json as _json
-        return _json.dumps(v, ensure_ascii=False)
+        return json.dumps(v, ensure_ascii=False)
     return str(v)
 
 
@@ -467,9 +465,8 @@ def _value_block(val: Any, quote: Any) -> Any:
     sub-fields, each with its own value and grey quote underneath."""
     # the model sometimes stores a nested value as a JSON string; parse so it can be expanded
     if isinstance(val, str) and val.strip()[:1] in ("[", "{"):
-        import json as _json
         try:
-            val = _json.loads(val)
+            val = json.loads(val)
         except ValueError:
             pass
     # multi-select the model over-wrapped as [{value, quote}, ...]: show the values + their quotes

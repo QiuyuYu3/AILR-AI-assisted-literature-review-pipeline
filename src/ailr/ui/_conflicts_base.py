@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import ALL, Input, Output, State, html, no_update
+from dash import ALL, Input, Output, State, ctx, html, no_update
 
 from ailr.core.source import Source
 from ailr.ui._actions import _apply_resolve, _apply_undo_resolve
@@ -160,12 +160,11 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
             prevent_initial_call=True,
         )
         def _toggle_abstract(clicks, is_open_list):
-            from dash import callback_context
             triggered = triggered_click_id()
             if triggered is None:
                 return no_update
             target_sid = triggered.get("source")
-            ids = [t["id"] for t in callback_context.inputs_list[0]]
+            ids = [t["id"] for t in ctx.inputs_list[0]]
             out = []
             for i, comp_id in enumerate(ids):
                 if comp_id.get("source") == target_sid:

@@ -7,6 +7,7 @@ AI's verdict at this stage is derived from extraction.flag_check.
 
 import json
 import shutil
+import time
 from typing import Any, Optional
 
 import dash_bootstrap_components as dbc
@@ -346,9 +347,8 @@ def register_callbacks(app: Any) -> None:
             return dbc.Alert(f"Failed: {e}", color="danger", className="py-1 mb-0"), no_update
         if s.total_records == 0:
             return dbc.Alert("No Zotero .ris found in data/pdfs. Export your library there (with 'Export Files').", color="warning", className="py-1 mb-0"), no_update
-        import time as _t
         msg = f"Newly linked {s.linked}, already linked {s.already_linked}, unmatched {len(s.unmatched)}, missing files {len(s.missing_files)}."
-        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": _t.time()}
+        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("ft-md-import-status", "children"),
@@ -368,9 +368,8 @@ def register_callbacks(app: Any) -> None:
             r = import_markdown_from_folder(get_project(), folder.strip())
         except Exception as e:
             return dbc.Alert(f"Import failed: {e}", color="danger", className="py-1 mb-0"), no_update
-        import time as _t
         msg = f"Imported {r['matched']} markdown file(s). Found {r['md_files_found']} .md, {len(r['unmatched'])} unmatched, {r['no_pdf_path']} source(s) without a linked PDF."
-        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": _t.time()}
+        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("ft-preprocess-status", "children", allow_duplicate=True),
@@ -389,8 +388,7 @@ def register_callbacks(app: Any) -> None:
         if st.get("error"):
             return dbc.Alert(f"Convert failed: {st['error']}", color="danger", className="py-1 mb-0"), True, no_update
         if st.get("started") and st.get("summary"):
-            import time as _t
-            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": _t.time()}
+            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}
         return no_update, True, no_update
 
     @app.callback(
@@ -411,7 +409,6 @@ def register_callbacks(app: Any) -> None:
         if triggered is None or not rid:
             return no_update, no_update
 
-        import time as _t
         db = get_project().db
 
         if isinstance(triggered, dict) and triggered.get("type") == "ft-decide":
@@ -424,7 +421,7 @@ def register_callbacks(app: Any) -> None:
         if isinstance(triggered, dict) and triggered.get("type") == "ft-retrieval":
             db.set_full_text_not_retrieved(int(triggered["source"]), bool(int(triggered["flag"])))
 
-        return {"ts": _t.time()}, no_update
+        return {"ts": time.time()}, no_update
 
     @app.callback(
         Output("ft-action-banner", "children"),
@@ -481,12 +478,7 @@ def register_callbacks(app: Any) -> None:
         sid = last.get("sid")
         if sid is None:
             return no_update, no_update
-        import time as _t
-        db = get_project().db
-        db.delete_screening_decision(int(sid), rid, stage="full_text", reviewer_type="human")
-        db.delete_reconciliations_for_source(int(sid), "full_text_screening")
-        db.insert_screening_action(int(sid), rid, action="reset")
-        return {"ts": _t.time()}, None
+        return _apply_reset(get_project().db, int(sid), rid, stage="full_text")
 
     @app.callback(
         Output("ft-refresh", "data", allow_duplicate=True),
@@ -497,9 +489,8 @@ def register_callbacks(app: Any) -> None:
         triggered = triggered_click_id()
         if triggered is None:
             return no_update
-        import time as _t
         get_project().db.mark_source_duplicate(int(triggered["source"]), True)
-        return {"ts": _t.time()}
+        return {"ts": time.time()}
 
     @app.callback(
         Output("ft-refresh", "data", allow_duplicate=True),
@@ -512,7 +503,6 @@ def register_callbacks(app: Any) -> None:
         if triggered is None:
             return no_update, no_update
         sid = int(triggered["source"])
-        import time as _t
         from ailr.tasks.preprocess import PreprocessTask
         try:
             summary = PreprocessTask(get_project()).run(force=True, only_ids={sid})
@@ -529,7 +519,7 @@ def register_callbacks(app: Any) -> None:
         else:
             msg = f"#{sid} not re-converted — no PDF found for this source."
             color = "secondary"
-        return {"ts": _t.time()}, dbc.Alert(msg, color=color, className="py-2 mb-2")
+        return {"ts": time.time()}, dbc.Alert(msg, color=color, className="py-2 mb-2")
 
     @app.callback(
         Output("ft-refresh", "data", allow_duplicate=True),
@@ -541,13 +531,12 @@ def register_callbacks(app: Any) -> None:
         triggered = triggered_click_id()
         if triggered is None:
             return no_update
-        import time as _t
         sid = int(triggered["source"])
         db = get_project().db
         db.delete_all_screening_decisions(sid, reviewer_type="human")
         db.delete_reconciliations_for_source(sid)
         db.insert_screening_action(sid, (reviewer or "").strip() or "?", action="move_to_screening")
-        return {"ts": _t.time()}
+        return {"ts": time.time()}
 
     @app.callback(
         Output("ft-exclude-modal", "is_open"),
@@ -704,9 +693,7 @@ def register_callbacks(app: Any) -> None:
             tag_id = int(tag_filter) if tag_filter else None
         except (TypeError, ValueError):
             tag_id = None
-        ft_set = set(ftavail or [])
-        low_mode = "low" in ft_set
-        ft_avail = None if low_mode else ("has" if ("has" in ft_set and "needs" not in ft_set) else ("needs" if ("needs" in ft_set and "has" not in ft_set) else None))
+        low_mode, ft_avail = _ft_avail_filter(ftavail)
         # Low-text/failed is a file-content state, not a DB column: compute the id set on disk and
         # hand it to the SQL query as a whitelist (keeps filtering/paging in SQL).
         abstract_workflow = project.config.screening_workflow("abstract")
@@ -805,6 +792,23 @@ def register_callbacks(app: Any) -> None:
         if stale_ids:
             counts += f" • {len(stale_ids)} AI extraction(s) outdated — re-run extraction"
         return cards, counts, prev_disabled, next_disabled, page_info
+
+
+def _ft_avail_filter(ftavail: Any) -> tuple[bool, Optional[str]]:
+    """(low_text_mode, ft_avail) from the 'Full-text' checklist.
+
+    'Low-text / failed' wins over the other two: it is resolved on disk into an id whitelist, so the
+    SQL-level has/needs filter is switched off to avoid narrowing that set twice. Ticking both
+    'has' and 'needs' (or neither) means no availability filter at all.
+    """
+    ft_set = set(ftavail or [])
+    if "low" in ft_set:
+        return True, None
+    if "has" in ft_set and "needs" not in ft_set:
+        return False, "has"
+    if "needs" in ft_set and "has" not in ft_set:
+        return False, "needs"
+    return False, None
 
 
 def _low_text_md(root: Any, sid: Any, threshold: int) -> bool:
