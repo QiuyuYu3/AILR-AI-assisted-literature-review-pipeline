@@ -7,6 +7,9 @@
 - Full-text calibration: Full text → Workflow → AI extraction now offers the same Quick test / Full calibration choice as abstract screening. A round draws a sample from the full-text queue, runs the real extraction on it (the AI's full-text verdict comes from its per-criterion check), and reports κ against your decisions once you review the sample under Full-text review → "Calibration sample". Needs `extraction.flag_check` on; each paper is one full-text call.
 - 95% CI on Cohen's κ (Fleiss-Cohen-Everitt asymptotic variance, matches `vcd::Kappa`), shown on the reliability report and carried into the methods export and `ailr metrics`.
 
+### Removed
+- The open-time `ALTER TABLE` stack that patched databases predating a column. Every such column is present in the databases in use, and fresh ones get the full shape from `create_all`. There is now no migration path for a new column: existing databases have to be updated by hand.
+
 ### Changed
 - PRISMA's "reports not retrieved" is now something you mark on the full-text card, not something inferred from a missing markdown file. A converted-but-scanned PDF or one you simply have not fetched yet counts as retrieved (work outstanding), which is what PRISMA means.
 - Full calibration is hidden in `independent` workflow at both stages, and the task refuses it: two humans decide every record, so tuning the AI to agree with one of them gates nothing. Quick test stays; the AI's agreement is on Reports → Reliability.

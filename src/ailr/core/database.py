@@ -76,77 +76,14 @@ class Database(
             return self.url.rsplit("@", 1)[-1]
 
     def init_schema(self) -> None:
+        """create_all only adds missing TABLES, never missing columns. Databases created before a
+        column was added used to be patched at open time by a stack of ALTER statements here; every
+        such column is now present in the databases in use, so the stack is gone. Adding a column
+        from here on reaches new databases only — existing ones have to be altered by hand."""
         try:
             metadata.create_all(self._engine)
-            if self.dialect == "sqlite":
-                self._sqlite_column_migrations()
-            self._ensure_post_release_columns()
         except SQLAlchemyError as e:
             raise DatabaseError(f"Failed to initialize schema: {e}") from e
-
-    def _ensure_post_release_columns(self) -> None:
-        """Add columns introduced after a DB may have been created, on any dialect
-        (create_all only adds missing tables, not missing columns)."""
-        from sqlalchemy import inspect
-
-        existing = {c["name"] for c in inspect(self._engine).get_columns("duplicates")}
-        if "full_record_json" not in existing:
-            with self._engine.begin() as conn:
-                conn.exec_driver_sql("ALTER TABLE duplicates ADD COLUMN full_record_json TEXT")
-        pv_cols = {c["name"] for c in inspect(self._engine).get_columns("prompt_versions")}
-        if "composed" not in pv_cols:
-            with self._engine.begin() as conn:
-                conn.exec_driver_sql("ALTER TABLE prompt_versions ADD COLUMN composed TEXT")
-        td_cols = {c["name"] for c in inspect(self._engine).get_columns("test_decisions")}
-        if "flag_check" not in td_cols:
-            with self._engine.begin() as conn:
-                conn.exec_driver_sql("ALTER TABLE test_decisions ADD COLUMN flag_check TEXT")
-        src_cols = {c["name"] for c in inspect(self._engine).get_columns("sources")}
-        if "identification_route" not in src_cols:
-            # Everything imported before this column existed came from a database search.
-            with self._engine.begin() as conn:
-                conn.exec_driver_sql(
-                    "ALTER TABLE sources ADD COLUMN identification_route TEXT DEFAULT 'database'"
-                )
-                conn.exec_driver_sql(
-                    "UPDATE sources SET identification_route = 'database' WHERE identification_route IS NULL"
-                )
-        if "full_text_not_retrieved" not in src_cols:
-            with self._engine.begin() as conn:
-                conn.exec_driver_sql(
-                    "ALTER TABLE sources ADD COLUMN full_text_not_retrieved INTEGER DEFAULT 0"
-                )
-                conn.exec_driver_sql(
-                    "UPDATE sources SET full_text_not_retrieved = 0 WHERE full_text_not_retrieved IS NULL"
-                )
-        # composite indexes speed the screening list / status filters / vote locks and the
-        # extraction marker lookups (existing DBs only; fresh ones get them from create_all).
-        # CREATE INDEX IF NOT EXISTS works on SQLite + PostgreSQL.
-        with self._engine.begin() as conn:
-            conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS idx_screening_lookup "
-                "ON screening_decisions (source_id, reviewer_type, stage)"
-            )
-            conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS idx_extractions_lookup "
-                "ON extractions (source_id, extractor_type, field_name)"
-            )
-
-    def _sqlite_column_migrations(self) -> None:
-        """Add post-release columns to pre-existing SQLite DBs (create_all only creates
-        missing *tables*, not missing columns). Fresh DBs and PostgreSQL get the current
-        shape from create_all; Alembic will own migrations once wired in."""
-        with self._engine.begin() as conn:
-            def _cols(table: str) -> set:
-                return {r[1] for r in conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()}
-
-            if "stage" not in _cols("screening_decisions"):
-                conn.exec_driver_sql("ALTER TABLE screening_decisions ADD COLUMN stage TEXT DEFAULT 'abstract'")
-                conn.exec_driver_sql("UPDATE screening_decisions SET stage = 'abstract' WHERE stage IS NULL")
-            if "is_duplicate" not in _cols("sources"):
-                conn.exec_driver_sql("ALTER TABLE sources ADD COLUMN is_duplicate INTEGER DEFAULT 0")
-            if "authors" not in _cols("duplicates"):
-                conn.exec_driver_sql("ALTER TABLE duplicates ADD COLUMN authors TEXT")
 
     def copy_all_data_to(self, target: "Database") -> dict:
         """Copy every row from this DB into target (whose schema must already be initialized).
