@@ -22,7 +22,8 @@ def _arm_counts(db: Any, pid: int, route: str) -> dict[str, int]:
         "retrieved": max(sought - not_retrieved, 0),
         "not_retrieved": not_retrieved,
         "assessed": db.count_sources_screened(pid, "human", stage="full_text", route=route),
-        "included": db.count_final_includes(pid, "full_text", route=route),
+        "included": db.count_final_include_studies(pid, route=route),
+        "included_reports": db.count_final_includes(pid, "full_text", route=route),
     }
 
 
@@ -47,7 +48,10 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     reports_not_retrieved = db.count_final_includes(pid, "abstract", not_retrieved=True)
     reports_retrieved = max(reports_sought - reports_not_retrieved, 0)
     full_text_assessed = db.count_sources_screened(pid, "human", stage="full_text")
-    studies_included = db.count_final_includes(pid, "full_text")
+    # PRISMA's included box counts studies and their reports separately: several publications of
+    # one study are one study. The two are equal unless companion reports have been grouped.
+    studies_included = db.count_final_include_studies(pid)
+    reports_included = db.count_final_includes(pid, "full_text")
 
     sources_extracted = db.count_sources_with_extraction(pid, "ai")
 
@@ -78,6 +82,7 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         # Papers, not votes: two reviewers excluding the same report is one excluded report.
         "full_text_excluded_reports": db.count_full_text_excluded_reports(pid),
         "studies_included": studies_included,
+        "reports_included": reports_included,
         "studies_extracted": sources_extracted,
     }
 
@@ -169,6 +174,8 @@ def build_prisma_report(project: Project) -> str:
     lines.append("## Included")
     lines.append("")
     lines.append(f"**Studies included:** {c['studies_included']}")
+    if c["reports_included"] != c["studies_included"]:
+        lines.append(f"**Reports of included studies:** {c['reports_included']}")
     lines.append(f"- with completed AI extraction: {c['studies_extracted']}")
     lines.append("")
 
@@ -226,6 +233,13 @@ def build_prisma_svg(project: Project) -> str:
     notret_side = [(f"{c['reports_not_retrieved']} reports not retrieved", False)] if c["reports_not_retrieved"] else None
     ftx_side = [(f"{c['full_text_excluded_reports']} excluded, with reasons:", False)] + [(f"  {r['reason']}: {r['n']}", False) for r in ft_excl]
 
+    # PRISMA's included box names studies and their reports; the second line is dropped when no
+    # companion reports have been grouped, since it would just repeat the first.
+    included_box = [(f"{c['studies_included']} studies included", True)]
+    if c["reports_included"] != c["studies_included"]:
+        included_box.append((f"in {c['reports_included']} reports", True))
+    included_box.append((f"of which extracted: {c['studies_extracted']}", False))
+
     if two_arms:
         after_dedup = f"{max(main['identified'] - c['duplicates_removed'], 0)} records after duplicates removed"
         stage_rows = [
@@ -233,7 +247,7 @@ def build_prisma_svg(project: Project) -> str:
             ([(after_dedup, True)], abs_side),
             ([(f"{main['sought']} reports sought for retrieval", True)], notret_side),
             ([(f"{main['assessed']} full-text studies assessed", True)], ftx_side),
-            ([(f"{c['studies_included']} studies included", True), (f"of which extracted: {c['studies_extracted']}", False)], None),
+            (included_box, None),
         ]
         stages: list[tuple[list[tuple[str, bool]], Any]] = stage_rows
     else:
@@ -242,7 +256,7 @@ def build_prisma_svg(project: Project) -> str:
             ([(f"{c['records_after_dedup']} records after duplicates removed", True)], abs_side),
             ([(f"{c['reports_sought']} reports sought for retrieval", True)], notret_side),
             ([(f"{c['full_text_assessed']} full-text studies assessed", True)], ftx_side),
-            ([(f"{c['studies_included']} studies included", True), (f"of which extracted: {c['studies_extracted']}", False)], None),
+            (included_box, None),
         ]
 
     body: list[str] = []

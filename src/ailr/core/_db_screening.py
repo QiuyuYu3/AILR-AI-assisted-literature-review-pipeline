@@ -13,6 +13,23 @@ if TYPE_CHECKING:
     from ailr.reviewers import ScreeningDecision
 
 
+# A paper's FINAL verdict at one stage is include: reconciled as include, or some human's latest
+# vote is include and no reconciliation overrode it. Takes (reconcile_stage, stage, reconcile_stage).
+_FINAL_INCLUDE_PREDICATE = """
+                EXISTS (SELECT 1 FROM reconciliations r
+                        WHERE r.source_id = s.id AND r.stage = ? AND r.final_value = 'include')
+                OR (
+                  EXISTS (SELECT 1 FROM screening_decisions d
+                          WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = ?
+                            AND d.decision = 'include'
+                            AND d.id = (SELECT MAX(id) FROM screening_decisions
+                                        WHERE source_id = d.source_id AND reviewer_id = d.reviewer_id
+                                          AND reviewer_type = 'human' AND stage = d.stage))
+                  AND NOT EXISTS (SELECT 1 FROM reconciliations r
+                                  WHERE r.source_id = s.id AND r.stage = ?)
+                )
+"""
+
 # The most recent calibration round for a stage. Takes (project_id, cal_stage, project_id, cal_stage).
 _LATEST_CALIBRATION_ROUND_SQL = (
     "s.id IN (SELECT source_id FROM calibration_samples WHERE project_id = ? AND stage = ? "
@@ -636,6 +653,17 @@ class ScreeningMixin:
         ).fetchall()
         return [r["id"] for r in rows]
 
+    def list_full_text_candidates(self, project_id: int) -> list[Source]:
+        """Full-text candidates as Source rows. Markdown is not required: a companion report can
+        be grouped with a study before (or without) its own full text being converted."""
+        rows = self._conn.execute(
+            "SELECT s.* FROM sources s WHERE s.project_id = ? AND COALESCE(s.is_duplicate,0) = 0 "
+            "AND EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id "
+            "AND d.stage = 'abstract' AND d.decision = 'include') ORDER BY s.id",
+            (project_id,),
+        ).fetchall()
+        return [_row_to_source(r) for r in rows]
+
     def final_include_md_ids(self, source_ids: list[int]) -> set[int]:
         """Subset of the given sources that are 'final full-text include with markdown' (extraction-
         eligible): reconciled-as-include, or human-included with no conflict, and markdown present."""
@@ -644,6 +672,19 @@ class ScreeningMixin:
         ph = ",".join("?" for _ in source_ids)
         sql = f"SELECT s.id FROM sources s WHERE s.id IN ({ph}) AND {FT_FINAL_INCLUDE_MD_SQL}"
         return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
+
+    def count_final_include_studies(self, project_id: int, route: Optional[str] = None) -> int:
+        """Included STUDIES, where several reports of one study count once. PRISMA 2020's included
+        box reports this alongside the number of reports. Equal to the report count unless someone
+        has grouped companion reports."""
+        sql = f"""
+            SELECT COUNT(DISTINCT COALESCE(s.study_group_id, s.id)) AS n FROM sources s
+            WHERE s.project_id = ? {_route_filter(route)}
+              AND ({_FINAL_INCLUDE_PREDICATE})
+        """
+        return self._conn.execute(
+            sql, (project_id, "full_text_screening", "full_text", "full_text_screening")
+        ).fetchone()["n"]
 
     def count_final_includes(self, project_id: int, stage: str = "abstract", require_markdown: bool = False,
                              route: Optional[str] = None, not_retrieved: Optional[bool] = None) -> int:
@@ -659,20 +700,7 @@ class ScreeningMixin:
         sql = f"""
             SELECT COUNT(*) AS n FROM sources s
             WHERE s.project_id = ? {md} {nr} {_route_filter(route)}
-              AND (
-                EXISTS (SELECT 1 FROM reconciliations r
-                        WHERE r.source_id = s.id AND r.stage = ? AND r.final_value = 'include')
-                OR (
-                  EXISTS (SELECT 1 FROM screening_decisions d
-                          WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = ?
-                            AND d.decision = 'include'
-                            AND d.id = (SELECT MAX(id) FROM screening_decisions
-                                        WHERE source_id = d.source_id AND reviewer_id = d.reviewer_id
-                                          AND reviewer_type = 'human' AND stage = d.stage))
-                  AND NOT EXISTS (SELECT 1 FROM reconciliations r
-                                  WHERE r.source_id = s.id AND r.stage = ?)
-                )
-              )
+              AND ({_FINAL_INCLUDE_PREDICATE})
         """
         return self._conn.execute(sql, (project_id, reconcile_stage, stage, reconcile_stage)).fetchone()["n"]
 

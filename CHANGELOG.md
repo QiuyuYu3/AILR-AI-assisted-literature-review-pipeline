@@ -4,21 +4,22 @@
 ## [Unreleased]
 
 ### Added
-- Protocol → Registration (PRISMA item 24): register name, registration number, and protocol URL, saved to `lit_review.yaml`. The methods export states them, or states that the review was not registered, which PRISMA requires either way. Below the form, an amendment log built from the revisions the criteria / variables / prompt editors already snapshot on every Save; it also goes into the methods export as a table.
-- Full-text calibration: Full text → Workflow → AI extraction now offers the same Quick test / Full calibration choice as abstract screening. A round draws a sample from the full-text queue, runs the real extraction on it (the AI's full-text verdict comes from its per-criterion check), and reports κ against your decisions once you review the sample under Full-text review → "Calibration sample". Needs `extraction.flag_check` on; each paper is one full-text call.
-- 95% CI on Cohen's κ (Fleiss-Cohen-Everitt asymptotic variance, matches `vcd::Kappa`), shown on the reliability report and carried into the methods export and `ailr metrics`.
-
-### Removed
-- The open-time `ALTER TABLE` stack that patched databases predating a column. Every such column is present in the databases in use, and fresh ones get the full shape from `create_all`. There is now no migration path for a new column: existing databases have to be updated by hand.
+- Full-text calibration: run the AI on a sample, review the same papers yourself, get κ. Same shape as screening calibration.
+- Companion reports: group several publications of one study, so PRISMA counts studies and reports separately.
+- Protocol → Registration: register, registration number, protocol URL, and an amendment log.
+- 95% CI on Cohen's κ, on the reliability report and in the methods export.
 
 ### Changed
-- PRISMA's "reports not retrieved" is now something you mark on the full-text card, not something inferred from a missing markdown file. A converted-but-scanned PDF or one you simply have not fetched yet counts as retrieved (work outstanding), which is what PRISMA means.
-- Full calibration is hidden in `independent` workflow at both stages, and the task refuses it: two humans decide every record, so tuning the AI to agree with one of them gates nothing. Quick test stays; the AI's agreement is on Reports → Reliability.
-- Methods and PRISMA exports name the checklist that matches the review type: PRISMA-ScR for scoping, PRISMA 2020 for systematic.
+- "Reports not retrieved" is marked by hand instead of guessed from a missing markdown file.
+- Full calibration is off in independent workflow, where the AI is not one of the reviewers.
+- Methods and PRISMA exports say PRISMA-ScR for a scoping review, PRISMA 2020 for a systematic one.
+
+### Removed
+- Automatic column patching when a project opens; two unused indexes on sources.
 
 ### Fixed
-- Screening's "Calibration sample" filter never matched anything: rounds are stored under stage `screening` but the filter queried for `abstract`.
-- `ailr calibrate --stage extraction` died with a raw traceback referring to a development phase that no longer exists.
+- Screening's "Calibration sample" filter matched nothing.
+- Extraction-stage calibration crashed instead of running.
 
 ---
 ## [0.28.0] – 2026-07-26

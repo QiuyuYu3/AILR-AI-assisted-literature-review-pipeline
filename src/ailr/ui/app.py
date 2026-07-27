@@ -204,6 +204,38 @@ def build_app() -> Dash:
             dcc.Store(id="tag-modal-source", data=None),
             dbc.Modal(
                 [
+                    dbc.ModalHeader(dbc.ModalTitle(id="study-modal-title")),
+                    dbc.ModalBody(
+                        [
+                            html.P(
+                                "Several reports of one study (main paper, protocol, secondary analysis) "
+                                "count as one study in the PRISMA flow. Pick the report that represents "
+                                "the study; leave blank if this report stands alone.",
+                                className="text-muted small",
+                            ),
+                            dcc.Dropdown(
+                                id="study-modal-pick",
+                                options=[],
+                                value=None,
+                                placeholder="Search by author / title / id…",
+                            ),
+                            html.Div(id="study-modal-current", className="small mt-3"),
+                        ]
+                    ),
+                    dbc.ModalFooter(
+                        [
+                            dbc.Button("Detach", id="study-modal-clear", color="link", className="text-danger"),
+                            dbc.Button("Save", id="study-modal-save", color="primary"),
+                        ]
+                    ),
+                ],
+                id="study-modal",
+                is_open=False,
+                size="lg",
+            ),
+            dcc.Store(id="study-modal-source", data=None),
+            dbc.Modal(
+                [
                     dbc.ModalHeader(
                         [
                             dbc.ModalTitle(id="reader-modal-title"),
@@ -505,6 +537,71 @@ def build_app() -> Dash:
         empty_msg = "" if all_tags else "No tags exist yet. Create some in the Tags tab."
         title = f"Tag #{sid}"
         return True, title, options, value, empty_msg, {"source_id": sid}
+
+    @app.callback(
+        Output("study-modal", "is_open"),
+        Output("study-modal-title", "children"),
+        Output("study-modal-pick", "options"),
+        Output("study-modal-pick", "value"),
+        Output("study-modal-current", "children"),
+        Output("study-modal-source", "data"),
+        Input({"type": "ft-study-btn", "source": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _open_study_modal(_clicks):
+        triggered = triggered_click_id()
+        if triggered is None:
+            return (no_update,) * 6
+
+        sid = int(triggered["source"])
+        project_obj = get_project()
+        db = project_obj.db
+        src = db.get_source(sid)
+        if src is None:
+            return False, no_update, no_update, no_update, no_update, no_update
+
+        # Candidates are the other full-text candidates; a report cannot group with itself.
+        options = []
+        for s in db.list_full_text_candidates(project_obj.project_id):
+            if s.id == sid:
+                continue
+            author = s.authors[0].split(",")[0].strip() if s.authors else ""
+            head = f"{author} {s.year}".strip() if s.year else author
+            options.append({"label": f"{head} — {s.title or '(untitled)'} (#{s.id})", "value": s.id})
+
+        companions = db.list_study_companions([sid]).get(sid, [])
+        current = (
+            html.Span([
+                "Currently grouped with: ",
+                html.Strong(", ".join(f"#{c['id']}" for c in companions)),
+            ])
+            if companions
+            else html.Span("This report is currently its own study.", className="text-muted")
+        )
+        return True, f"Same study as… (#{sid})", options, src.study_group_id, current, {"source_id": sid}
+
+    @app.callback(
+        Output("study-modal", "is_open", allow_duplicate=True),
+        Output("ft-refresh", "data", allow_duplicate=True),
+        Input("study-modal-save", "n_clicks"),
+        Input("study-modal-clear", "n_clicks"),
+        State("study-modal-pick", "value"),
+        State("study-modal-source", "data"),
+        prevent_initial_call=True,
+    )
+    def _save_study_group(_save, _clear, picked, source_data):
+        if not source_data:
+            return no_update, no_update
+        sid = source_data.get("source_id")
+        if sid is None:
+            return no_update, no_update
+        primary = None if ctx.triggered_id == "study-modal-clear" else (int(picked) if picked else None)
+        try:
+            get_project().db.set_study_group(int(sid), primary)
+        except Exception:
+            return no_update, no_update
+        import time as _t
+        return False, {"ts": _t.time()}
 
     @app.callback(
         Output("tags-refresh", "data", allow_duplicate=True),

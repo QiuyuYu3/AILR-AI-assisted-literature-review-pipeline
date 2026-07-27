@@ -769,6 +769,7 @@ def register_callbacks(app: Any) -> None:
             db.sources_needing_consensus(page_ids)
             if project.config.extraction.workflow == "independent" else set()
         )
+        companions_by_source = db.list_study_companions(page_ids)
 
         cards = [
             _ft_card(
@@ -782,6 +783,7 @@ def register_callbacks(app: Any) -> None:
                 note_count=note_counts.get(s.id, 0),
                 stale=s.id in stale_ids,
                 needs_reconcile=s.id in reconcile_ids,
+                companions=companions_by_source.get(s.id, []),
             )
             for s in page_sources
         ]
@@ -823,6 +825,7 @@ def _ft_card(
     note_count: int = 0,
     stale: bool = False,
     needs_reconcile: bool = False,
+    companions: Optional[list[dict]] = None,
 ) -> Any:
     sid = src.id
     decision_color = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -979,6 +982,22 @@ def _ft_card(
             className="mt-1",
         )
 
+    study_el = html.Div(
+        [
+            dbc.Badge(
+                f"Same study as {', '.join('#' + str(c['id']) for c in companions)}",
+                color="info", className="me-2",
+            ) if companions else None,
+            dbc.Button(
+                "Change study grouping" if companions else "Same study as…",
+                id={"type": "ft-study-btn", "source": sid},
+                size="sm", color="link", className="p-0 text-decoration-none text-muted",
+                title="Several reports of one study count once in the PRISMA flow.",
+            ),
+        ],
+        className="mt-1",
+    )
+
     # PRISMA counts a report as "not retrieved" only once a human says the full text could not be
     # obtained; until then a paper without markdown is just work outstanding.
     retrieval_el: Any = None
@@ -1019,7 +1038,7 @@ def _ft_card(
                 dbc.Row(
                     [
                         dbc.Col(
-                            [left, title_el, meta_el, low_text_badge, retrieval_el, abstract_block, tag_chips_el, doi_el, read_btn, ai_panel, actions_row, extract_row],
+                            [left, title_el, meta_el, low_text_badge, study_el, retrieval_el, abstract_block, tag_chips_el, doi_el, read_btn, ai_panel, actions_row, extract_row],
                             width=9,
                         ),
                         dbc.Col(

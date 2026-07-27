@@ -47,14 +47,13 @@ CREATE TABLE IF NOT EXISTS sources (
     is_duplicate INTEGER DEFAULT 0,
     identification_route TEXT DEFAULT 'database',
     full_text_not_retrieved INTEGER DEFAULT 0,
+    study_group_id INTEGER,
     imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id),
     UNIQUE(project_id, doi)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sources_project ON sources(project_id);
-CREATE INDEX IF NOT EXISTS idx_sources_doi ON sources(doi);
-CREATE INDEX IF NOT EXISTS idx_sources_title ON sources(title);
 
 CREATE TABLE IF NOT EXISTS screening_decisions (
     id INTEGER PRIMARY KEY,
@@ -315,11 +314,17 @@ Table(
     Column("identification_route", Text, server_default=text("'database'")),
     # PRISMA's "reports not retrieved": sought and not obtainable, as opposed to not done yet.
     Column("full_text_not_retrieved", Integer, server_default=text("0")),
+    # Companion reports of one study (main paper + protocol + secondary analysis) point at the
+    # id of the report chosen to represent it. NULL means this report is its own study, which is
+    # the normal case. PRISMA counts studies here and reports separately.
+    Column("study_group_id", Integer),
     Column("imported_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     UniqueConstraint("project_id", "doi"),
     Index("idx_sources_project", "project_id"),
-    Index("idx_sources_doi", "doi"),
-    Index("idx_sources_title", "title"),
+    # No index on doi or title: every lookup wraps them (`lower(doi) = lower(?)`,
+    # `lower(title) LIKE '%kw%'`) so a btree cannot serve it, and DOI dedup is already covered by
+    # the (project_id, doi) unique constraint. Both indexes measured zero scans on live databases
+    # while costing every insert; the title one was the largest object in a 7k-record review.
 )
 
 Table(

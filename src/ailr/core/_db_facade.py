@@ -361,6 +361,7 @@ def _row_to_source(row) -> Source:
         pdf_path=Path(row["pdf_path"]) if row["pdf_path"] else None,
         markdown_path=Path(row["markdown_path"]) if row["markdown_path"] else None,
         full_text_not_retrieved=bool(_opt_col(row, "full_text_not_retrieved") or 0),
+        study_group_id=_opt_col(row, "study_group_id"),
         metadata=json.loads(metadata_raw) if metadata_raw else {},
         imported_at=datetime.fromisoformat(imported_at) if isinstance(imported_at, str) else imported_at,
     )

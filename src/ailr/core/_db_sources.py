@@ -162,6 +162,63 @@ class SourcesMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to set not-retrieved on source {source_id}: {e}") from e
 
+    def set_study_group(self, source_id: int, primary_id: Optional[int]) -> None:
+        """Mark this report as a companion of `primary_id` (same study), or None to detach it.
+
+        Groups are kept one level deep: linking to a report that is itself a companion joins the
+        group it belongs to, and linking a report that already has companions of its own carries
+        them along, so no chain of pointers can form.
+        """
+        if primary_id is not None and primary_id == source_id:
+            raise DatabaseError("A report cannot be a companion of itself.")
+        try:
+            if primary_id is not None:
+                row = self._conn.execute(
+                    "SELECT study_group_id FROM sources WHERE id = ?", (primary_id,)
+                ).fetchone()
+                if row is None:
+                    raise DatabaseError(f"No source {primary_id} to group with.")
+                primary_id = row["study_group_id"] or primary_id
+                if primary_id == source_id:
+                    raise DatabaseError("A report cannot be a companion of itself.")
+                # Anything already pointing at this report follows it into the new group.
+                self._conn.execute(
+                    "UPDATE sources SET study_group_id = ? WHERE study_group_id = ?",
+                    (primary_id, source_id),
+                )
+            self._conn.execute(
+                "UPDATE sources SET study_group_id = ? WHERE id = ?", (primary_id, source_id)
+            )
+            self._conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to group source {source_id}: {e}") from e
+
+    def list_study_companions(self, source_ids: list[int]) -> dict[int, list[dict]]:
+        """For each given report, the other reports in its study group (empty for most)."""
+        if not source_ids:
+            return {}
+        ph = ",".join("?" for _ in source_ids)
+        rows = self._conn.execute(
+            f"""
+            SELECT id, title, year, study_group_id FROM sources
+            WHERE COALESCE(study_group_id, id) IN (
+                SELECT COALESCE(study_group_id, id) FROM sources WHERE id IN ({ph})
+            )
+            ORDER BY id
+            """,
+            list(source_ids),
+        ).fetchall()
+        by_group: dict[int, list[dict]] = {}
+        for r in rows:
+            by_group.setdefault(r["study_group_id"] or r["id"], []).append(dict(r))
+
+        out: dict[int, list[dict]] = {}
+        for r in rows:
+            if r["id"] in source_ids:
+                group = by_group.get(r["study_group_id"] or r["id"], [])
+                out[r["id"]] = [m for m in group if m["id"] != r["id"]]
+        return out
+
     def count_sources_missing_doi(self, project_id: int) -> int:
         return self._conn.execute(
             "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND COALESCE(is_duplicate, 0) = 0 "

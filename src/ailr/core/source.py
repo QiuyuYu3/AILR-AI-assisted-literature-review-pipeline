@@ -26,6 +26,9 @@ class Source:
     # PRISMA's "reports not retrieved": the full text was sought and could not be obtained.
     # Distinct from simply having no markdown yet, which only means not done.
     full_text_not_retrieved: bool = False
+    # Set when this report is a companion of another (same study, several publications): the id
+    # of the report representing the study. NULL/None means this report is its own study.
+    study_group_id: Optional[int] = None
     metadata: dict[str, Any] = field(default_factory=dict)
     imported_at: Optional[datetime] = None
 
