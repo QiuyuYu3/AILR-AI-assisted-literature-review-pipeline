@@ -29,7 +29,7 @@ from ailr.ui import (
     template_view,
     workflow_view,
 )
-from ailr.ui._common import get_project, has_project, resolve_pdf_path, triggered_click_id
+from ailr.ui._common import get_project, has_project, resolve_pdf_path, triggered_click_id, workflow_summary
 from ailr.ui.screen_view import _history_block
 from ailr.ui.tags_view import TAG_COLOR_OPTIONS
 
@@ -324,10 +324,7 @@ def build_app() -> Dash:
         cfg = get_project().config
         return [
             html.H4(f"ailr — {cfg.project.name}", className="mb-1"),
-            html.P(
-                f"{cfg.project.type} • screening: {cfg.screening.workflow} • extraction: {cfg.extraction.workflow}",
-                className="text-muted small mb-2",
-            ),
+            html.P(workflow_summary(cfg), className="text-muted small mb-2"),
         ]
 
     @app.server.route("/pdf/<int:sid>")

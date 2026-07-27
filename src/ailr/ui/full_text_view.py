@@ -414,7 +414,7 @@ def register_callbacks(app: Any) -> None:
         db = get_project().db
 
         if isinstance(triggered, dict) and triggered.get("type") == "ft-decide":
-            workflow = get_project().config.screening.workflow
+            workflow = get_project().config.screening_workflow("full_text")
             return _apply_vote(db, int(triggered["source"]), triggered["decision"], rid, workflow, stage="full_text")
 
         if isinstance(triggered, dict) and triggered.get("type") == "ft-reset":
@@ -614,7 +614,7 @@ def register_callbacks(app: Any) -> None:
         sid = int(data["sid"])
         # Same vote lock as the inline buttons (idempotent self-vote + team cap) — this modal
         # must not be a second, weaker path to a duplicate vote.
-        workflow = get_project().config.screening.workflow
+        workflow = get_project().config.screening_workflow("full_text")
         refresh, last = _apply_vote(get_project().db, sid, "exclude", rid, workflow, stage="full_text", reasoning=reason)
         return refresh, last, False, ""
 
@@ -689,7 +689,7 @@ def register_callbacks(app: Any) -> None:
         db = project.db
         pid = project.project_id
         rid = (reviewer or "").strip()
-        workflow = project.config.screening.workflow
+        workflow = project.config.screening_workflow("full_text")
 
         if not rid:
             return [dbc.Alert("Enter your reviewer ID above to begin.", color="info")], "", True, True, ""

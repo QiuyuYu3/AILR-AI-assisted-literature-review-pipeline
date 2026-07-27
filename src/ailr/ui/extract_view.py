@@ -29,7 +29,7 @@ _APP_CHROME_PX = 115  # height of the app header + tab bar above this view; the 
 
 
 def extraction_workflow_block() -> list[Any]:
-    """Extraction workflow setting. Rendered on the full-text Workflow tab."""
+    """Extraction workflow setting. Rendered on Protocol -> Workflow, beside the two screening stages."""
     project = get_project()
     return [
         dbc.Label("Extraction workflow", className="fw-bold"),

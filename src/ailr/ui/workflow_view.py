@@ -1,4 +1,4 @@
-"""Workflow tab: configure the screening workflow (shared by abstract + full-text)."""
+"""Per-stage workflow settings (Protocol -> Workflow) plus each stage's prompt/AI tabs."""
 
 from typing import Any
 
@@ -15,24 +15,72 @@ _OPTIONS = [
 ]
 
 
-def layout(section: str = "abstract") -> Any:
-    project = get_project()
+def protocol_layout() -> Any:
+    """All three stage workflows on one screen. They live on Protocol because who screens each
+    stage is a protocol decision — pre-registered and reported under PRISMA — not a preference,
+    and because the couplings below are only visible with the three side by side."""
+    from ailr.ui.extract_view import extraction_workflow_block
 
-    if section == "full_text":
-        from ailr.ui import template_view
-        from ailr.ui.extract_view import ai_extraction_panel, extraction_workflow_block
-        from ailr.ui.full_text_view import pdf_tools_panel
-
-        workflow_tab = [
+    cfg = get_project().config
+    return html.Div(
+        [
             html.P(
-                "Full-text screening uses the shared screening workflow (set on Abstract → Workflow). "
-                "Here: how data extraction is done, plus PDF preparation.",
+                "Who does the work at each stage. The three stages are set independently: the common "
+                "design is AI-assisted at title/abstract, where the volume is, and two humans at full "
+                "text, where the stakes are.",
                 className="text-muted small",
             ),
-            *extraction_workflow_block(),
+            dbc.Label("Abstract screening workflow", className="fw-bold"),
+            dbc.Select(id="workflow-select", options=_OPTIONS, value=cfg.screening.workflow, size="sm"),
+            html.Ul(
+                [
+                    html.Li([html.Strong("assisted: "), "AI and one human each decide blind; disagreements go to Conflicts."], className="small"),
+                    html.Li([html.Strong("independent: "), "two humans each decide blind; their disagreements go to Conflicts."], className="small"),
+                ],
+                className="mt-1",
+            ),
+            html.Div(dbc.Button("Save", id="workflow-save", color="primary", size="sm"), className="mt-1"),
+            html.Div(id="workflow-feedback", className="small mt-2"),
             html.Hr(className="my-3"),
-            html.H5("Full-text preparation", className="mb-2"),
-            html.P("Get PDFs and their markdown ready for full-text review + extraction.", className="text-muted small"),
+            dbc.Label("Full-text screening workflow", className="fw-bold"),
+            dbc.Select(
+                id="ft-workflow-select",
+                options=_OPTIONS,
+                value=cfg.screening_workflow("full_text"),
+                size="sm",
+            ),
+            html.Div(id="ft-workflow-feedback", className="small mt-2"),
+            html.Hr(className="my-3"),
+            *extraction_workflow_block(),
+            dbc.Alert(
+                [
+                    html.Strong("How full-text screening and extraction interact. "),
+                    "There is no separate AI full-text screening run: the AI's full-text verdict is derived "
+                    "from the per-criterion flag_check verdicts produced during AI extraction. So ",
+                    html.Strong("assisted"),
+                    " full-text screening needs AI extraction to have run — without it the AI has no vote and "
+                    "the stage behaves as a single human. Under ",
+                    html.Strong("independent"),
+                    " the two humans decide on their own and AI extraction is not required first.",
+                ],
+                color="light", className="small py-2 mt-3 mb-0",
+            ),
+        ]
+    )
+
+
+def layout(section: str = "abstract") -> Any:
+    if section == "full_text":
+        from ailr.ui import template_view
+        from ailr.ui.extract_view import ai_extraction_panel
+        from ailr.ui.full_text_view import pdf_tools_panel
+
+        prep_tab = [
+            html.P(
+                "Get PDFs and their markdown ready for full-text review + extraction. "
+                "Who screens and who extracts is set on Protocol → Workflow.",
+                className="text-muted small",
+            ),
             *pdf_tools_panel(),
         ]
         prompt_tab = [
@@ -49,37 +97,18 @@ def layout(section: str = "abstract") -> Any:
         ]
         return dbc.Tabs(
             [
-                dbc.Tab(html.Div(workflow_tab, className="pt-3"), label="Workflow", tab_id="wf-settings"),
+                dbc.Tab(html.Div(prep_tab, className="pt-3"), label="Preparation", tab_id="wf-prep"),
                 dbc.Tab(html.Div(prompt_tab, className="pt-3"), label="Prompt", tab_id="wf-prompt"),
                 dbc.Tab(html.Div(calibration_view.layout("extraction"), className="pt-3"), label="Calibration", tab_id="wf-cal"),
                 dbc.Tab(html.Div(extraction_tab, className="pt-3"), label="AI extraction", tab_id="wf-extract"),
             ],
-            active_tab="wf-settings",
+            active_tab="wf-prep",
         )
 
     from ailr.ui.screen_view import ai_screening_panel, screening_prompt_panel
 
-    workflow_tab = [
-        html.P(
-            "Who screens and how (AI + 1 human, or 2 humans). This collaboration mode is shared by "
-            "abstract and full-text screening. What each stage reads (abstract vs. full text) and "
-            "data extraction are configured separately.",
-            className="text-muted small",
-        ),
-        dbc.Label("Screening workflow", className="fw-bold"),
-        dbc.Select(id="workflow-select", options=_OPTIONS, value=project.config.screening.workflow),
-        html.Ul(
-            [
-                html.Li([html.Strong("assisted: "), "AI and one human each decide blind; disagreements go to Conflicts."], className="small"),
-                html.Li([html.Strong("independent: "), "two humans each decide blind; their disagreements go to Conflicts."], className="small"),
-            ],
-            className="mt-2",
-        ),
-        html.Div(dbc.Button("Save", id="workflow-save", color="primary", size="sm"), className="mt-1"),
-        html.Div(id="workflow-feedback", className="small mt-2"),
-    ]
     prompt_tab = [
-        html.P("Edit the screening prompt and additional instructions. The criteria are shared with extraction and edited on the Protocol page.", className="text-muted small"),
+        html.P("Edit the screening prompt and additional instructions. The criteria are shared with extraction and edited on the Protocol page; who screens this stage is set on Protocol → Workflow.", className="text-muted small"),
         *screening_prompt_panel(),
     ]
     ai_tab = [
@@ -88,12 +117,11 @@ def layout(section: str = "abstract") -> Any:
     ]
     return dbc.Tabs(
         [
-            dbc.Tab(html.Div(workflow_tab, className="pt-3"), label="Workflow", tab_id="wf-settings"),
             dbc.Tab(html.Div(prompt_tab, className="pt-3"), label="Prompt", tab_id="wf-prompt"),
             dbc.Tab(html.Div(calibration_view.layout("abstract"), className="pt-3"), label="Calibration", tab_id="wf-cal"),
             dbc.Tab(html.Div(ai_tab, className="pt-3"), label="AI screening", tab_id="wf-ai"),
         ],
-        active_tab="wf-settings",
+        active_tab="wf-prompt",
     )
 
 
@@ -110,4 +138,19 @@ def register_callbacks(app: Any) -> None:
         project = get_project()
         save_stage_workflow(project.root, "screening", value)
         reload_project()
-        return dbc.Alert(f"Saved: screening workflow = {value}.", color="success", className="mb-0 py-1")
+        return dbc.Alert(f"Saved: abstract screening workflow = {value}.", color="success", className="mb-0 py-1")
+
+    @app.callback(
+        Output("ft-workflow-feedback", "children"),
+        Input("ft-workflow-select", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_ft(value):
+        if value not in ("assisted", "independent"):
+            return no_update
+        project = get_project()
+        if value == project.config.screening_workflow("full_text"):
+            return no_update
+        save_stage_workflow(project.root, "full_text_screening", value)
+        reload_project()
+        return f"saved: full-text screening workflow = {value}"

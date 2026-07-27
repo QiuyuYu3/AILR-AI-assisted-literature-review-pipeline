@@ -73,7 +73,7 @@ def ai_detail_block(ai: dict, flag_check: Any = None) -> Any:
 def initial_payload(cfg: ConflictConfig) -> tuple[Any, str, Any]:
     project = get_project()
     db = project.db
-    if project.config.screening.workflow == "assisted":
+    if project.config.screening_workflow(cfg.stage) == "assisted":
         conflicts = db.list_assisted_conflicts(project.project_id, stage=cfg.stage)
     else:
         conflicts = db.list_screening_conflicts(project.project_id, stage=cfg.stage)
@@ -104,7 +104,7 @@ def initial_payload(cfg: ConflictConfig) -> tuple[Any, str, Any]:
 
 def build_layout(cfg: ConflictConfig) -> Any:
     cards, count_text, resolved_ui = initial_payload(cfg)
-    assisted = get_project().config.screening.workflow == "assisted"
+    assisted = get_project().config.screening_workflow(cfg.stage) == "assisted"
     return html.Div(
         [
             html.H6(cfg.title, className="fw-bold mb-1"),

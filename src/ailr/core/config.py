@@ -70,6 +70,9 @@ class ScreeningConfig(BaseModel):
         validation_alias=AliasChoices("workflow", "blinding"),
         description="assisted = AI + 1 human, both blinded. independent = 2 humans, AI optional reference.",
     )
+    # Full-text screening runs its own workflow: the common design is AI-assisted at title/abstract
+    # (thousands of records) and two humans at full text (dozens). None = same as `workflow`.
+    full_text_workflow: Optional[Literal["assisted", "independent"]] = None
     target_kappa: float = 0.7
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     llm: Optional[StageLLMOverride] = None
@@ -127,6 +130,14 @@ class Config(BaseModel):
     preprocess: PreprocessConfig = Field(default_factory=PreprocessConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+
+    def screening_workflow(self, stage: str = "abstract") -> str:
+        """The screening workflow governing a stage. THE resolver for the whole codebase — the
+        queues, conflict rules, dashboard, and methods export all go through it rather than
+        reading `screening.workflow` directly, which would silently ignore the full-text override."""
+        if stage == "full_text":
+            return self.screening.full_text_workflow or self.screening.workflow
+        return self.screening.workflow
 
 
 def load_config(project_dir: Path) -> Config:
@@ -286,8 +297,17 @@ def save_registration(project_dir: Path, registry: str, registration_number: str
     }))
 
 
-def save_stage_workflow(project_dir: Path, stage: Literal["screening", "extraction"], workflow: str) -> None:
-    """Update screening.workflow or extraction.workflow in the project's lit_review.yaml."""
+def save_stage_workflow(
+    project_dir: Path,
+    stage: Literal["screening", "full_text_screening", "extraction"],
+    workflow: str,
+) -> None:
+    """Update a stage's workflow in the project's lit_review.yaml. `full_text_screening` writes
+    screening.full_text_workflow; the other two write their own block's `workflow`."""
+    if stage == "full_text_screening":
+        _edit_config_block(project_dir, "screening", lambda block: block.update({"full_text_workflow": workflow}))
+        return
+
     def mutate(stage_block: dict) -> None:
         stage_block.pop("blinding", None)
         stage_block["workflow"] = workflow

@@ -26,9 +26,12 @@ screening:
   # Screening sees every record — a cheap model here saves the most:
   # llm:
   #   model: <a cheap model from your provider>
-  # workflow: assisted | independent
+  # workflow: assisted | independent      <- title/abstract screening
   #   assisted   = AI + 1 human, both blinded
   #   independent = 2 humans, AI optional reference (--include-ai to run)
+  # full_text_workflow: assisted | independent
+  #   Full-text screening, set separately (defaults to `workflow`). The usual systematic-review
+  #   design is assisted at title/abstract and independent at full text.
   # target_kappa, calibration inherit from mode preset unless overridden here
 
 extraction:

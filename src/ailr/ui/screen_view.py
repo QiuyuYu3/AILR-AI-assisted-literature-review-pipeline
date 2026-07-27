@@ -634,7 +634,7 @@ def register_callbacks(app: Any) -> None:
         db = get_project().db
 
         if isinstance(triggered, dict) and triggered.get("type") == "screen-decide":
-            workflow = get_project().config.screening.workflow
+            workflow = get_project().config.screening_workflow("abstract")
             return _apply_vote(db, int(triggered["source"]), triggered["decision"], rid, workflow)
 
         if isinstance(triggered, dict) and triggered.get("type") == "screen-reset":
@@ -767,7 +767,7 @@ def register_callbacks(app: Any) -> None:
         db = project.db
         pid = project.project_id
         rid = (reviewer or "").strip()
-        workflow = project.config.screening.workflow
+        workflow = project.config.screening_workflow("abstract")
 
         if not rid:
             empty = dbc.Alert("Enter your reviewer ID above to begin.", color="info")

@@ -135,7 +135,7 @@ def screen(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     limit: Annotated[Optional[int], typer.Option("--limit", help="Process at most N un-screened sources.")] = None,
     mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call, no tokens spent).")] = False,
-    workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save screening.workflow: assisted | independent.")] = None,
+    workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save the abstract screening workflow: assisted | independent.")] = None,
     include_ai: Annotated[bool, typer.Option("--include-ai", help="In independent workflow, run AI as a reference reviewer.")] = False,
 ) -> None:
     """Run AI screening on un-screened sources."""
@@ -149,8 +149,8 @@ def screen(
             proj = Project.load(project)
             typer.echo(f"Saved screening.workflow = {workflow} to lit_review.yaml")
 
-        if proj.config.screening.workflow == "independent" and not include_ai:
-            typer.echo("Screening workflow is 'independent' (two humans). AI screening skipped.")
+        if proj.config.screening_workflow("abstract") == "independent" and not include_ai:
+            typer.echo("Abstract screening workflow is 'independent' (two humans). AI screening skipped.")
             typer.echo("Use `ailr ui` for human review, or re-run with `--include-ai` to run AI as a reference reviewer.")
             return
 

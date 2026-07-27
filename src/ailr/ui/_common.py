@@ -34,6 +34,15 @@ def with_help(heading, help_text: str, target_id: str, className: str = "mt-3"):
     )
 
 
+def workflow_summary(cfg) -> str:
+    """The 'who does what' subtitle under the project name. The two screening stages collapse into
+    one term when they match, so the common case still reads as a single line."""
+    abstract = cfg.screening_workflow("abstract")
+    full_text = cfg.screening_workflow("full_text")
+    screening = abstract if abstract == full_text else f"abstract {abstract}, full text {full_text}"
+    return f"{cfg.project.type} • screening: {screening} • extraction: {cfg.extraction.workflow}"
+
+
 _PROMPT_MODE_OPTIONS = [
     {"label": "Plain text", "value": "plain"},
     {"label": "Rendered", "value": "md"},

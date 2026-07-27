@@ -6,7 +6,7 @@ import dash_bootstrap_components as dbc
 from dash import html
 
 from ailr.core.config import team_size_for
-from ailr.ui._common import get_project
+from ailr.ui._common import get_project, workflow_summary
 
 
 def layout(reviewer: str = "") -> Any:
@@ -32,13 +32,16 @@ def _build_content(reviewer: Optional[str]) -> Any:
     human_counts = db.screening_summary(pid, "human")
     # Count conflicts with the same rule the Conflicts tab uses for this mode: AI-vs-human in
     # assisted, human-vs-human in independent.
-    _count_conflicts = (
-        db.count_unresolved_assisted_conflicts
-        if cfg.screening.workflow == "assisted"
-        else db.count_unresolved_screening_conflicts
-    )
-    abstract_conflicts = _count_conflicts(pid, stage="abstract")
-    ft_conflicts = _count_conflicts(pid, stage="full_text")
+    def _count_conflicts(stage: str) -> int:
+        counter = (
+            db.count_unresolved_assisted_conflicts
+            if cfg.screening_workflow(stage) == "assisted"
+            else db.count_unresolved_screening_conflicts
+        )
+        return counter(pid, stage=stage)
+
+    abstract_conflicts = _count_conflicts("abstract")
+    ft_conflicts = _count_conflicts("full_text")
     total_conflicts = abstract_conflicts + ft_conflicts
     api_summary = db.api_call_summary(pid)
     # Mock runs fabricate token counts; exclude them so this reflects real, billable API usage.
@@ -54,8 +57,8 @@ def _build_content(reviewer: Optional[str]) -> Any:
     with_md = db.count_sources_with_markdown(pid)
     # Count extraction only among papers still confirmed for it (full-text includes with markdown),
     # so a paper moved back to full-text review stops counting as extracted until it's re-included.
-    _ft_conflict_ids = db.unresolved_conflict_ids(pid, cfg.screening.workflow, stage="full_text")
-    _ft_team_size = team_size_for(cfg.screening.workflow)
+    _ft_conflict_ids = db.unresolved_conflict_ids(pid, cfg.screening_workflow("full_text"), stage="full_text")
+    _ft_team_size = team_size_for(cfg.screening_workflow("full_text"))
     eligible_ext_ids = [
         s.id for s in db.list_full_text_final_includes_with_markdown(pid, team_size=_ft_team_size)
         if s.id not in _ft_conflict_ids
@@ -145,10 +148,7 @@ def _build_content(reviewer: Optional[str]) -> Any:
     return dbc.Container(
         [
             html.H4(f"Review Summary — {cfg.project.name}", className="mt-2"),
-            html.P(
-                f"{cfg.project.type} • screening: {cfg.screening.workflow} • extraction: {cfg.extraction.workflow}",
-                className="text-muted small",
-            ),
+            html.P(workflow_summary(cfg), className="text-muted small"),
             html.Hr(),
             *rows,
             html.Hr(),

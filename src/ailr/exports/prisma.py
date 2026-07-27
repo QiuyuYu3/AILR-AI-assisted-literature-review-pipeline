@@ -8,7 +8,7 @@ from typing import Any
 from ailr.core.project import Project
 
 
-def _arm_counts(db: Any, pid: int, route: str, workflow: str) -> dict[str, int]:
+def _arm_counts(db: Any, pid: int, route: str, workflow: str, ft_workflow: str) -> dict[str, int]:
     """The boxes PRISMA 2020 draws for one identification arm. The 'other methods' arm has no
     deduplication or title/abstract box in the template, but ailr screens both arms through the
     same queue, so the same numbers are reported for each."""
@@ -22,8 +22,8 @@ def _arm_counts(db: Any, pid: int, route: str, workflow: str) -> dict[str, int]:
         "retrieved": max(sought - not_retrieved, 0),
         "not_retrieved": not_retrieved,
         "assessed": db.count_sources_screened(pid, "human", stage="full_text", route=route),
-        "included": db.count_final_include_studies(pid, workflow=workflow, route=route),
-        "included_reports": db.count_final_includes(pid, "full_text", workflow=workflow, route=route),
+        "included": db.count_final_include_studies(pid, workflow=ft_workflow, route=route),
+        "included_reports": db.count_final_includes(pid, "full_text", workflow=ft_workflow, route=route),
     }
 
 
@@ -31,9 +31,10 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     db = project.db
     pid = project.project_id
     # The screening workflow decides both how many humans a paper needs and what counts as a
-    # conflict, and therefore when a paper's review is finished. It governs the full-text stage
-    # too: extraction.workflow is about who fills in the fields, not who decides inclusion.
-    workflow = project.config.screening.workflow
+    # conflict, and therefore when a paper's review is finished. Each screening stage has its own
+    # (extraction.workflow is about who fills in the fields, not who decides inclusion).
+    workflow = project.config.screening_workflow("abstract")
+    ft_workflow = project.config.screening_workflow("full_text")
 
     total_sources = db.count_sources(pid)
     duplicates_removed = db.count_duplicates(pid)
@@ -54,8 +55,8 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     full_text_assessed = db.count_sources_screened(pid, "human", stage="full_text")
     # PRISMA's included box counts studies and their reports separately: several publications of
     # one study are one study. The two are equal unless companion reports have been grouped.
-    studies_included = db.count_final_include_studies(pid, workflow=workflow)
-    reports_included = db.count_final_includes(pid, "full_text", workflow=workflow)
+    studies_included = db.count_final_include_studies(pid, workflow=ft_workflow)
+    reports_included = db.count_final_includes(pid, "full_text", workflow=ft_workflow)
 
     sources_extracted = db.count_sources_with_extraction(pid, "ai")
 
@@ -66,8 +67,8 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         # PRISMA 2020's two identification arms. `other_arm` is empty for a database-only review,
         # in which case the diagram stays single-column.
         "by_route": db.sources_by_route_and_database(pid),
-        "database_arm": _arm_counts(db, pid, "database", workflow),
-        "other_arm": _arm_counts(db, pid, "other", workflow),
+        "database_arm": _arm_counts(db, pid, "database", workflow, ft_workflow),
+        "other_arm": _arm_counts(db, pid, "other", workflow, ft_workflow),
         "records_identified": total_sources + duplicates_removed,
         "duplicates_removed": duplicates_removed,
         "records_after_dedup": total_sources,

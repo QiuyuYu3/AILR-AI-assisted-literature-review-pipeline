@@ -167,7 +167,7 @@ def build_methods_skeleton(
                 lines.append(f"- {s.get('source_database')} limits: {s.get('filters')}")
     lines.append("")
     lines.append("## Screening")
-    if cfg.screening.workflow == "independent":
+    if cfg.screening_workflow("abstract") == "independent":
         lines.append(
             "Titles and abstracts were screened independently by two human reviewers (Cochrane dual-blind design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score and "
@@ -188,6 +188,20 @@ def build_methods_skeleton(
             f"and supporting quotes from the abstract. {counts['ai_abstract_screened']} records were AI-screened "
             f"({counts['ai_abstract_included']} include / {counts['ai_abstract_excluded']} exclude / {counts['ai_abstract_uncertain']} uncertain); "
             f"{counts['abstract_screened']} were human-screened."
+        )
+    lines.append("")
+    if cfg.screening_workflow("full_text") == "independent":
+        lines.append(
+            "Full texts of the records carried forward were then assessed independently by two human "
+            "reviewers, each blinded to the other, with disagreements resolved by adjudication and the "
+            "final decision recorded against the adjudicator."
+        )
+    else:
+        lines.append(
+            "Full texts of the records carried forward were then assessed by one human reviewer and by "
+            f"{extract_model}, both blinded to each other; the AI verdict was derived from a per-criterion "
+            "re-check of the inclusion criteria against the full text. Disagreements were adjudicated and "
+            "the final decision recorded against the adjudicator."
         )
     lines.extend(_agreement_lines(db, pid, "abstract", "title/abstract screening"))
     lines.extend(_agreement_lines(db, pid, "full_text", "full-text review"))
