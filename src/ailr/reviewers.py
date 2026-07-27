@@ -176,6 +176,21 @@ class LLMReviewer(Reviewer):
     def reviewer_id(self) -> str:
         return f"{self._client.provider_name}:{self._client.model_name}"
 
+    def _llm_params(self, metadata: CallMetadata, max_tokens: Optional[int] = None) -> dict[str, Any]:
+        """What the call actually used, stored per decision. The methods export reads these back so
+        it describes the runs that produced the data, not whatever the config says at export time."""
+        params: dict[str, Any] = {
+            "provider": metadata.provider,
+            "model": metadata.model,
+            "temperature": self._client.temperature,
+        }
+        seed = self._client.effective_seed
+        if seed is not None:
+            params["seed"] = seed
+        if max_tokens is not None:
+            params["max_tokens"] = max_tokens
+        return params
+
     def screen(
         self,
         source: Source,
@@ -214,11 +229,7 @@ class LLMReviewer(Reviewer):
             matched_criteria=output.get("matched_criteria", []) or [],
             flag_check=_normalize_flag_check(output.get("_flag_check")) if flag_check else None,
             confidence=output.get("confidence"),
-            llm_params={
-                "provider": metadata.provider,
-                "model": metadata.model,
-                "max_tokens": self._max_tokens,
-            },
+            llm_params=self._llm_params(metadata, self._max_tokens),
             prompt_version=self._prompt_version,
             raw_output=json.dumps(output, ensure_ascii=False, default=str),
         )
@@ -278,10 +289,7 @@ class LLMReviewer(Reviewer):
                     value=value,
                     source_quote=quote,
                     confidence=confidence,
-                    llm_params={
-                        "provider": metadata.provider,
-                        "model": metadata.model,
-                    },
+                    llm_params=self._llm_params(metadata),
                     prompt_version=self._prompt_version,
                 )
             )

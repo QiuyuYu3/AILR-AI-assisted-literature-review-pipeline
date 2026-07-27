@@ -38,6 +38,10 @@ class AnthropicClient(LLMClient):
     def model_name(self) -> str:
         return self._model
 
+    @property
+    def temperature(self) -> Optional[float]:
+        return self._temperature
+
     def complete_structured(
         self,
         *,

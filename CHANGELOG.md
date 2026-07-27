@@ -5,7 +5,12 @@
 
 ### Fixed
 - Methods export named a seed on every run; only the OpenAI API takes one.
+- Methods export described AI screening from the current config; it now reports the models and decoding settings the decisions were actually made with.
+- `ailr screen` / `extract` / `calibrate` stamped every decision `prompt_version` "v1" without snapshotting; they now version prompts the same way the UI does.
 - Calibration sampling read `llm.seed`; it now uses its own constant.
+
+### Added
+- Decisions record the temperature (and seed, where the provider sends one) used to produce them.
 
 ### Changed
 - `llm.seed` defaults to unset; the Anthropic and Gemini clients no longer accept it.

@@ -3,7 +3,6 @@
 from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
 from ailr.ingest.dedup import TITLE_MATCH_THRESHOLD
-from ailr.llm.base import effective_seed
 from ailr.metrics import (
     BINARY_CATEGORIES,
     binarize,
@@ -25,14 +24,23 @@ def _fmt_ci(ci: tuple[float, float]) -> str:
     return "undefined" if lo != lo or hi != hi else f"[{lo:.2f}, {hi:.2f}]"
 
 
-def _decoding(cfg, stage: str) -> str:
-    """The decoding settings a stage actually sent. Seed is named only where the provider's API
-    takes one, so the paragraph can never credit a control the call did not use."""
-    override = cfg.screening.llm if stage == "screening" else cfg.extraction.llm
-    provider = override.provider if override and override.provider else cfg.llm.provider
-    temperature = override.temperature if override and override.temperature is not None else cfg.llm.temperature
-    seed = effective_seed(provider, cfg.llm.seed)
-    return f"temperature {temperature}" + (f", seed {seed}" if seed is not None else "")
+def _model_and_decoding(cfg, db, pid: int, stage: str, fallback_model: str) -> str:
+    """Name the model(s) and decoding settings for a stage from what the database recorded, since
+    the config file can have been edited since the run. Falls back to the config, saying so, when
+    nothing was recorded — which is also what rows written before temperature was stored look like."""
+    configs = db.recorded_llm_configs(pid, stage)
+    if not configs:
+        return f"{fallback_model} (temperature {cfg.llm.temperature}, per the current configuration)"
+
+    parts = []
+    for c in configs:
+        bits = [f"temperature {c['temperature']}" if c["temperature"] is not None else "temperature not recorded"]
+        if c.get("seed") is not None:
+            bits.append(f"seed {c['seed']}")
+        if len(configs) > 1:
+            bits.append(f"{c['n']} rows")
+        parts.append(f"{c['model'] or fallback_model} ({', '.join(bits)})")
+    return " and ".join(parts)
 
 
 def reporting_guideline(project_type: str) -> str:
@@ -193,7 +201,7 @@ def build_methods_skeleton(
             )
     else:
         lines.append(
-            f"Titles and abstracts were screened by {screen_model} ({_decoding(cfg, 'screening')}) "
+            f"Titles and abstracts were screened by {_model_and_decoding(cfg, db, pid, 'abstract', screen_model)} "
             f"and one human reviewer, both blinded to each other (PRISMA-trAIce assisted-screening design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score "
             f"and supporting quotes from the abstract. {counts['ai_abstract_screened']} records were AI-screened "

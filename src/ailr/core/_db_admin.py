@@ -148,6 +148,49 @@ class AdminMixin:
         """
         return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
+    def recorded_llm_configs(self, project_id: int, stage: str) -> list[dict]:
+        """The model configurations that actually produced this project's AI rows, with counts.
+
+        stage: 'abstract' | 'full_text' read screening_decisions; 'extraction' reads extractions.
+        Rows written before temperature was recorded come back with temperature None, which the
+        caller reports as unrecorded rather than filling in from the current config.
+        """
+        if stage == "extraction":
+            sql = """
+                SELECT e.llm_params AS llm_params, COUNT(*) AS n
+                FROM extractions e JOIN sources s ON s.id = e.source_id
+                WHERE s.project_id = ? AND e.extractor_type = 'ai'
+                GROUP BY e.llm_params
+            """
+            params: tuple = (project_id,)
+        else:
+            sql = """
+                SELECT d.llm_params AS llm_params, COUNT(*) AS n
+                FROM screening_decisions d JOIN sources s ON s.id = d.source_id
+                WHERE s.project_id = ? AND d.reviewer_type = 'ai' AND d.stage = ?
+                GROUP BY d.llm_params
+            """
+            params = (project_id, stage)
+
+        configs: list[dict] = []
+        for row in self._conn.execute(sql, params).fetchall():
+            raw = row["llm_params"]
+            if not raw:
+                continue
+            try:
+                parsed = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            configs.append({
+                "provider": parsed.get("provider"),
+                "model": parsed.get("model"),
+                "temperature": parsed.get("temperature"),
+                "seed": parsed.get("seed"),
+                "n": row["n"],
+            })
+        configs.sort(key=lambda c: c["n"], reverse=True)
+        return configs
+
     # ── Tags ────────────────────────────────────────────────────────
 
     def create_tag(self, project_id: int, name: str, color: Optional[str] = None) -> int:

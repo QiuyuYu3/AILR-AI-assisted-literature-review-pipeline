@@ -22,6 +22,7 @@ from ailr.metrics import (
     percent_agreement,
     rater_overlaps,
 )
+from ailr.prompt_versions import extraction_prompt_version, screening_prompt_version
 from ailr.reviewers import LLMReviewer
 from ailr.tasks.calibrate import CalibrationTask
 from ailr.tasks.extract import ExtractionTask
@@ -167,7 +168,7 @@ def screen(
                 max_retries=llm_cfg.max_retries,
             )
 
-        reviewer = LLMReviewer(client)
+        reviewer = LLMReviewer(client, prompt_version=screening_prompt_version(proj))
         task = ScreeningTask(proj, reviewer)
 
         typer.echo(f"Screening with {client.provider_name} / {client.model_name}")
@@ -231,7 +232,7 @@ def extract(
                 max_retries=llm_cfg.max_retries,
             )
 
-        reviewer = LLMReviewer(client)
+        reviewer = LLMReviewer(client, prompt_version=extraction_prompt_version(proj))
         task = ExtractionTask(proj, reviewer)
 
         typer.echo(f"Extracting with {client.provider_name} / {client.model_name}")
@@ -390,7 +391,8 @@ def calibrate(
                 max_retries=llm_cfg.max_retries,
             )
 
-        reviewer = LLMReviewer(client)
+        version = extraction_prompt_version(proj) if stage == "extraction" else screening_prompt_version(proj)
+        reviewer = LLMReviewer(client, prompt_version=version)
         task = CalibrationTask(proj, reviewer, stage=stage)
 
         if not as_json:

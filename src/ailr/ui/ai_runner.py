@@ -8,16 +8,15 @@ from typing import Any, Callable
 
 from ailr.core.config import resolve_stage_llm
 from ailr.llm.factory import make_llm_client
+from ailr.prompt_versions import (
+    extraction_composed,
+    extraction_prompt_version,
+    screening_composed,
+    screening_prompt_version,
+)
 from ailr.reviewers import LLMReviewer
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.screen import ScreeningTask
-from ailr.extraction import (
-    compose_extraction_prompt,
-    compose_schema,
-    compose_screening_prompt,
-    schema_to_markdown,
-)
-from ailr.ui._common import read_criteria, read_screening_additional, read_screening_prompt
 
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -122,27 +121,9 @@ def _run_preprocess(key: str, project: Any, force: bool, only_ids) -> None:
             _jobs[key].update({"running": False, "error": str(e)})
 
 
-def current_screening_composed(project: Any) -> str:
-    """The fully-resolved screening prompt a fresh run would use right now (criteria + additional)."""
-    return compose_screening_prompt(
-        read_screening_prompt(""), criteria=read_criteria(""), additional=read_screening_additional()
-    )
-
-
-def _screening_prompt_version(project: Any) -> str:
-    db = project.db
-    pid = project.project_id
-    content = read_screening_prompt("")
-    composed = current_screening_composed(project)
-    latest = db.latest_prompt_version(pid, "screening")
-    if latest is not None:
-        prev = db.get_prompt_version(pid, "screening", latest)
-        # Bump on any change to the resolved prompt (template, criteria, or additional).
-        if prev and prev.get("composed") == composed:
-            return latest
-    if not composed.strip() and latest is None:
-        return "unversioned"
-    return db.save_prompt_version(pid, "screening", content, None, composed=composed)
+# Kept as names because screen_view / full_text_view import them for the stale-run check.
+current_screening_composed = screening_composed
+current_extraction_composed = extraction_composed
 
 
 def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None) -> None:
@@ -150,7 +131,7 @@ def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None) -
         # A real run supersedes earlier mock results: clear them first so they don't block re-screening.
         replaced = project.db.clear_mock_ai_decisions(project.project_id) if not mock else 0
         client = _make_client(project, "screen", mock)
-        reviewer = LLMReviewer(client, prompt_version=_screening_prompt_version(project))
+        reviewer = LLMReviewer(client, prompt_version=screening_prompt_version(project))
         summary = ScreeningTask(project, reviewer).run(on_progress=_progress_cb(key), batch=mock, flag_check=flag_check)
         text = (
             f"Screened {summary.screened}/{summary.total} — "
@@ -205,7 +186,7 @@ def _run_calibration(key: str, project: Any, mock: bool, n: int, stage: str = "s
             verdict = "full-text"
         else:
             client = _make_client(project, "screen", mock)
-            reviewer = LLMReviewer(client, prompt_version=_screening_prompt_version(project))
+            reviewer = LLMReviewer(client, prompt_version=screening_prompt_version(project))
             verdict = "abstract"
         summary = CalibrationTask(project, reviewer, stage=stage).run(
             n=n, on_progress=_progress_cb(key)
@@ -224,52 +205,12 @@ def _run_calibration(key: str, project: Any, mock: bool, n: int, stage: str = "s
             _jobs[key].update({"running": False, "error": str(e)})
 
 
-def current_extraction_composed(project: Any) -> str:
-    """The fully-resolved extraction prompt a fresh run would use right now (criteria + schema +
-    additional filled in). Used to detect stale extractions without cutting a new version."""
-    cfg = project.config
-
-    def _read(rel: str) -> str:
-        try:
-            return (project.root / rel).read_text(encoding="utf-8")
-        except OSError:
-            return ""
-
-    template = _read(cfg.extraction.prompt)
-    additional = _read(cfg.extraction.additional)
-    try:
-        schema_md = schema_to_markdown(compose_schema(project.root / cfg.extraction.schema_path))
-    except Exception:
-        schema_md = ""
-    return compose_extraction_prompt(template, criteria=read_criteria(""), schema_md=schema_md, additional=additional)
-
-
-def _extraction_prompt_version(project: Any) -> str:
-    db = project.db
-    pid = project.project_id
-
-    composed = current_extraction_composed(project)
-    try:
-        template = (project.root / project.config.extraction.prompt).read_text(encoding="utf-8")
-    except OSError:
-        template = ""
-    latest = db.latest_prompt_version(pid, "extraction")
-    if latest is not None:
-        prev = db.get_prompt_version(pid, "extraction", latest)
-        # Bump on any change to the resolved prompt (template, criteria, schema, or additional).
-        if prev and prev.get("composed") == composed:
-            return latest
-    if not composed.strip() and latest is None:
-        return "unversioned"
-    return db.save_prompt_version(pid, "extraction", template, None, composed=composed)
-
-
 def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> None:
     try:
         # A real run supersedes earlier mock results: clear them first so they don't block re-extraction.
         replaced = project.db.clear_mock_ai_extractions(project.project_id) if not mock else 0
         client = _make_client(project, "extract", mock)
-        reviewer = LLMReviewer(client, prompt_version=_extraction_prompt_version(project))
+        reviewer = LLMReviewer(client, prompt_version=extraction_prompt_version(project))
         summary = ExtractionTask(project, reviewer).run(
             only_includes=not all_sources, force=force, on_progress=_progress_cb(key), batch=mock
         )

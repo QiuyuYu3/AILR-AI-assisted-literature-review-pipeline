@@ -39,6 +39,10 @@ class OpenAIClient(LLMClient):
         return self._seed
 
     @property
+    def temperature(self) -> Optional[float]:
+        return self._temperature
+
+    @property
     def model_name(self) -> str:
         return self._model
 
