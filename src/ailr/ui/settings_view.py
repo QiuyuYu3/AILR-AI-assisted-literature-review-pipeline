@@ -159,7 +159,7 @@ def layout() -> Any:
     ]
 
     models_block = [
-        html.P("Each stage has its own provider / model / temperature (used when Mock is off). seed is fixed for reproducibility.", className="text-muted small"),
+        html.P("Each stage has its own provider / model / temperature (used when Mock is off).", className="text-muted small"),
         html.Div(
             [
                 dbc.Badge(

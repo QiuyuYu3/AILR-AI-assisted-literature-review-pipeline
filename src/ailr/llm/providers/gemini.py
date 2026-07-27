@@ -48,7 +48,6 @@ class GeminiClient(LLMClient):
         *,
         model: str,
         temperature: float = 0.0,
-        seed: Optional[int] = 42,
         max_retries: int = 3,
         api_key: Optional[str] = None,
     ) -> None:

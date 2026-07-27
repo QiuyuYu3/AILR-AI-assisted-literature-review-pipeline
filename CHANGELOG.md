@@ -1,6 +1,16 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Fixed
+- Methods export named a seed on every run; only the OpenAI API takes one.
+- Calibration sampling read `llm.seed`; it now uses its own constant.
+
+### Changed
+- `llm.seed` defaults to unset; the Anthropic and Gemini clients no longer accept it.
+
+---
 ## [0.30.0] – 2026-07-27
 
 ### Added

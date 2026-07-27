@@ -15,8 +15,8 @@ project:
 llm:
   provider: anthropic        # anthropic | openai | gemini
   temperature: 0
-  seed: 42
   max_retries: 3
+  # seed: 42                 # openai only; the anthropic and gemini APIs take no seed parameter
 
 screening:
   prompt: prompts/screening.txt

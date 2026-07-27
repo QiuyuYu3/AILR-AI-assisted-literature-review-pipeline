@@ -14,7 +14,6 @@ class AnthropicClient(LLMClient):
         *,
         model: str,
         temperature: float = 0.0,
-        seed: Optional[int] = 42,
         max_retries: int = 3,
         api_key: Optional[str] = None,
     ) -> None:
@@ -29,7 +28,6 @@ class AnthropicClient(LLMClient):
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = model
         self._temperature = temperature
-        self._seed = seed
         self._max_retries = max_retries
 
     @property

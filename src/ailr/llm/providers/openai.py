@@ -35,6 +35,10 @@ class OpenAIClient(LLMClient):
         return "openai"
 
     @property
+    def effective_seed(self) -> Optional[int]:
+        return self._seed
+
+    @property
     def model_name(self) -> str:
         return self._model
 

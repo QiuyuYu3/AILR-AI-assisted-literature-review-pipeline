@@ -16,6 +16,10 @@ from ailr.reviewers import LLMReviewer
 
 ProgressCallback = Callable[[int, int, Optional[ScreeningDecision], Optional[Exception]], None]
 
+# Which records a calibration round draws. Unrelated to the LLM decoding seed it used to read from
+# `llm.seed`, which only some provider APIs accept; sampling has to stay reproducible regardless.
+DEFAULT_SAMPLE_SEED = 42
+
 
 @dataclass
 class QuickTestSummary:
@@ -73,7 +77,7 @@ class QuickTestTask:
         if source_ids:
             sample = candidates
         else:
-            rng = random.Random(seed if seed is not None else self.project.config.llm.seed or 0)
+            rng = random.Random(seed if seed is not None else DEFAULT_SAMPLE_SEED)
             sample = rng.sample(candidates, k=sample_size)
 
         for idx, source in enumerate(sample, 1):
@@ -236,7 +240,7 @@ class ExtractionQuickTestTask:
         if source_ids:
             sample = candidates
         else:
-            rng = random.Random(seed if seed is not None else self.project.config.llm.seed or 0)
+            rng = random.Random(seed if seed is not None else DEFAULT_SAMPLE_SEED)
             sample = rng.sample(candidates, k=sample_size)
 
         for idx, source in enumerate(sample, 1):
@@ -350,7 +354,7 @@ class CalibrationTask:
         if sample_size == 0:
             return summary
 
-        rng_seed = seed if seed is not None else self.project.config.llm.seed or 0
+        rng_seed = seed if seed is not None else DEFAULT_SAMPLE_SEED
         rng = random.Random(rng_seed + sample_round)
         sample = rng.sample(candidates, k=sample_size)
         sample_ids = [s.id for s in sample if s.id is not None]

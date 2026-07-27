@@ -31,12 +31,27 @@ class CallMetadata:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+# Providers whose API accepts a seed. The rest silently ignore whatever the config says, so the
+# answer lives here only: nothing downstream may claim a seed the call did not actually send.
+_SEED_PROVIDERS = frozenset({"openai"})
+
+
+def effective_seed(provider: str, seed: Optional[int]) -> Optional[int]:
+    """The seed the call really used, or None when the provider has no such parameter."""
+    return seed if provider in _SEED_PROVIDERS else None
+
+
 class LLMClient(ABC):
     """Abstract LLM client. All providers implement complete_structured().
 
     Concrete clients must enforce the tool_schema at the provider level — no free-text
     JSON parsing. They must also populate CallMetadata with token counts.
     """
+
+    @property
+    def effective_seed(self) -> Optional[int]:
+        """None unless the provider sends a seed. Overridden by the providers that do."""
+        return None
 
     @abstractmethod
     def complete_structured(

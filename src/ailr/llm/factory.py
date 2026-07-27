@@ -16,7 +16,7 @@ def make_llm_client(
     *,
     model: Optional[str],
     temperature: float = 0.0,
-    seed: Optional[int] = 42,
+    seed: Optional[int] = None,      # honoured only by providers whose API takes one; see llm/base
     max_retries: int = 3,
     api_key: Optional[str] = None,
 ) -> LLMClient:
@@ -35,7 +35,6 @@ def make_llm_client(
         return AnthropicClient(
             model=model,
             temperature=temperature,
-            seed=seed,
             max_retries=max_retries,
             api_key=api_key,
         )
@@ -55,7 +54,6 @@ def make_llm_client(
         return GeminiClient(
             model=model,
             temperature=temperature,
-            seed=seed,
             max_retries=max_retries,
             api_key=api_key,
         )

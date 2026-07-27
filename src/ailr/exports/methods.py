@@ -3,6 +3,7 @@
 from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
 from ailr.ingest.dedup import TITLE_MATCH_THRESHOLD
+from ailr.llm.base import effective_seed
 from ailr.metrics import (
     BINARY_CATEGORIES,
     binarize,
@@ -22,6 +23,16 @@ def _fmt(value: float) -> str:
 def _fmt_ci(ci: tuple[float, float]) -> str:
     lo, hi = ci
     return "undefined" if lo != lo or hi != hi else f"[{lo:.2f}, {hi:.2f}]"
+
+
+def _decoding(cfg, stage: str) -> str:
+    """The decoding settings a stage actually sent. Seed is named only where the provider's API
+    takes one, so the paragraph can never credit a control the call did not use."""
+    override = cfg.screening.llm if stage == "screening" else cfg.extraction.llm
+    provider = override.provider if override and override.provider else cfg.llm.provider
+    temperature = override.temperature if override and override.temperature is not None else cfg.llm.temperature
+    seed = effective_seed(provider, cfg.llm.seed)
+    return f"temperature {temperature}" + (f", seed {seed}" if seed is not None else "")
 
 
 def reporting_guideline(project_type: str) -> str:
@@ -182,7 +193,7 @@ def build_methods_skeleton(
             )
     else:
         lines.append(
-            f"Titles and abstracts were screened by {screen_model} (temperature {cfg.llm.temperature}, seed {cfg.llm.seed}) "
+            f"Titles and abstracts were screened by {screen_model} ({_decoding(cfg, 'screening')}) "
             f"and one human reviewer, both blinded to each other (PRISMA-trAIce assisted-screening design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score "
             f"and supporting quotes from the abstract. {counts['ai_abstract_screened']} records were AI-screened "
@@ -242,6 +253,15 @@ def build_methods_skeleton(
         "All AI decisions, prompts (versioned), schema, and API token usage were logged for audit. "
         "PRISMA flow counts and token usage are exportable via `ailr export`."
     )
+    if total_calls > 0 or counts["ai_abstract_screened"] > 0:
+        lines.append("")
+        lines.append(
+            "Re-running the same records is not guaranteed to reproduce identical model outputs: "
+            "decoding at temperature 0 is not deterministic in practice, and a seed parameter is "
+            "offered by only some provider APIs. What is reproducible is the record itself, since "
+            "every decision is stored with the model, decoding settings, prompt version, and "
+            "criteria version that produced it."
+        )
     if total_calls > 0:
         lines.append("")
         lines.append(

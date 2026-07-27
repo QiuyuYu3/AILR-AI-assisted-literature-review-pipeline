@@ -41,7 +41,9 @@ class LLMConfig(BaseModel):
     # being asked to pick. Set it per stage in Settings -> Models.
     model: Optional[str] = None
     temperature: float = 0.0
-    seed: Optional[int] = 42
+    # No default: only some provider APIs take a seed (see llm/base._SEED_PROVIDERS). Defaulting it
+    # made every project's config advertise a reproducibility control the call never sent.
+    seed: Optional[int] = None
     max_retries: int = 3
 
 
