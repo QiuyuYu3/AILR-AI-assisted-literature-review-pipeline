@@ -324,9 +324,30 @@ class ScreeningAuxMixin:
         ).fetchone()
         return row["n"] if row else 0
 
-    def screening_disagreements(self, project_id: int) -> list[dict]:
-        """Paired AI+human decisions where verdicts differ. Includes title + both reasoning fields."""
+    def screening_disagreements(self, project_id: int, stage: str = "abstract") -> list[dict]:
+        """Paired AI+human decisions where verdicts differ, at ONE stage. Includes title + both
+        reasoning fields.
+
+        Exactly one pair per source: the latest AI verdict against the latest human verdict, same
+        pairing rule as paired_screening_decisions. The plain join this replaced matched every AI
+        row against every human row, so a re-run or a changed vote multiplied the output, and an
+        abstract verdict could be paired against a full-text one.
+        """
         sql = """
+            WITH latest_ai AS (
+                SELECT sd.source_id, sd.decision, sd.confidence, sd.reasoning, sd.reviewer_id
+                FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_type = 'ai' AND stage = ? GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            ),
+            latest_human AS (
+                SELECT sd.source_id, sd.decision, sd.confidence, sd.reasoning, sd.reviewer_id
+                FROM screening_decisions sd
+                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
+                      WHERE reviewer_type = 'human' AND stage = ? GROUP BY source_id) m
+                  ON m.source_id = sd.source_id AND m.mid = sd.id
+            )
             SELECT
                 s.id AS source_id,
                 s.title,
@@ -340,15 +361,13 @@ class ScreeningAuxMixin:
                 ai.reviewer_id AS ai_reviewer_id,
                 hum.reviewer_id AS human_reviewer_id
             FROM sources s
-            JOIN screening_decisions ai
-              ON ai.source_id = s.id AND ai.reviewer_type = 'ai'
-            JOIN screening_decisions hum
-              ON hum.source_id = s.id AND hum.reviewer_type = 'human'
+            JOIN latest_ai ai ON ai.source_id = s.id
+            JOIN latest_human hum ON hum.source_id = s.id
             WHERE s.project_id = ?
               AND ai.decision != hum.decision
             ORDER BY s.id
         """
-        return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
+        return [dict(r) for r in self._conn.execute(sql, (stage, stage, project_id)).fetchall()]
 
     def update_markdown_path(self, source_id: int, markdown_path: Path) -> None:
         try:
@@ -370,4 +389,3 @@ class ScreeningAuxMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to update pdf_path: {e}") from e
 
-    # ── Extractions ──────────────────────────────────────────────────

@@ -265,20 +265,25 @@ class ExtractionMixin:
 
     def save_consensus(self, source_id: int, adjudicator: str, results: list["ExtractionResult"]) -> None:
         """Replace this source's consensus record in one go (delete then insert), so re-adjudicating
-        never leaves half of an older decision behind."""
-        try:
-            self._conn.execute(
-                "DELETE FROM extractions WHERE source_id = ? AND extractor_type = 'consensus'",
-                (source_id,),
-            )
-            self._conn.commit()
-        except sqlite3.Error as e:
-            raise DatabaseError(f"Failed to clear previous consensus: {e}") from e
+        never leaves half of an older decision behind.
+
+        Both statements share one transaction: the delete used to commit on its own, so a failure
+        while inserting the new record destroyed the old one without replacing it. insert_extractions
+        commits internally, which is a no-op inside this context.
+        """
         for r in results:
             r.extractor_type = "consensus"
             r.extractor_id = adjudicator
             r.source_id = source_id
-        self.insert_extractions(results)
+        try:
+            with self._lock, self._conn.transaction():
+                self._conn.execute(
+                    "DELETE FROM extractions WHERE source_id = ? AND extractor_type = 'consensus'",
+                    (source_id,),
+                )
+                self.insert_extractions(results)
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to save consensus: {e}") from e
 
     def delete_consensus(self, source_id: int) -> int:
         """Undo an adjudication: the source returns to the 'To reconcile' queue."""

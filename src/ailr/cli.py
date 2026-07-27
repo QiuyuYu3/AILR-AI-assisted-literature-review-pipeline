@@ -614,19 +614,23 @@ def show_sources(
 @show_app.command("disagreements")
 def show_disagreements(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
+    stage: Annotated[str, typer.Option("--stage", help="Which review stage: abstract | full_text.")] = "abstract",
     as_json: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
 ) -> None:
-    """List sources where AI and human screening verdicts disagree."""
+    """List sources where AI and human screening verdicts disagree at one stage."""
+    if stage not in ("abstract", "full_text"):
+        typer.echo(f"Error: --stage must be 'abstract' or 'full_text', got {stage!r}.", err=True)
+        raise typer.Exit(1)
     try:
         proj = Project.load(project)
-        rows = proj.db.screening_disagreements(proj.project_id)
+        rows = proj.db.screening_disagreements(proj.project_id, stage=stage)
         if as_json:
             typer.echo(json.dumps(rows, indent=2, ensure_ascii=False))
             return
         if not rows:
-            typer.echo("No AI/human disagreements found (or no paired decisions yet).")
+            typer.echo(f"No AI/human disagreements at the {stage} stage (or no paired decisions yet).")
             return
-        typer.echo(f"{len(rows)} disagreement(s):\n")
+        typer.echo(f"{len(rows)} disagreement(s) at the {stage} stage:\n")
         for r in rows:
             typer.echo(f"[{r['source_id']}] {r['ai_decision'].upper()} (AI) vs {r['human_decision'].upper()} (human, by {r['human_reviewer_id']})")
             typer.echo(f"    {_truncate(r['title'], 95)}")

@@ -13,6 +13,24 @@ from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 from ailr.llm.retry import with_retries
 
 
+# Errors that will fail identically on every attempt: a wrong key or a schema the API rejects
+# does not become valid by waiting. Anything else is assumed transient and still gets retried,
+# so an error this list has not seen behaves as it did before rather than failing fast.
+_PERMANENT_MARKERS = (
+    "api key", "api_key", "unauthenticated", "permission",
+    "invalid argument", "invalid_argument", "400",
+)
+
+
+def _is_retryable(e: Exception) -> bool:
+    """Whether another attempt could plausibly succeed. google-generativeai has no stable exception
+    hierarchy across versions (the other two providers use isinstance on their SDK's classes), so
+    this reads the message. Retrying a bad key 3 times with backoff costs ~7s per call, which on a
+    batch run is hours of sleeping before the user learns the key is wrong."""
+    msg = str(e).lower()
+    return not any(m in msg for m in _PERMANENT_MARKERS)
+
+
 def _proto_to_py(obj: Any) -> Any:
     """Recursively convert Gemini proto Map/Repeated composites into plain Python."""
     if obj is None or isinstance(obj, (str, bytes, bool, int, float)):
@@ -83,7 +101,7 @@ class GeminiClient(LLMClient):
 
         t0 = time.monotonic()
         try:
-            response = with_retries(call, is_retryable=lambda e: True, max_retries=self._max_retries)
+            response = with_retries(call, is_retryable=_is_retryable, max_retries=self._max_retries)
         except Exception as e:
             raise LLMError(f"Gemini call failed: {e}") from e
         latency_ms = int((time.monotonic() - t0) * 1000)

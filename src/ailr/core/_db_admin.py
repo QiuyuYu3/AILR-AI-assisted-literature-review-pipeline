@@ -30,6 +30,7 @@ class AdminMixin:
         ("search_strategies", "project_id = ?"),
         ("api_calls", "project_id = ?"),
         ("prompt_versions", "project_id = ?"),
+        ("artifact_versions", "project_id = ?"),
         ("codebook_versions", "project_id = ?"),
     )
 
