@@ -9,6 +9,11 @@
 
 ### Changed
 - All three stage workflows moved to Protocol → Workflow; the Abstract "Workflow" tab is gone and the full-text one is now "Preparation" (PDF prep only).
+- A paper reaches full-text review only once abstract screening is finished with it and settled on include; one still in an unresolved conflict, or waiting on a second reviewer, now stays at the abstract stage.
+
+### Fixed
+- Independent extraction: "To extract" dropped a paper as soon as the first extractor submitted, hiding it from the second.
+- A paper the AI alone voted include, with no human having screened it, was listed as a full-text candidate.
 
 ---
 ## [0.29.0] – 2026-07-27

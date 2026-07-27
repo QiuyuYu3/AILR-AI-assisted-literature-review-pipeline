@@ -49,30 +49,35 @@ _LATEST_CALIBRATION_ROUND_SQL = (
 )
 
 
-def ft_final_include_md_sql(team_size: int = 1) -> str:
-    """The `_FINAL_INCLUDE_PREDICATE` rule at the full-text stage, plus "markdown present":
-    what gates the to-extract queue. Emitted as a parameterless fragment (stages are literals here
-    and team_size is an int this module controls) so callers can drop it into a larger WHERE
-    without disturbing their own placeholder order.
+def stage_final_include_sql(stage: str, team_size: int = 1) -> str:
+    """The `_FINAL_INCLUDE_PREDICATE` rule for one stage, as a parameterless fragment (the stage is
+    a literal here and team_size is an int this module controls) so callers can drop it into a
+    larger WHERE without disturbing their own placeholder order.
 
     Reads the latest vote PER REVIEWER, not the single most recent row for the paper: with two
     reviewers the latter made the answer depend on who happened to vote last. Papers whose
     reviewers disagree still pass; the caller subtracts unresolved_conflict_ids.
     """
-    return f"""(s.markdown_path IS NOT NULL AND (
+    rec_stage = reconcile_stage_for(stage)
+    return f"""(
     EXISTS (SELECT 1 FROM reconciliations r
-            WHERE r.source_id = s.id AND r.stage = 'full_text_screening' AND r.final_value = 'include')
+            WHERE r.source_id = s.id AND r.stage = '{rec_stage}' AND r.final_value = 'include')
     OR (EXISTS (SELECT 1 FROM screening_decisions d
-                WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
+                WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = '{stage}'
                   AND d.decision = 'include'
                   AND d.id = (SELECT MAX(id) FROM screening_decisions
                               WHERE source_id = d.source_id AND reviewer_id = d.reviewer_id
-                                AND reviewer_type = 'human' AND stage = 'full_text'))
+                                AND reviewer_type = 'human' AND stage = '{stage}'))
         AND NOT EXISTS (SELECT 1 FROM reconciliations r
-                        WHERE r.source_id = s.id AND r.stage = 'full_text_screening')
+                        WHERE r.source_id = s.id AND r.stage = '{rec_stage}')
         AND (SELECT COUNT(DISTINCT reviewer_id) FROM screening_decisions
-             WHERE source_id = s.id AND reviewer_type = 'human' AND stage = 'full_text') >= {int(team_size)})
-))"""
+             WHERE source_id = s.id AND reviewer_type = 'human' AND stage = '{stage}') >= {int(team_size)})
+)"""
+
+
+def ft_final_include_md_sql(team_size: int = 1) -> str:
+    """Full-text final-include plus "markdown present": what gates the to-extract queue."""
+    return f"(s.markdown_path IS NOT NULL AND {stage_final_include_sql('full_text', team_size)})"
 
 
 def _route_filter(route: Optional[str]) -> str:
@@ -593,18 +598,17 @@ class ScreeningMixin:
         id_whitelist: Optional[set[int]] = None,  # restrict to these source ids (used by the low-text filter)
         exclude_ids: Optional[set[int]] = None,  # drop these source ids (e.g. unresolved-conflict papers)
         team_size: int = 2,
+        extractors_required: int = 1,  # humans each paper needs extracted by (2 under independent)
+        abstract_workflow: str = "assisted",  # decides when abstract screening is finished with a paper
         sort_by: str = "id",
         page: int = 0,
         page_size: int = 25,
     ) -> tuple[list[Source], int, int]:
-        """Full-text review page (candidates = abstract-includes), filtered/sorted/paginated in SQL.
+        """Full-text review page, filtered/sorted/paginated in SQL. Candidates are the papers
+        abstract screening has finished with and settled on include — see _ft_candidate_where.
         Returns (rows, total_matching, clamped_page)."""
-        where = [
-            "s.project_id = ?",
-            "COALESCE(s.is_duplicate, 0) = 0",
-            "EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id AND d.stage = 'abstract' AND d.decision = 'include')",
-        ]
-        params: list = [project_id]
+        cand_where, params = self._ft_candidate_where(project_id, abstract_workflow)
+        where = [cand_where]
 
         if status == "to_review":
             where.append("NOT EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id "
@@ -619,8 +623,15 @@ class ScreeningMixin:
             params.append(reviewer_id)
         elif status == "to_extract":
             where.append(ft_final_include_md_sql(team_size))
+            # Same shape as `to_review`: filter on THIS extractor plus the team cap, not on
+            # "anyone submitted" — under independent extraction the queue has to stay open to the
+            # second extractor after the first one submits.
             where.append("NOT EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
-                         "AND e.extractor_type = 'human' AND e.field_name = '_submitted')")
+                         "AND e.extractor_type = 'human' AND e.extractor_id = ? AND e.field_name = '_submitted')")
+            params.append(reviewer_id)
+            where.append("(SELECT COUNT(DISTINCT extractor_id) FROM extractions "
+                         "WHERE source_id = s.id AND extractor_type = 'human' AND field_name = '_submitted') < ?")
+            params.append(extractors_required)
         elif status == "extracted_mine":
             where.append("(SELECT extractor_id FROM extractions e WHERE e.source_id = s.id "
                          "AND e.extractor_type = 'human' AND e.field_name = '_submitted' "
@@ -662,31 +673,43 @@ class ScreeningMixin:
             sort_by = "confidence_asc_full_text"
         return _fetch_source_page(self._conn, " AND ".join(where), params, sort_by, page, page_size)
 
-    def count_full_text_candidates(self, project_id: int) -> int:
-        """Number of full-text candidates (sources with an abstract 'include')."""
+    def _ft_candidate_where(self, project_id: int, workflow: str) -> tuple[str, list]:
+        """THE full-text candidate rule: abstract screening is FINISHED for the paper and settled on
+        include. A paper still in conflict, or waiting on a reviewer, is unfinished business at the
+        abstract stage and must not be carried forward — adjudicate it first.
+
+        Returns (where_fragment, params) so callers can splice it into their own query."""
+        clause = (
+            "s.project_id = ? AND COALESCE(s.is_duplicate,0) = 0 AND "
+            + stage_final_include_sql("abstract", team_size_for(workflow))
+        )
+        params: list = [project_id]
+        conflicts = self.unresolved_conflict_ids(project_id, workflow, stage="abstract")
+        if conflicts:
+            ph = ",".join("?" for _ in conflicts)
+            clause += f" AND s.id NOT IN ({ph})"
+            params += list(conflicts)
+        return clause, params
+
+    def count_full_text_candidates(self, project_id: int, *, workflow: str) -> int:
+        """Number of full-text candidates (abstract screening finished and settled on include)."""
+        where, params = self._ft_candidate_where(project_id, workflow)
         return self._conn.execute(
-            "SELECT COUNT(*) AS n FROM sources s WHERE s.project_id = ? AND COALESCE(s.is_duplicate,0) = 0 "
-            "AND EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id AND d.stage = 'abstract' AND d.decision = 'include')",
-            (project_id,),
+            f"SELECT COUNT(*) AS n FROM sources s WHERE {where}", params
         ).fetchone()["n"]
 
-    def full_text_candidate_ids(self, project_id: int) -> list[int]:
-        """Ids of all full-text candidates (abstract-includes); used to compute the low-text set."""
-        rows = self._conn.execute(
-            "SELECT s.id FROM sources s WHERE s.project_id = ? AND COALESCE(s.is_duplicate,0) = 0 "
-            "AND EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id AND d.stage = 'abstract' AND d.decision = 'include')",
-            (project_id,),
-        ).fetchall()
+    def full_text_candidate_ids(self, project_id: int, *, workflow: str) -> list[int]:
+        """Ids of all full-text candidates; used to compute the low-text set."""
+        where, params = self._ft_candidate_where(project_id, workflow)
+        rows = self._conn.execute(f"SELECT s.id FROM sources s WHERE {where}", params).fetchall()
         return [r["id"] for r in rows]
 
-    def list_full_text_candidates(self, project_id: int) -> list[Source]:
+    def list_full_text_candidates(self, project_id: int, *, workflow: str) -> list[Source]:
         """Full-text candidates as Source rows. Markdown is not required: a companion report can
         be grouped with a study before (or without) its own full text being converted."""
+        where, params = self._ft_candidate_where(project_id, workflow)
         rows = self._conn.execute(
-            "SELECT s.* FROM sources s WHERE s.project_id = ? AND COALESCE(s.is_duplicate,0) = 0 "
-            "AND EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id "
-            "AND d.stage = 'abstract' AND d.decision = 'include') ORDER BY s.id",
-            (project_id,),
+            f"SELECT s.* FROM sources s WHERE {where} ORDER BY s.id", params
         ).fetchall()
         return [_row_to_source(r) for r in rows]
 

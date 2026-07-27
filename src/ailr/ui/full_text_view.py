@@ -12,7 +12,7 @@ from typing import Any, Optional
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
-from ailr.core.config import team_size_for
+from ailr.core.config import extractors_for, team_size_for
 from ailr.core.source import Source
 from ailr.ui import ai_runner
 from ailr.ui._actions import _apply_reset, _apply_vote
@@ -319,7 +319,8 @@ def register_callbacks(app: Any) -> None:
         project = get_project()
         threshold = project.config.preprocess.low_text_threshold
         low_ids = {
-            cid for cid in project.db.full_text_candidate_ids(project.project_id)
+            cid for cid in project.db.full_text_candidate_ids(
+                project.project_id, workflow=project.config.screening_workflow("abstract"))
             if _low_text_md(project.root, cid, threshold)
         }
         if not low_ids:
@@ -708,29 +709,32 @@ def register_callbacks(app: Any) -> None:
         ft_avail = None if low_mode else ("has" if ("has" in ft_set and "needs" not in ft_set) else ("needs" if ("needs" in ft_set and "has" not in ft_set) else None))
         # Low-text/failed is a file-content state, not a DB column: compute the id set on disk and
         # hand it to the SQL query as a whitelist (keeps filtering/paging in SQL).
+        abstract_workflow = project.config.screening_workflow("abstract")
         id_whitelist = None
         if low_mode:
             threshold = project.config.preprocess.low_text_threshold
             id_whitelist = {
-                cid for cid in db.full_text_candidate_ids(pid)
+                cid for cid in db.full_text_candidate_ids(pid, workflow=abstract_workflow)
                 if _low_text_md(project.root, cid, threshold)
             }
         # "To reconcile" is a state of the extraction records, not a screening column: resolve it to
         # an id set and hand it to the SQL query as a whitelist (same trick as low-text).
         if status == "to_reconcile":
-            pending = db.sources_needing_consensus(list(db.full_text_candidate_ids(pid)))
+            pending = db.sources_needing_consensus(
+                list(db.full_text_candidate_ids(pid, workflow=abstract_workflow)))
             id_whitelist = pending if id_whitelist is None else (id_whitelist & pending)
             status = "all"
 
         req_page = (page_state or {}).get("page", 0)
 
-        total_candidates = db.count_full_text_candidates(pid)
+        total_candidates = db.count_full_text_candidates(pid, workflow=abstract_workflow)
         if total_candidates == 0:
             return (
                 [
                     dbc.Alert(
-                        "No sources qualify for full-text review yet. "
-                        "Need at least one source marked 'include' at the abstract stage. "
+                        "No sources qualify for full-text review yet. A paper arrives here once abstract "
+                        "screening is finished with it and settled on include — every reviewer the workflow "
+                        "calls for has voted, and any disagreement has been adjudicated on Abstract → Conflicts. "
                         "Use the ‘Needs full-text’ filter to see included papers still awaiting their PDF/markdown.",
                         color="info",
                     )
@@ -750,7 +754,8 @@ def register_callbacks(app: Any) -> None:
             pid, rid, status=status, keyword=search or "", within=within or "title_and_abstract",
             tag_id=tag_id, ft_avail=ft_avail, id_whitelist=id_whitelist,
             exclude_ids=ft_conflict_ids if status == "to_extract" else None,
-            team_size=team_size, sort_by=sort_by or "id",
+            team_size=team_size, extractors_required=extractors_for(project.config.extraction.workflow),
+            abstract_workflow=abstract_workflow, sort_by=sort_by or "id",
             page=req_page, page_size=psize,
         )
 

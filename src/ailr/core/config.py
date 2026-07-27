@@ -206,6 +206,12 @@ def team_size_for(workflow: str) -> int:
     return 2 if workflow == "independent" else 1
 
 
+def extractors_for(workflow: str) -> int:
+    """Human extractors an extraction workflow calls for: 2 in `independent` (both extract blind,
+    then reconcile), 1 in `verify` (one human checks the AI's fields)."""
+    return 2 if workflow == "independent" else 1
+
+
 def resolve_stage_llm(top_level: LLMConfig, override: Optional[StageLLMOverride]) -> LLMConfig:
     if override is None:
         return top_level

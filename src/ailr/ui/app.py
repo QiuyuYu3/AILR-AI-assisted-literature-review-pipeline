@@ -559,7 +559,9 @@ def build_app() -> Dash:
 
         # Candidates are the other full-text candidates; a report cannot group with itself.
         options = []
-        for s in db.list_full_text_candidates(project_obj.project_id):
+        for s in db.list_full_text_candidates(
+            project_obj.project_id, workflow=project_obj.config.screening_workflow("abstract")
+        ):
             if s.id == sid:
                 continue
             author = s.authors[0].split(",")[0].strip() if s.authors else ""
