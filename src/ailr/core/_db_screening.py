@@ -1044,6 +1044,30 @@ class ScreeningMixin:
         ).fetchone()
         return bool(row["mine"] or 0), int(row["others"] or 0)
 
+    def screening_lock_check_many(
+        self, source_ids: list[int], reviewer_id: str, stage: str = "abstract"
+    ) -> dict[int, tuple[bool, int]]:
+        """screening_lock_check for many sources in one query, for bulk actions. Same SQL shape as
+        the single-source version — the two must agree, or bulk and inline voting diverge."""
+        if not source_ids:
+            return {}
+        placeholders = ",".join("?" for _ in source_ids)
+        rows = self._conn.execute(
+            f"""
+            SELECT source_id,
+                SUM(CASE WHEN reviewer_id = ? THEN 1 ELSE 0 END) AS mine,
+                COUNT(DISTINCT CASE WHEN reviewer_id != ? THEN reviewer_id END) AS others
+            FROM screening_decisions
+            WHERE source_id IN ({placeholders}) AND reviewer_type = 'human' AND stage = ?
+            GROUP BY source_id
+            """,
+            [reviewer_id, reviewer_id, *source_ids, stage],
+        ).fetchall()
+        out = {sid: (False, 0) for sid in source_ids}
+        for r in rows:
+            out[r["source_id"]] = (bool(r["mine"] or 0), int(r["others"] or 0))
+        return out
+
     def count_other_human_reviewers(self, source_id: int, stage: str, reviewer_id: str) -> int:
         """Distinct humans OTHER than reviewer_id who have decided this source at this stage.
         Used to cap a paper at the team size (1 human in assisted, 2 in independent)."""

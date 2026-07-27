@@ -4,6 +4,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Sources → bulk decision bypassed the vote lock: on a paper another reviewer had already screened the vote was written but ignored by every queue and PRISMA count, while still counting towards inter-rater agreement. It now goes through the same lock as the inline buttons and reports what it skipped.
 - Criteria IDs were dropped from the "what the AI receives" preview and from saved criteria versions; restoring an old version then saving could renumber criteria and unlink existing flag-checks.
 - Extraction Save/Submit wrote null over fields whose widget was missing because the variables changed after the page was opened; it now refuses to save instead.
 - Screening's abstract toggle acted on the first re-rendered card rather than the clicked one.

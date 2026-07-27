@@ -579,27 +579,48 @@ def register_callbacks(app: Any) -> None:
         stage = stage if stage in ("abstract", "full_text") else "abstract"
         reason_text = (reasoning or "").strip() or "(bulk action)"
 
-        count = 0
-        for row in selected:
-            sid = row.get("id")
-            if sid is None:
-                continue
-            db.insert_screening_decision(
-                ScreeningDecision(
-                    decision=decision,
-                    reasoning=reason_text,
-                    reviewer_type="human",
-                    reviewer_id=rid,
-                    source_id=int(sid),
-                    stage=stage,
+        # Same vote lock as the inline buttons — skip papers I already decided, and stop at the team
+        # size for this stage. Checked for the whole selection in one query rather than per row.
+        # Without it a bulk vote on someone else's paper was written but ignored by every queue,
+        # while still counting towards inter-rater agreement.
+        workflow = project.config.screening_workflow(stage)
+        team_humans = 1 if workflow == "assisted" else 2
+        sids = [int(r["id"]) for r in selected if r.get("id") is not None]
+        locks = db.screening_lock_check_many(sids, rid, stage)
+
+        applied: list[int] = []
+        mine_already: list[int] = []
+        taken: list[int] = []
+        for sid in sids:
+            i_voted, others = locks.get(sid, (False, 0))
+            if i_voted:
+                mine_already.append(sid)
+            elif others >= team_humans:
+                taken.append(sid)
+            else:
+                applied.append(sid)
+
+        for sid in applied:
+            with db._conn.transaction():  # decision + audit row in one commit, as _apply_vote does
+                db.insert_screening_decision(
+                    ScreeningDecision(
+                        decision=decision,
+                        reasoning=reason_text,
+                        reviewer_type="human",
+                        reviewer_id=rid,
+                        source_id=sid,
+                        stage=stage,
+                    )
                 )
-            )
-            count += 1
+                db.insert_screening_action(sid, rid, action="vote", decision=decision)
+
         stage_label = "abstract" if stage == "abstract" else "full-text"
-        return dbc.Alert(
-            f"Marked {count} source(s) as {decision} at the {stage_label} stage (by {rid}).",
-            color="success",
-        )
+        msg: list = [f"Marked {len(applied)} source(s) as {decision} at the {stage_label} stage (by {rid})."]
+        if mine_already:
+            msg.append(html.Div(f"{len(mine_already)} skipped — you had already decided them. Reset them first to change your vote.", className="small"))
+        if taken:
+            msg.append(html.Div(f"{len(taken)} skipped — already reviewed by someone else ({stage_label} takes {team_humans} human reviewer(s) per paper).", className="small"))
+        return dbc.Alert(msg, color="success" if applied else "warning")
 
     @app.callback(
         Output("bulk-feedback", "children", allow_duplicate=True),
