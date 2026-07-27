@@ -5,6 +5,16 @@ A domain-agnostic, AI-pluggable, PRISMA-auditable framework for literature revie
 
 ## Deferred decisions
 
+### Schema migrations (alembic) + a version gate on open
+Decided 2026-07 to NOT introduce alembic yet. `init_schema()` adds missing TABLES but never missing
+COLUMNS, and nothing records a database's schema version, so a column added later reaches new
+databases only and mismatched code returns zero rows instead of erroring. Acceptable while one
+person maintains one database.
+
+Revisit when a second person keeps their own copy, or when changing stored values becomes worth
+doing (e.g. unifying the three `stage` vocabularies) — that change is blocked on this one, since
+without a version gate its failure mode is silently wrong PRISMA counts.
+
 ### DB-level duplicate-vote backstop (partial unique index)
 Decided 2026-07 to NOT add a unique index on screening_decisions for now. The 0.21 "unique vote
 index" only ever existed in the legacy reference DDL (never in the live SQLAlchemy schema) and

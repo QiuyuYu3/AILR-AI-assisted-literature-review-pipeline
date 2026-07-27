@@ -35,19 +35,27 @@ def _detect_prefix(ids: list[str]) -> str:
 
 def assign_ids(items: list[CriterionSpec]) -> list[CriterionSpec]:
     """Fill any blank IDs with the next free <prefix><n>, preserving IDs the user already set.
-    Prefix is inferred from existing IDs (e.g. keeps a B1/B2… scheme), else 'C'."""
+    Prefix is inferred from existing IDs (e.g. keeps a B1/B2… scheme), else 'C'.
+
+    Returns new specs; the input is left alone. It used to edit the callers' objects in place and
+    return them as well, so whether you used the return value changed nothing — a shape that reads
+    like a pure function and is not one.
+    """
     existing = [c.id for c in items if c.id]
     prefix = _detect_prefix(existing)
     used = set(existing)
     n = 0
+    out: list[CriterionSpec] = []
     for c in items:
-        if not c.id:
+        if c.id:
+            out.append(c.model_copy())
+            continue
+        n += 1
+        while f"{prefix}{n}" in used:
             n += 1
-            while f"{prefix}{n}" in used:
-                n += 1
-            c.id = f"{prefix}{n}"
-            used.add(c.id)
-    return items
+        used.add(f"{prefix}{n}")
+        out.append(c.model_copy(update={"id": f"{prefix}{n}"}))
+    return out
 
 
 def load_criteria(path: Path) -> CriteriaSet:
@@ -67,8 +75,7 @@ def load_criteria(path: Path) -> CriteriaSet:
 
 def save_criteria(path: Path, items: list[dict]) -> CriteriaSet:
     """Validate, fill blank IDs, and write criteria to YAML. Returns the saved set."""
-    specs = [CriterionSpec(**c) for c in items]
-    assign_ids(specs)
+    specs = assign_ids([CriterionSpec(**c) for c in items])
     cs = CriteriaSet(criteria=specs)
     path.write_text(yaml.safe_dump(cs.model_dump(), sort_keys=False, allow_unicode=True), encoding="utf-8")
     return cs

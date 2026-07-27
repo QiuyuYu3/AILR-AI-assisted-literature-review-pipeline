@@ -73,6 +73,9 @@ class ScreeningTask:
         # Mock runs buffer all decisions and write them in one multi-row INSERT at the end (fast,
         # no per-row Neon round trips); real runs keep the per-row, per-commit path for durability.
         buffer: list[ScreeningDecision] = []
+        # Telemetry is buffered either way: it is not review data, so it does not need per-row
+        # durability, and writing it inline doubled the round trips of every real run.
+        call_metas: list = []
 
         def _save(decision: ScreeningDecision) -> None:
             if batch:
@@ -124,7 +127,7 @@ class ScreeningTask:
                     summary.add_decision(decision)
 
                     if not batch and meta is not None:
-                        self.project.db.insert_api_call(self.project.project_id, meta)
+                        call_metas.append(meta)
                         summary.total_input_tokens += meta.input_tokens
                         summary.total_output_tokens += meta.output_tokens
                         summary.total_cached_input_tokens += meta.cached_input_tokens
@@ -142,4 +145,5 @@ class ScreeningTask:
         if batch and buffer:
             with self.project.db._conn.transaction():
                 self.project.db.insert_screening_decisions_batch(buffer)
+        self.project.db.insert_api_calls(self.project.project_id, call_metas)
         return summary

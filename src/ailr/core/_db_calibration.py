@@ -40,6 +40,29 @@ class CalibrationMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert api_call: {e}") from e
 
+    def insert_api_calls(self, project_id: int, metadatas: list["CallMetadata"]) -> None:
+        """Write a run's telemetry in one multi-row INSERT instead of one round trip per call.
+
+        Buffered until the run ends: these rows are token accounting, not review data, so losing a
+        crashed run's counters costs nothing, while writing them one at a time doubled the round
+        trips of every screening and extraction run against a remote database.
+        """
+        if not metadatas:
+            return
+        cols = ("project_id", "provider", "model", "input_tokens", "output_tokens", "latency_ms")
+        group = "(" + ",".join("?" for _ in cols) + ")"
+        params: list = []
+        for m in metadatas:
+            params.extend([project_id, m.provider, m.model, m.input_tokens, m.output_tokens, m.latency_ms])
+        try:
+            self._conn.execute(
+                f"INSERT INTO api_calls ({','.join(cols)}) VALUES {','.join(group for _ in metadatas)}",
+                params,
+            )
+            self._conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to insert api_calls: {e}") from e
+
     # ── Calibration samples ──────────────────────────────────────────
 
     def list_calibration_candidates(

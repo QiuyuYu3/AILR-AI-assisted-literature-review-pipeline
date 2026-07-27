@@ -96,6 +96,8 @@ class ExtractionTask:
         # per-row Neon round trips); real runs keep the per-row, per-commit path for durability.
         all_results: list[ExtractionResult] = []
         all_ft_decisions: list[ScreeningDecision] = []
+        # Telemetry is buffered either way: not review data, so no need for per-row durability.
+        call_metas: list = []
 
         # LLM calls run in a small thread pool (they mostly wait on the network); all DB writes,
         # summary updates, and progress callbacks stay on this thread.
@@ -165,7 +167,7 @@ class ExtractionTask:
                             self.project.db.insert_screening_decision(ft_decision)
 
                     if not batch and meta is not None:
-                        self.project.db.insert_api_call(self.project.project_id, meta)
+                        call_metas.append(meta)
                         summary.total_input_tokens += meta.input_tokens
                         summary.total_output_tokens += meta.output_tokens
                         summary.total_cached_input_tokens += meta.cached_input_tokens
@@ -185,6 +187,7 @@ class ExtractionTask:
             with self.project.db._conn.transaction():
                 self.project.db.insert_extractions(all_results)
                 self.project.db.insert_screening_decisions_batch(all_ft_decisions)
+        self.project.db.insert_api_calls(self.project.project_id, call_metas)
         return summary
 
     def _select_candidates(self, only_includes: bool) -> list[Source]:

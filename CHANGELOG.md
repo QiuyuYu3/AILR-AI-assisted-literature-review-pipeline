@@ -1,7 +1,7 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.30.0] – 2026-07-27
 
 ### Added
 - `screening.full_text_workflow`: full-text screening runs its own workflow, so a review can be AI-assisted at title/abstract and two-human at full text. Defaults to the abstract setting.
@@ -10,10 +10,19 @@
 ### Changed
 - All three stage workflows moved to Protocol → Workflow; the Abstract "Workflow" tab is gone and the full-text one is now "Preparation" (PDF prep only).
 - A paper reaches full-text review only once abstract screening is finished with it and settled on include; one still in an unresolved conflict, or waiting on a second reviewer, now stays at the abstract stage.
+- PRISMA counts a paper as included only once its stage is settled; unresolved disagreements and half-reviewed papers count as neither.
+- Spend estimates removed; they were always $0.00. Token counts unchanged.
+- `ailr show disagreements` takes `--stage abstract|full_text`.
+- API token rows are written once per run instead of once per paper.
 
 ### Fixed
 - Independent extraction: "To extract" dropped a paper as soon as the first extractor submitted, hiding it from the second.
 - A paper the AI alone voted include, with no human having screened it, was listed as a full-text candidate.
+- "Final include" had two implementations; with two reviewers the answer depended on who voted last.
+- Methods export reported a title-dedup threshold of 90; the real value is 95.
+- Clearing a project left its artifact history, so a re-import inherited the old protocol amendments.
+- Re-adjudicating a consensus extraction could destroy the old record without writing the new one.
+- `show disagreements` paired every AI vote against every human vote, across stages.
 
 ---
 ## [0.29.0] – 2026-07-27

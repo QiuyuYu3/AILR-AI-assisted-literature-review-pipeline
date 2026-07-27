@@ -417,6 +417,7 @@ class CalibrationTask:
         prompt_template, criteria_text, criterion_ids, additional_text = load_screening_inputs(
             self.project.root, self.project.config.screening
         )
+        call_metas: list = []
 
         for idx, source in enumerate(sample, 1):
             existing_ai = self._existing_ai_decision(source.id)
@@ -436,7 +437,7 @@ class CalibrationTask:
                 summary.ai_counts[decision.decision] += 1
 
                 if isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
-                    self.project.db.insert_api_call(self.project.project_id, self.reviewer.last_metadata)
+                    call_metas.append(self.reviewer.last_metadata)
 
                 if on_progress:
                     on_progress(idx, sample_size, decision, None)
@@ -447,6 +448,8 @@ class CalibrationTask:
                 )
                 if on_progress:
                     on_progress(idx, sample_size, None, e)
+
+        self.project.db.insert_api_calls(self.project.project_id, call_metas)
 
     def _existing_ai_decision(self, source_id: Optional[int]) -> Optional[str]:
         if source_id is None:
