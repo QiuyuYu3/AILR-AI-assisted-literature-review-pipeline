@@ -1,12 +1,12 @@
 # Set up your protocol
 
-The **Protocol** page (top of the sidebar, right after Projects) holds your review's **shared definitions**: the **criteria**, the **extraction variables**, and the review's **registration**. You set these up *once*, near the start, because everything downstream depends on them. The criteria drive both screening and extraction, and the variables are the data-extraction form.
+The **Protocol** page (top of the sidebar, right after Projects) holds your review's **shared definitions**: the **criteria**, the **extraction variables**, the **workflows**, and the review's **registration**. You set these up *once*, near the start, because everything downstream depends on them. The criteria drive both screening and extraction, the variables are the data-extraction form, and the workflows say who does the work at each stage.
 
 :::{tip}
 If you would rather start from something concrete, the repository's [`examples/`](https://github.com/QiuyuYu3/AILR-AI-assisted-literature-review-pipeline/tree/main/examples) folder holds a small complete set: criteria, variables, and both prompts, in both the YAML the app writes and the JSON the importers read.
 :::
 
-> Define once, used everywhere. Each *stage's prompt* is configured separately on its own Workflow page. Protocol is just the definitions.
+> Define once, used everywhere. Each *stage's prompt* is configured separately on that stage's own page. Protocol holds the definitions and the workflows.
 
 ## Criteria
 
@@ -50,6 +50,33 @@ The field **descriptions** do the heavy lifting: the AI reads each one as the la
 Criteria, variables, and prompts are all **versioned**. Any change snapshots a new version, and the history view shows a **highlighted diff** so you can compare any two saved versions or **restore** an earlier one. Because the AI's decisions are stamped with the version that produced them, you can always trace a decision back to the exact rules in force at the time. The app also flags papers that were screened or extracted under criteria or prompts that have since changed (see the **AI outdated** badges on the Screening and Full-text pages).
 
 ![version history, diff between two saved criteria versions](figures/protocol_criteria2.png)
+
+## Workflow
+
+The **Workflow** tab sets **who does the work at each of the three stages**. It lives on Protocol rather than under Settings because who screens each stage is a protocol decision, pre-registered and reported under PRISMA, not a preference.
+
+| Stage | Options | Who |
+|---|---|---|
+| **Abstract screening** | `assisted` / `independent` | `assisted` = AI + 1 human, each deciding blind; `independent` = 2 humans, each deciding blind |
+| **Full-text screening** | `assisted` / `independent` | same two options, set **separately** from the abstract stage |
+| **Extraction** | `verify` / `independent` | `verify` = AI extracts, 1 human checks; `independent` = 2 humans extract blind, then reconcile |
+
+The three are set independently. The usual design is `assisted` at title and abstract, where the volume is, and `independent` at full text, where the stakes are; leave the full-text setting alone and it follows the abstract one.
+
+The choice also decides when a paper is **settled** at that stage: `independent` needs two human votes, and an unadjudicated disagreement means the stage is not finished. Until then the paper does not move on and counts as neither included nor excluded. See [workflow modes](concepts.md#workflow-modes).
+
+:::{important}
+There is no separate AI full-text screening run: the AI's full-text verdict comes from the per-criterion `flag_check` produced during **AI extraction**. So `assisted` at full text needs AI extraction to have run first, otherwise the AI has no vote and the stage behaves as a single human.
+:::
+
+![the three stage workflows on Protocol](figures/abstract_workflow.png)
+
+From the command line:
+
+```bash
+ailr workflow <project-folder>                              # print all three
+ailr workflow <project-folder> --stage full-text --set independent
+```
 
 ## Registration
 

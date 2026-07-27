@@ -37,7 +37,7 @@ The UI is a thin layer: each sidebar page is a `*_view.py`, and AI runs are disp
 3. optional user preset file (`mode_preset` in the project config, or `--preset`)
 4. the project's own `lit_review.yaml`
 
-Per-stage LLM overrides are resolved separately: `resolve_stage_llm()` layers a stage's `llm:` sub-block over the top-level `llm:` block, so a stage inherits any field it doesn't set. Each stage also has a `workers` count (`screening.workers` default 4, `extraction.workers` default 2) for parallel AI calls. The config is validated into pydantic models (`Config`, `ScreeningConfig`, `ExtractionConfig`, and so on); a bad file raises `ConfigError`, which the CLI/UI catches and presents cleanly.
+Per-stage LLM overrides are resolved separately: `resolve_stage_llm()` layers a stage's `llm:` sub-block over the top-level `llm:` block, so a stage inherits any field it doesn't set. Screening workflows go through one resolver, `Config.screening_workflow(stage)`, since the full-text stage may override the abstract one (`screening.full_text_workflow`). Each stage also has a `workers` count (`screening.workers` default 4, `extraction.workers` default 2) for parallel AI calls. The config is validated into pydantic models (`Config`, `ScreeningConfig`, `ExtractionConfig`, and so on); a bad file raises `ConfigError`, which the CLI/UI catches and presents cleanly.
 
 **Domain-content files** referenced from the config live in the project folder and are edited in the UI (mostly on the **Protocol** page): `criteria.yaml` (structured criteria, single source of truth, shared by screening and extraction), `schema.yaml` (extraction variables, mirrored to `extraction_variables.json`), `prompts/screening.txt` / `prompts/extraction.txt` (the fixed scaffolds), and `prompts/extraction_additional.txt` (`{{additional}}`). Criteria, variables, and prompts are **versioned**: each save snapshots a new version (prompts store the fully-resolved `composed` text), so a decision traces to the exact wording in force.
 
@@ -53,6 +53,7 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 | `extractions` | one row per extracted field, with `source_quote`, page/section, `prompt_version` |
 | `reconciliations` | conflict resolutions; links the AI and human decisions and records the final value + rationale |
 | `prompt_versions` / `codebook_versions` | snapshots of prompts/codebook so each decision traces to the exact wording |
+| `artifact_versions` | snapshots of criteria, variables, and prompts per save; drives the version diff and the amendment log |
 | `tags` / `source_tags` | labels and their many-to-many links to sources |
 | `screening_actions` | per-source action log (move to/from a stage, undo) |
 | `notes` | free-text notes on a source |
@@ -92,6 +93,8 @@ Everything below is also doable from the UI. The CLI is the power-user bypass, u
 | `ailr screen <project>` | run AI abstract screening |
 | `ailr calibrate <project> --stage screening` | calibrate a prompt (κ vs. human) |
 | `ailr extract <project>` | run AI data extraction |
+| `ailr workflow <project>` | print the three stage workflows; `--stage abstract\|full-text\|extraction --set VALUE` to change one |
+| `ailr show disagreements <project>` | AI/human disagreements at one stage (`--stage abstract\|full_text`) |
 | `ailr metrics <project>` | inter-rater reliability and stats |
 | `ailr export <project> --format csv` | export the dataset (csv / json / ris) |
 | `ailr prompt-bump <project>` | snapshot a new prompt version |

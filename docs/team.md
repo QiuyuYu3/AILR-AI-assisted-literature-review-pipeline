@@ -104,6 +104,8 @@ How the work splits depends on the [workflow mode](concepts.md#workflow-modes):
 
 So in `assisted` mode the queue naturally divides itself as people work through it; in `independent` mode everyone covers the whole set on purpose.
 
+The two screening stages carry their own mode, so a team can split the abstract queue and still have both people read every full text.
+
 ## Sharing PDFs
 
 `init` creates a `data/pdfs/` folder inside the project. Export your Zotero library (RIS + **Export Files**) **into that folder**, and ailr links the PDFs automatically when anyone opens the full-text pages (see [Link PDFs from Zotero](workflow/full-text.md#link-pdfs-from-zotero)).

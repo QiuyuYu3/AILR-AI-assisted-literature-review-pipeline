@@ -14,7 +14,7 @@ The config that defines *how* the review runs lives in the folder; the data the 
 
 ## The config file: `lit_review.yaml`
 
-Most settings are editable from the **Settings** and **Workflow** pages, but they all land in `lit_review.yaml`. The config is assembled in four layers (low → high precedence):
+Most settings are editable from the **Settings**, **Protocol**, and **Workflow** pages, but they all land in `lit_review.yaml`. The config is assembled in four layers (low → high precedence):
 
 1. Built-in defaults
 2. A built-in **mode preset** (`strict` or `assisted`; skipped for `custom`)
@@ -25,7 +25,7 @@ So you only need to write the fields you want to override; everything else inher
 
 ## Workflow modes
 
-Each review picks a workflow for the two human-in-the-loop stages. These are the single most important choice because they decide **who reviews what** and **what is hidden from whom**.
+Each review picks a workflow for **each of the three human-in-the-loop stages**. These are the single most important choice because they decide **who reviews what** and **what is hidden from whom**.
 
 ### Screening (title & abstract)
 
@@ -34,6 +34,15 @@ Each review picks a workflow for the two human-in-the-loop stages. These are the
 | `assisted` | AI + **1 human** | both blinded to each other (PRISMA-trAIce) |
 | `independent` | **2 humans** | blinded to each other; AI optional reference (Cochrane) |
 
+### Screening (full text)
+
+The same two options, set **separately** from the abstract stage. Leave it unset and it follows the abstract stage.
+
+| Workflow | Who | Blinding |
+|----------|-----|----------|
+| `assisted` | AI + **1 human** | the AI's verdict comes from AI extraction's per-criterion `flag_check`, so extraction must have run |
+| `independent` | **2 humans** | blinded to each other; extraction can come afterwards |
+
 ### Extraction (full text)
 
 | Workflow | Who | Blinding |
@@ -41,7 +50,18 @@ Each review picks a workflow for the two human-in-the-loop stages. These are the
 | `verify` | AI extracts, **human verifies/edits** | AI value shown, human edits it |
 | `independent` | **human extracts blind** | AI hidden until the human submits |
 
-You can change a stage's workflow on its **Workflow** page at any time.
+All three are set on [**Protocol → Workflow**](protocol.md#workflow), and can be changed at any time. The common design is AI-assisted at title and abstract, where the volume is, and two humans at full text, where the stakes are:
+
+```yaml
+screening:
+  workflow: assisted             # title/abstract
+  full_text_workflow: independent  # omit to follow the line above
+
+extraction:
+  workflow: independent
+```
+
+A stage's workflow also decides when a paper is **settled** there: `independent` needs two human votes, and an unadjudicated disagreement means the stage is not finished. An unsettled paper does not move to the next stage, and PRISMA counts it as neither included nor excluded.
 
 ## Blinding
 
@@ -54,7 +74,7 @@ Disagreements then surface on the **Conflicts** pages for reconciliation.
 
 ## Per-stage models
 
-Each stage runs on its own model, set in **Settings → Models**. There is no built-in default: model names date quickly, so ailr asks you to name the one you want rather than shipping a stale choice. Screening sees every record you import, so a cheap, fast model there saves the most; extraction reads whole papers, so it is worth a strong one. Token usage is logged per call; see **Reports → API usage** to track spend.
+Each stage runs on its own model, set in **Settings → Models**. There is no built-in default: model names date quickly, so ailr asks you to name the one you want rather than shipping a stale choice. Screening sees every record you import, so a cheap, fast model there saves the most; extraction reads whole papers, so it is worth a strong one. Token usage is logged per call; see **Reports → API usage**. Tokens only, not money: prices change faster than the package ships, so multiply by your provider's current rates.
 
 The top-level `llm:` block holds the defaults both stages inherit; each stage may declare its own `llm:` sub-block that overrides only the fields it sets.
 

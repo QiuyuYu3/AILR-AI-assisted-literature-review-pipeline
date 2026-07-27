@@ -17,9 +17,11 @@ The **Reports** page (split into **PRISMA & methods**, **Reliability & API**, an
 | **PRISMA flow** | records identified → deduplicated → screened → excluded (with reasons) → included; the identification box breaks down **records per source**, records found by [citation searching or hand searching](import.md#records-found-outside-a-database-search) get their own arm, and the diagram **exports as SVG** (vector) for your manuscript |
 | **Methods skeleton** | a prose outline of how the review was run (workflow, models, criteria), including the **search strategies** you recorded at import |
 | **Inter-rater reliability** | Cohen's κ, PABAK, percent agreement, and a **confusion matrix** for any pair of reviewers at either stage |
-| **API usage** | token counts and calls per stage, for cost reporting |
+| **API usage** | token counts and calls per stage; tokens only, so multiply by your provider's current rates |
 
 Every number here traces back to stored rows: the PRISMA counts come from the actual decisions and recorded exclusion reasons, and the agreement figures from the reviewers' own verdicts, so the figures you report are the figures the app can defend. PRISMA counts are **per paper**, not per vote: in `independent` mode two reviewers including the same paper count it once, and a reconciliation overrides the individual votes.
+
+A paper counts at a stage only once that stage is **settled** for it: everyone the [workflow](../protocol.md#workflow) calls for has voted, and any disagreement has been adjudicated. One still waiting on a second reviewer counts as neither included nor excluded, so the boxes may not add up while the review is in progress.
 
 Two boxes depend on something you record rather than something the app infers:
 

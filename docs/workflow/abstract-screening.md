@@ -2,16 +2,15 @@
 
 Title & abstract screening with the AI as a second reviewer. This is where the bulk of the library is narrowed down, so the workflow is built to keep the two reviewers independent and to let you trust the AI before you rely on it. Sidebar (under **Abstract**): **Workflow**, **Screening**, **Conflicts**.
 
-## 1. Set up the workflow
+## 1. Set up the prompt
 
-The **Workflow** page (abstract) has four tabs:
+Who screens this stage, `assisted` (AI + 1 human) or `independent` (2 humans), is set once on [**Protocol → Workflow**](../protocol.md#workflow) alongside the other two stages, not here. It decides who reviews what and what stays blinded; see [workflow modes](../concepts.md#workflow-modes).
 
-- **Workflow.** Choose the screening workflow, `assisted` (AI + 1 human) or `independent` (2 humans). See [workflow modes](../concepts.md#workflow-modes). This decides who reviews what and what stays blinded.
+The **Workflow** page (abstract) has three tabs:
+
 - **Prompt.** Edit the screening prompt and optional **additional instructions** (stage-specific guidance). Your **criteria** are *not* here: they are shared with extraction and defined once on the [Protocol](../protocol.md) page; the prompt references them via `{{criteria}}`, filled in when the AI runs. A **Full prompt preview** below the editor shows the finished prompt exactly as sent, with the criteria already filled in.
 - **Calibration.** Test the prompt on a sample before committing to it (see below).
 - **AI screening.** Run the AI, or import results you ran externally.
-
-![abstract workflow](../figures/abstract_workflow.png)
 
 ![abstract prompt tab, with the full prompt preview](../figures/abstract_workflow_prompt.png)
 
@@ -68,5 +67,9 @@ When the AI's verdict is revealed, it comes with a **per-criterion breakdown**: 
 ## 4. Reconcile conflicts
 
 Where the AI and human (or two humans) disagree, the pair appears on the **Conflicts** page. Read both verdicts side by side. The card shows the AI's **per-criterion** PASS / FAIL / UNCERTAIN verdicts (with confidence and quote) under its rationale, so you can see exactly which criterion drove the disagreement. Then record the final decision. This is the adjudication step that PRISMA expects to be documented. Included papers move on to [full text](full-text.md); excluded papers are counted on the PRISMA diagram with their reason.
+
+:::{important}
+A paper leaves this stage only once it is **settled**: everyone the workflow calls for has voted, and any disagreement has been adjudicated. Until then it stays here, out of the full-text queue, and PRISMA counts it as neither included nor excluded.
+:::
 
 ![abstract conflicts](../figures/abstract_conflicts.png)

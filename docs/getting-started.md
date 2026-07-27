@@ -115,7 +115,7 @@ Creating a project drops a few starter files into the folder. They are **yours t
 
 | File / folder | What it's for | Where you edit it |
 |---|---|---|
-| `lit_review.yaml` | the project's settings: workflow modes, which AI model to use, and where the other files live | **Settings** / **Workflow** pages |
+| `lit_review.yaml` | the project's settings: workflow modes, which AI model to use, and where the other files live | **Settings** page, **Protocol → Workflow** |
 | `criteria.yaml` | your inclusion / exclusion **criteria** (structured, shared by screening and extraction) | **Protocol → Criteria** |
 | `schema.yaml` | the **variables** to extract, the structure of your extraction (mirrored to `extraction_variables.json`) | **Protocol → Variables** |
 | `prompts/screening.txt` | the instruction the AI follows when screening titles & abstracts | **Abstract → Workflow → Prompt** |
@@ -158,6 +158,8 @@ Each person enters their own **reviewer ID** at the top of the app before they s
 
 - In `assisted` mode, the queue **divides the work**: each paper is screened by one human, and a second vote on an already-screened paper is rejected.
 - In `independent` mode, **both humans review every paper**, then reconcile.
+
+The abstract and full-text stages carry this setting separately, so a review can divide the abstract queue and still have both people read every full text. See [Protocol → Workflow](protocol.md#workflow).
 
 :::{tip}
 On a shared (PostgreSQL) project, the reviewer ID is how the app tells teammates apart and splits the queue. Pick a stable handle (e.g. your initials) and reuse it. See [Working as a team](team.md).

@@ -1,6 +1,6 @@
 # Data extraction
 
-Pull structured data out of the included full texts. This is the step that turns a pile of papers into a dataset you can analyse. The **variables** (what to extract) are defined once on the [Protocol](../protocol.md) page. The rest lives in tabs on the **Full text → Workflow** page, in the order you use them: **Prompt** (how to extract), **Calibration** (test on a few papers), and **AI extraction** (run it last). The **Extraction** sidebar page is the per-paper verify queue.
+Pull structured data out of the included full texts. This is the step that turns a pile of papers into a dataset you can analyse. The **variables** (what to extract) and the **extraction workflow** (who does the extracting) are set once on the [Protocol](../protocol.md) page. The rest lives in tabs on the **Full text → Workflow** page, in the order you use them: **Preparation** (PDFs and markdown, covered under [full text](full-text.md)), **Prompt** (how to extract), **Calibration** (test on a few papers), and **AI extraction** (run it last). The **Extraction** sidebar page is the per-paper verify queue.
 
 ## 1. Define what to extract, and how
 
@@ -26,7 +26,7 @@ The single highest-leverage thing you can do for extraction quality is a **clear
 
 ## 2. Choose the extraction workflow
 
-Set the workflow on the full-text **Workflow** page:
+Set the workflow on [**Protocol → Workflow**](../protocol.md#workflow), where it sits next to the two screening workflows:
 
 - `verify`: the AI extracts and the **human verifies/edits** each value (the AI value is shown). Fastest path; the human is a checker.
 - `independent`: the **human extracts blind** and the AI's values stay hidden until submit. Use when you need a true second independent pass. Two reviewers extract each paper and then reconcile — see [Reconcile two extractions](#reconcile-two-extractions) below.
