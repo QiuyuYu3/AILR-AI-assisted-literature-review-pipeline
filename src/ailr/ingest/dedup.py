@@ -6,6 +6,10 @@ from rapidfuzz import fuzz, process
 
 from ailr.core.source import Source
 
+# Fuzzy-title match cutoff used at ingest. Named so the methods export reports the value
+# actually in force instead of a hardcoded copy of it.
+TITLE_MATCH_THRESHOLD = 95
+
 
 def normalize_title(title: str) -> str:
     title = title.lower()
@@ -34,7 +38,7 @@ def dedup_by_doi(sources: list[Source]) -> tuple[list[Source], list[Source]]:
 def dedup_by_title(
     sources: list[Source],
     existing: list[Source],
-    threshold: int = 90,
+    threshold: int = TITLE_MATCH_THRESHOLD,
 ) -> tuple[list[Source], list[tuple[Source, Source]]]:
     if not existing:
         return sources, []

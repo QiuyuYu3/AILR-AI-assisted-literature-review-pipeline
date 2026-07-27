@@ -200,7 +200,7 @@ class Project:
 
         existing = self._db.list_sources(project_id=self._project_id)
         candidates_for_insert, title_matches_raw = dedup.dedup_by_title(
-            unique_sources, existing, threshold=95
+            unique_sources, existing, threshold=dedup.TITLE_MATCH_THRESHOLD
         )
 
         title_matches: list[dict[str, Any]] = [

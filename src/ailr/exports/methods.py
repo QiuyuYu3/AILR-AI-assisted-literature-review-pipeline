@@ -2,6 +2,7 @@
 
 from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
+from ailr.ingest.dedup import TITLE_MATCH_THRESHOLD
 from ailr.metrics import (
     BINARY_CATEGORIES,
     binarize,
@@ -143,7 +144,7 @@ def build_methods_skeleton(
     lines.append(
         f"Records were identified through searches of {db_str} (N = {counts['records_identified']} retrieved). "
         f"Deduplication was performed at ingestion using exact DOI matching followed by rapidfuzz token-set ratio "
-        f"on titles (threshold = 90)."
+        f"on titles (threshold = {TITLE_MATCH_THRESHOLD})."
     )
     strategies = db.list_search_strategies(pid)
     if strategies:
