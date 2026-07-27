@@ -68,6 +68,8 @@ Handy controls on this page:
 - Status filters including **To extract** (papers not yet extracted) and **Extracted by me**, and a per-paper button to **jump straight into extraction** once a paper is included, so you can read and extract a paper in one pass.
 - **Sort by AI confidence (lowest first)** to surface uncertain papers, and an **AI outdated** badge flags papers extracted under criteria or a prompt that have since changed.
 - A **Read full text** button opens the PDF or markdown in a reader without leaving the page (also on the FT Conflicts cards).
+- **Mark full text as not retrieved**, on papers with no markdown, for a full text you tried to obtain and could not. This is what fills PRISMA's *reports not retrieved* box. A paper you simply have not fetched yet is not the same thing, so leave it unmarked until you have given up on it.
+- **Same study as…**, for a paper that reports the same study as another included paper (a main paper and its protocol or secondary analysis). PRISMA counts those as one study across several reports; see [Reports](reports.md).
 
 ![full-text review](../figures/ft_screening.png)
 

@@ -41,12 +41,13 @@ The key lives only in that shell session (gone when you close it) — nothing is
 
 ## How a review flows (left sidebar)
 
+0. **Protocol** — criteria, extraction variables, and the review's registration (register, number, protocol URL) with an amendment log.
 1. **Import** — drop a RIS / BibTeX / CSV of search results; duplicates are flagged automatically.
 2. **Abstract → Workflow** — choose the screening workflow, run AI screening, edit the prompt, and **calibrate** (test on a sample, Cohen's κ vs human).
 3. **Abstract → Screening** — a card list with Include / Exclude / Uncertain. AI is blinded until you decide.
 4. **Abstract → Conflicts** — reconcile where AI and human (or two humans) disagree.
-5. **Full text → Workflow** — link PDFs (Zotero RIS) and convert to markdown (scanned / low-text PDFs are flagged); set the extraction workflow; define the extraction fields/prompt (**Template** tab) and run AI extraction (**AI extraction** tab).
-6. **Full-text review** — read the full text and include/exclude (with PRISMA reasons); abstracts can expand inline. For an included paper, the **To extract** filter shows an **Open extraction** button → verify/edit the AI's values per field (changes from the AI are highlighted).
+5. **Full text → Workflow** — link PDFs (Zotero RIS) and convert to markdown (scanned / low-text PDFs are flagged); set the extraction workflow; define the extraction fields/prompt (**Template** tab), calibrate the AI's full-text verdict, and run AI extraction (**AI extraction** tab).
+6. **Full-text review** — read the full text and include/exclude (with PRISMA reasons); abstracts can expand inline. Mark a full text you could not obtain as **not retrieved**, and group several reports of one study with **Same study as…**. For an included paper, the **To extract** filter shows an **Open extraction** button → verify/edit the AI's values per field (changes from the AI are highlighted).
 7. **Full text → FT Conflicts** — reconcile full-text disagreements.
 8. **Reports** — PRISMA flow, methods skeleton, inter-rater reliability + confusion matrix, API usage, and CSV/JSON/RIS exports.
 9. **Sources / Tags / Duplicates / Database** — browse/manage records (with bulk actions on Sources), tag, review duplicates, and browse the raw tables.

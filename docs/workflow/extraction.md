@@ -35,7 +35,12 @@ See [workflow modes](../concepts.md#workflow-modes).
 
 ### Calibrate extraction
 
-Like screening, extraction has a **Calibration** tab. Run the AI on a few papers and eyeball the output before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them. Choose **Random sample** (N papers) or **Pick specific papers** (a searchable multi-select by author / title / DOI / id) to test on cases you care about.
+Like screening, extraction has a **Calibration** tab with the same two modes.
+
+- **Quick test.** Run the AI on a few papers and eyeball the extracted values before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them. Nothing is written to the review. Choose **Random sample** (N papers) or **Pick specific papers** (a searchable multi-select by author / title / DOI / id) to test on cases you care about.
+- **Full calibration.** Measures whether you can trust the AI's **full-text include/exclude verdict**, which it produces while extracting by re-checking each criterion against the full text. A round samples from the full-text queue and runs the real extraction on it, then waits for you: read those papers under **Full-text review → status "Calibration sample"**, decide them yourself, and κ appears against `extraction.target_kappa`. The next round samples papers you have not calibrated on before.
+
+Full calibration needs `extraction.flag_check` on, since the criterion check is where the AI's verdict comes from. Keep N small: unlike screening, each paper is a whole-paper call. The extractions it produces are real and count towards the review, so nothing is wasted. Like screening, it is off under `independent` workflow.
 
 ![extraction calibration](../figures/ft_ca.png)
 

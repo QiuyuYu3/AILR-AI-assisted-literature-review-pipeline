@@ -1,6 +1,6 @@
 # Set up your protocol
 
-The **Protocol** page (top of the sidebar, right after Projects) holds your review's **shared definitions**: the **criteria** and the **extraction variables**. You set these up *once*, near the start, because everything downstream depends on them. The criteria drive both screening and extraction, and the variables are the data-extraction form.
+The **Protocol** page (top of the sidebar, right after Projects) holds your review's **shared definitions**: the **criteria**, the **extraction variables**, and the review's **registration**. You set these up *once*, near the start, because everything downstream depends on them. The criteria drive both screening and extraction, and the variables are the data-extraction form.
 
 :::{tip}
 If you would rather start from something concrete, the repository's [`examples/`](https://github.com/QiuyuYu3/AILR-AI-assisted-literature-review-pipeline/tree/main/examples) folder holds a small complete set: criteria, variables, and both prompts, in both the YAML the app writes and the JSON the importers read.
@@ -50,5 +50,13 @@ The field **descriptions** do the heavy lifting: the AI reads each one as the la
 Criteria, variables, and prompts are all **versioned**. Any change snapshots a new version, and the history view shows a **highlighted diff** so you can compare any two saved versions or **restore** an earlier one. Because the AI's decisions are stamped with the version that produced them, you can always trace a decision back to the exact rules in force at the time. The app also flags papers that were screened or extracted under criteria or prompts that have since changed (see the **AI outdated** badges on the Screening and Full-text pages).
 
 ![version history, diff between two saved criteria versions](figures/protocol_criteria2.png)
+
+## Registration
+
+PRISMA asks every review to say where it is registered and where its protocol can be read, including saying plainly that it is neither. The **Registration** tab holds three fields: the **register** (PROSPERO, OSF, INPLASY, or blank), the **registration number**, and the **protocol URL**. They go into the methods export, which writes "This review was not registered" if you leave them blank rather than quietly skipping the sentence.
+
+Below the fields is an **amendment log**. You do not fill it in: it is read back from the version history above, treating each part's first saved version as the protocol as written and everything after it as a change to it. It also goes into the methods export as a table. The app records that an amendment happened, not why, so add the reasoning yourself when you write the paper.
+
+One thing to know about the log: it assumes your first save is the protocol as finalised. If you revise the criteria several times while still setting up, those early edits count as amendments even though the review had not started. Delete those rows from the exported table, or hold off on the first save until the protocol is settled.
 
 Once your criteria and variables are set, move on to [importing references](workflow/import.md).

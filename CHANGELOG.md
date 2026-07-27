@@ -1,7 +1,7 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.29.0] – 2026-07-27
 
 ### Added
 - Full-text calibration: run the AI on a sample, review the same papers yourself, get κ. Same shape as screening calibration.

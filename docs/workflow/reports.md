@@ -21,6 +21,11 @@ The **Reports** page (split into **PRISMA & methods**, **Reliability & API**, an
 
 Every number here traces back to stored rows: the PRISMA counts come from the actual decisions and recorded exclusion reasons, and the agreement figures from the reviewers' own verdicts, so the figures you report are the figures the app can defend. PRISMA counts are **per paper**, not per vote: in `independent` mode two reviewers including the same paper count it once, and a reconciliation overrides the individual votes.
 
+Two boxes depend on something you record rather than something the app infers:
+
+- **Reports not retrieved** counts only papers you marked as unobtainable on the [full-text review](full-text.md#2-full-text-review) page. A paper with no markdown yet is work outstanding, not a retrieval failure, so it does not land here.
+- **Studies included** counts studies, and **reports of included studies** counts papers. They differ only if you grouped companion reports with **Same study as…**; otherwise the flow shows the single number, as most reviews should.
+
 ### Reading the reliability numbers
 
 Pick the **stage** (abstract or full text) and the **pair of reviewers** — AI vs. a human in `assisted` mode, the two humans in `independent` mode, or any other combination if more than two people worked on the review. Only the records both of them judged are counted.

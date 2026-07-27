@@ -24,7 +24,9 @@ The **Workflow** page (abstract) has four tabs:
 Calibration tests the prompt on a small sample, so you trust it before spending tokens on the whole library:
 
 - **Quick test.** Run the prompt on a few abstracts and read the AI's reasoning, *without* touching your real decisions. Use this while you are still editing the wording. Choose **Random sample** (N) or **Pick specific papers** (search by author / title / DOI / id) to test on cases you care about.
-- **Full calibration.** Run on a calibration sample and compute **Cohen's κ vs. human** to measure agreement against the target (`target_kappa`, default 0.7). κ near or above the target means the AI is tracking your judgement closely enough to act as a real second reviewer.
+- **Full calibration.** Run on a calibration sample and compute **Cohen's κ vs. human** to measure agreement against the target (`target_kappa`, default 0.7). κ near or above the target means the AI is tracking your judgement closely enough to act as a real second reviewer. The sample is waiting for you under **Screening → status "Calibration sample"**; κ appears once you have decided those records yourself.
+
+Full calibration only appears in `assisted` workflow. Under `independent` two humans decide every record and the AI is a reference rather than a reviewer, so tuning it to agree with one of them would not change who reviews what. Quick test still works for editing the prompt, and the AI's agreement with each reviewer is on the [Reports](reports.md) page.
 
 Iterate the prompt until agreement is acceptable. Each run snapshots a **prompt version**, so every later decision can be traced back to the exact wording that produced it, and you never lose track of which prompt screened which papers.
 
