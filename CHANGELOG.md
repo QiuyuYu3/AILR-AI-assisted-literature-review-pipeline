@@ -5,6 +5,7 @@
 
 ### Added
 - `screening.full_text_workflow`: full-text screening runs its own workflow, so a review can be AI-assisted at title/abstract and two-human at full text. Defaults to the abstract setting.
+- `ailr workflow PROJECT [--stage abstract|full-text|extraction] [--set VALUE]` prints or sets the three stage workflows.
 
 ### Changed
 - All three stage workflows moved to Protocol → Workflow; the Abstract "Workflow" tab is gone and the full-text one is now "Preparation" (PDF prep only).

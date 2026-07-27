@@ -744,6 +744,52 @@ def prompt_bump(
         raise typer.Exit(1)
 
 
+# CLI names the stages the way the UI does; the config keys they write differ (full-text screening
+# lives in the screening block as `full_text_workflow`).
+_WORKFLOW_STAGES = {
+    "abstract": ("screening", ("assisted", "independent")),
+    "full-text": ("full_text_screening", ("assisted", "independent")),
+    "extraction": ("extraction", ("verify", "independent")),
+}
+
+
+@app.command()
+def workflow(
+    project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
+    stage: Annotated[Optional[str], typer.Option("--stage", help="abstract | full-text | extraction. Omit to print all three.")] = None,
+    set_: Annotated[Optional[str], typer.Option("--set", help="New workflow for --stage. Omit to just print.")] = None,
+) -> None:
+    """Show or set who does the work at each stage (the Protocol -> Workflow settings)."""
+    if stage is not None and stage not in _WORKFLOW_STAGES:
+        typer.echo(f"Error: --stage must be one of {tuple(_WORKFLOW_STAGES)}, got {stage!r}.", err=True)
+        raise typer.Exit(1)
+    if set_ is not None and stage is None:
+        typer.echo("Error: --set needs --stage.", err=True)
+        raise typer.Exit(1)
+    try:
+        proj = Project.load(project)
+        if set_ is not None:
+            key, valid = _WORKFLOW_STAGES[stage]
+            if set_ not in valid:
+                typer.echo(f"Error: --set must be one of {valid} for stage {stage!r}, got {set_!r}.", err=True)
+                raise typer.Exit(1)
+            save_stage_workflow(proj.root, key, set_)
+            proj = Project.load(project)
+            typer.echo(f"Saved {stage} workflow = {set_} to lit_review.yaml")
+
+        cfg = proj.config
+        current = {
+            "abstract": cfg.screening_workflow("abstract"),
+            "full-text": cfg.screening_workflow("full_text"),
+            "extraction": cfg.extraction.workflow,
+        }
+        for name in (tuple(_WORKFLOW_STAGES) if stage is None else (stage,)):
+            typer.echo(f"{name:11s} {current[name]}")
+    except AILRError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @app.command()
 def ui(
     project: Annotated[Optional[Path], typer.Argument(help="Path to the review project directory. Omit to open the project manager (create/open a project in the browser).")] = None,
