@@ -39,14 +39,16 @@ ailr ui <project-folder>
 
 The key lives only in that shell session (gone when you close it) — nothing is written to the project folder or database. To avoid re-typing it each session, add the `export` line to your `~/.bashrc`. Settings shows `ANTHROPIC_API_KEY: set` once it's in the environment.
 
-## How a review flows (left sidebar)
+## How a review flows
+
+The sidebar groups the pages: **Protocol** and **Summary** at the top, then **Abstract**, **Full text**, and **Manage** (importing, browsing, reports, settings).
 
 0. **Protocol** — criteria, extraction variables, the three stage workflows (who screens and who extracts), and the review's registration (register, number, protocol URL) with an amendment log.
 1. **Import** — drop a RIS / BibTeX / CSV of search results; duplicates are flagged automatically.
 2. **Abstract → Workflow** — edit the screening prompt, **calibrate** (test on a sample, Cohen's κ vs human), and run AI screening.
 3. **Abstract → Screening** — a card list with Include / Exclude / Uncertain. AI is blinded until you decide.
 4. **Abstract → Conflicts** — reconcile where AI and human (or two humans) disagree.
-5. **Full text → Workflow** — link PDFs (Zotero RIS) and convert to markdown, scanned / low-text PDFs are flagged (**Preparation** tab); edit the extraction prompt, calibrate the AI's full-text verdict, and run AI extraction (**AI extraction** tab).
+5. **Full text → Workflow** — **Preparation**: link PDFs (Zotero RIS) and convert them to markdown, with scanned / low-text PDFs flagged. Then, as at the abstract stage, edit the extraction prompt, calibrate the AI's full-text verdict, and run AI extraction.
 6. **Full-text review** — read the full text and include/exclude (with PRISMA reasons); abstracts can expand inline. Mark a full text you could not obtain as **not retrieved**, and group several reports of one study with **Same study as…**. For an included paper, the **To extract** filter shows an **Open extraction** button → verify/edit the AI's values per field (changes from the AI are highlighted).
 7. **Full text → FT Conflicts** — reconcile full-text disagreements.
 8. **Reports** — PRISMA flow, methods skeleton, inter-rater reliability + confusion matrix, API usage, and CSV/JSON/RIS exports.
@@ -62,9 +64,9 @@ The key lives only in that shell session (gone when you close it) — nothing is
 
 ![Abstract screening](docs/figures/abstract_screening1.png)
 
-**Define** the fields to extract in the Template editor.
+**Define** the fields to extract on Protocol → Variables.
 
-![Template editor](docs/figures/ft_template1.png)
+![Extraction variables](docs/figures/protocol_variable.png)
 
 **Verify** the AI's values, each backed by a source quote.
 
@@ -94,23 +96,25 @@ Bibliographic metadata (title, authors, year, journal, DOI) comes from the impor
 
 ## Models & tokens
 
-Each stage has its own model in **Settings** (provider / model / temperature) — e.g. a cheaper model for abstract screening, a stronger one for full-text extraction. The provider's API key must be in your environment (see above). Token usage is logged per call (see Summary / Reports). Tokens only, no spend estimate.
+Each stage has its own model in **Settings** (provider / model / temperature), e.g. a cheaper model for abstract screening and a stronger one for full-text extraction. No model ships as a default, so set one before the first AI run. The provider's API key must be in your environment (see above). Token usage is logged per call (see Summary / Reports). Tokens only, no spend estimate.
 
 ## Working as a team
 
 Give everyone a shared **PostgreSQL** database so you co-edit one project in real time. Use any managed Postgres host (several have free tiers) or self-host one.
 
-1. Create a PostgreSQL database and copy its connection URL — paste it as-is (`postgresql://…`); ailr selects the right driver automatically (`postgresql+psycopg://` also works).
+1. Create a PostgreSQL database and copy its connection URL. Paste it as-is (`postgresql://…`); ailr selects the right driver automatically (`postgresql+psycopg://` also works).
 2. Add it to the project's `lit_review.yaml`:
    ```yaml
    storage:
-     database_url: "postgresql+psycopg://user:pw@host/db?sslmode=require"
+     database_url: "postgresql://user:pw@host/db?sslmode=require"
    ```
-   Everyone who opens the same project folder connects to that database automatically. Each project's yaml can point to its own database. Settings shows `Shared Postgres` and the active database. **`lit_review.yaml` holds the DB password — keep it out of a public git repo** (the generated `.gitignore` already excludes it).
-3. Everyone needs the same project **folder** (the config: `lit_review.yaml`, prompts, criteria, schema) with the same project name — the data lives in the shared DB, not the folder. One DB can hold many projects (namespaced by project name).
+   Everyone who opens the same project folder connects to that database automatically. Each project's yaml can point to its own database. Settings shows `Shared Postgres` and the active database. **`lit_review.yaml` holds the DB password, so keep it out of a public git repo** (the generated `.gitignore` already excludes it).
+3. Put the project **folder** on a shared drive (Box / OneDrive / Drive) so everyone has the same config (`lit_review.yaml`, prompts, criteria, variables) and opens it under the same project name. The decisions live in the shared DB, not the folder, and one DB can hold many projects (namespaced by project name).
 
-Each person enters their own **reviewer ID** at the top. In `assisted` mode each paper is screened by one human (the queue divides the work; a second vote on an already-screened paper is rejected). In `independent` mode both humans review every paper (Cochrane dual screening), then reconcile in **Conflicts**.
+Each person enters their own **reviewer ID** at the top; it is stamped on every decision and extraction. In `assisted` mode each paper is screened by one human (the queue divides the work; a second vote on an already-screened paper is rejected). In `independent` mode both humans review every paper (Cochrane dual screening), then reconcile in **Conflicts**. Abstract and full text carry their own mode, so a team can split the abstract queue and still have both people read every full text.
+
+**PDFs** live in the project's `data/pdfs/` folder. Export your Zotero library there (RIS, with *Export Files* checked) and ailr links them automatically. Each link is stored relative to the project root, so it resolves on every teammate's machine with nothing to configure, and the shared drive carries one copy of the PDFs for the whole team.
 
 With `storage.database_url` blank, a project uses a local SQLite file (single-user). To move an existing SQLite project onto Postgres: `ailr db-migrate <project> --to "<url>"` (target must be empty), then set `database_url` in the yaml.
 
-If PDFs live in a synced folder (Box/OneDrive) where each person's path differs, set your local PDF folder in **Settings**.
+**[Full team setup in the handbook →](https://qiuyuyu3.github.io/AILR-AI-assisted-literature-review-pipeline/team)**
