@@ -18,6 +18,7 @@
 ### Changed
 - `llm.seed` defaults to unset; the Anthropic and Gemini clients no longer accept it.
 - UI split into smaller modules: the shared modals, the PDF-preparation tools, the card parts, and project loading each moved out of the file they had grown inside. No behaviour or component ids changed.
+- "Same study as…" moved into the full-text card's action row beside Duplicate, leaving only the grouping badge above; that row's four record-level actions now carry hover tooltips, and Duplicate's and "Same study"'s say how the two differ.
 
 ### Removed
 - `extraction.chunk_strategy` and `preprocess.keep_sections`: declared but never read by anything.

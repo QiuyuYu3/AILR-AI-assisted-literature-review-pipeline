@@ -659,14 +659,43 @@ def _ft_card(
     doi_el = doi_link(src)
     tag_chips_el = tag_chips(tags)
 
+    # Duplicate and 'Same study' sit next to each other because they are the two record-to-record
+    # actions, and they are the pair most easily confused — hence the tooltips contrasting them.
     actions_row = html.Div(
         [
             dbc.Button("History", id={"type": "ft-history-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
             dbc.Button("Tags", id={"type": "ft-tag-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
             dbc.Button(f"Note ({note_count})" if note_count else "Note", id={"type": "ft-note-btn", "source": sid}, size="sm", color="link", className="p-0 me-3"),
             dbc.Button("Duplicate", id={"type": "ft-duplicate", "source": sid}, size="sm", color="link", className="p-0 me-3 text-danger"),
+            dbc.Tooltip(
+                "The same record imported twice. It leaves the review and is counted under "
+                "‘duplicates removed’. For a different paper reporting the same study, use "
+                "‘Same study as…’ instead.",
+                target={"type": "ft-duplicate", "source": sid}, placement="bottom",
+            ),
+            dbc.Button(
+                "Change study grouping" if companions else "Same study as…",
+                id={"type": "ft-study-btn", "source": sid},
+                size="sm", color="link", className="p-0 me-3 text-secondary",
+            ),
+            dbc.Tooltip(
+                "Several reports of one study — main paper, protocol, secondary analysis — count as "
+                "one study in the PRISMA flow. All of them stay in the review; only the study count "
+                "changes. Not the same as Duplicate.",
+                target={"type": "ft-study-btn", "source": sid}, placement="bottom",
+            ),
             dbc.Button("↺ Move to screening", id={"type": "ft-move-screen", "source": sid}, size="sm", color="link", className="p-0 me-3 text-secondary"),
+            dbc.Tooltip(
+                "Sends this paper back to abstract screening: your full-text and abstract decisions "
+                "on it are cleared so it can be reviewed again.",
+                target={"type": "ft-move-screen", "source": sid}, placement="bottom",
+            ),
             dbc.Button("⟳ Re-convert PDF", id={"type": "ft-reconvert", "source": sid}, size="sm", color="link", className="p-0 text-secondary"),
+            dbc.Tooltip(
+                "Runs the PDF through conversion again with the backend currently selected under "
+                "Full text → Workflow → Preparation. Use it when the extracted text looks short or garbled.",
+                target={"type": "ft-reconvert", "source": sid}, placement="bottom",
+            ),
         ],
         className="mt-1",
     )
@@ -718,21 +747,14 @@ def _ft_card(
             className="mt-1",
         )
 
+    # State only; the button that sets it lives in actions_row with the other per-record actions.
     study_el = html.Div(
-        [
-            dbc.Badge(
-                f"Same study as {', '.join('#' + str(c['id']) for c in companions)}",
-                color="info", className="me-2",
-            ) if companions else None,
-            dbc.Button(
-                "Change study grouping" if companions else "Same study as…",
-                id={"type": "ft-study-btn", "source": sid},
-                size="sm", color="link", className="p-0 text-decoration-none text-muted",
-                title="Several reports of one study count once in the PRISMA flow.",
-            ),
-        ],
+        dbc.Badge(
+            f"Same study as {', '.join('#' + str(c['id']) for c in companions)}",
+            color="info", className="me-2",
+        ),
         className="mt-1",
-    )
+    ) if companions else None
 
     # PRISMA counts a report as "not retrieved" only once a human says the full text could not be
     # obtained; until then a paper without markdown is just work outstanding.
