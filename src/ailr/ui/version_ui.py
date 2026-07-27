@@ -6,7 +6,8 @@ from typing import Any, Callable
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html, no_update
 
-from ailr.ui._common import get_project
+from ailr.ui._project import get_project
+
 
 _LINE = {"fontFamily": "monospace", "fontSize": "0.75rem", "whiteSpace": "pre-wrap", "padding": "0 6px"}
 

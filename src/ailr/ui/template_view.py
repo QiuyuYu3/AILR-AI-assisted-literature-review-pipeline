@@ -19,7 +19,9 @@ from ailr.extraction import (
 )
 from ailr.ingest.schema_import import parse_schema_import
 from ailr.ui import version_ui
-from ailr.ui._common import get_project, prompt_view_toggle, read_criteria, render_prompt_body, with_help
+from ailr.ui._common import prompt_view_toggle, render_prompt_body, with_help
+from ailr.ui._project import get_project, read_criteria
+
 
 _VARS_KIND = "variables"
 

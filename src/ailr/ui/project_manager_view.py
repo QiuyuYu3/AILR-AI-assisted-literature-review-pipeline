@@ -11,7 +11,8 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.exceptions import AILRError
-from ailr.ui._common import create_project, list_recent_projects, switch_project
+from ailr.ui._project import create_project, list_recent_projects, switch_project
+
 
 _MODE_OPTIONS = [
     {"label": "Assisted (AI + 1 human, blinded)", "value": "assisted"},

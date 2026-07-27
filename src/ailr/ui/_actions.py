@@ -13,6 +13,7 @@ from ailr.core._db_screening import reconcile_stage_for as _reconcile_stage
 from ailr.reviewers import ScreeningDecision
 from ailr.ui._common import _short_author_year
 
+
 _VOTE_REASONING = {"abstract": "(inline screening)", "full_text": "(full-text review)"}
 
 

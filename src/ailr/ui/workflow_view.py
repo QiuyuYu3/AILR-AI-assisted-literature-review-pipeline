@@ -7,7 +7,8 @@ from dash import Input, Output, State, html, no_update
 
 from ailr.core.config import save_stage_workflow
 from ailr.ui import calibration_view
-from ailr.ui._common import get_project, reload_project
+from ailr.ui._project import get_project, reload_project
+
 
 _OPTIONS = [
     {"label": "assisted — AI + 1 human, both blinded (PRISMA-trAIce)", "value": "assisted"},
@@ -73,7 +74,7 @@ def layout(section: str = "abstract") -> Any:
     if section == "full_text":
         from ailr.ui import template_view
         from ailr.ui.extract_view import ai_extraction_panel
-        from ailr.ui.full_text_view import pdf_tools_panel
+        from ailr.ui.preprocess_view import pdf_tools_panel
 
         prep_tab = [
             html.P(

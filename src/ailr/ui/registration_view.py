@@ -10,7 +10,8 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html, no_update
 
 from ailr.core.config import save_registration
-from ailr.ui._common import get_project, reload_project
+from ailr.ui._project import get_project, reload_project
+
 
 
 def _field(label: str, cid: str, value: str, placeholder: str, help_text: str) -> Any:

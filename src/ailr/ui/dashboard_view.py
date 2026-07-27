@@ -6,7 +6,9 @@ import dash_bootstrap_components as dbc
 from dash import html
 
 from ailr.core.config import team_size_for
-from ailr.ui._common import get_project, workflow_summary
+from ailr.ui._common import workflow_summary
+from ailr.ui._project import get_project
+
 
 
 def layout(reviewer: str = "") -> Any:

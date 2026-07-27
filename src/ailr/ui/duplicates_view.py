@@ -9,7 +9,9 @@ from dash import Input, Output, State, html, no_update
 
 from ailr.core.source import source_from_record
 from ailr.exceptions import DuplicateError
-from ailr.ui._common import format_authors, get_project
+from ailr.ui._common import format_authors
+from ailr.ui._project import get_project
+
 
 _INGEST_COLS = [
     {"field": "id", "headerName": "ID", "width": 80},

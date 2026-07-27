@@ -7,7 +7,9 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, html, no_update
 
 from ailr.exceptions import DuplicateError
-from ailr.ui._common import get_project, triggered_click_id
+from ailr.ui._common import triggered_click_id
+from ailr.ui._project import get_project
+
 
 TAG_COLOR_OPTIONS = [
     {"label": "Gray", "value": "secondary"},

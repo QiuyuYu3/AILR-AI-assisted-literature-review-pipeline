@@ -14,13 +14,12 @@ from dash import ALL, Input, Output, State, ctx, html, no_update
 
 from ailr.core.source import Source
 from ailr.ui._actions import _apply_resolve, _apply_undo_resolve
-from ailr.ui._common import _short_author_year, flag_check_block, get_project, triggered_click_id
+from ailr.ui._cards import DECISION_COLORS as _DECISION_COLORS
+from ailr.ui._cards import doi_link, header_line, meta_line
+from ailr.ui._common import flag_check_block, triggered_click_id
+from ailr.ui._project import get_project
 
-_DECISION_COLORS = {
-    "include": "success",
-    "exclude": "danger",
-    "uncertain": "warning",
-}
+
 
 
 @dataclass(frozen=True)
@@ -233,21 +232,7 @@ def _conflict_card(cfg: ConflictConfig, src: Source, decisions: list[dict], ai: 
         ]
     )
 
-    header = html.Div(
-        [
-            html.Strong(f"#{sid}  ", className="text-muted"),
-            html.Span(_short_author_year(src), className="text-muted me-2"),
-        ]
-    )
-
-    meta_parts: list[str] = []
-    if src.journal:
-        meta_parts.append(src.journal)
-    if src.year:
-        meta_parts.append(str(src.year))
-    meta_line = html.P(" • ".join(meta_parts), className="text-muted small mb-1")
-
-    body: list[Any] = [header, html.H6(src.title, className="mb-1"), meta_line]
+    body: list[Any] = [header_line(src), html.H6(src.title, className="mb-1"), meta_line(src)]
     if cfg.show_abstract_extras:
         body.extend(_abstract_extras(cfg, src, sid))
     if cfg.show_read_fulltext:
@@ -283,11 +268,7 @@ def _conflict_card(cfg: ConflictConfig, src: Source, decisions: list[dict], ai: 
 
 
 def _abstract_extras(cfg: ConflictConfig, src: Source, sid: Any) -> list[Any]:
-    doi_el: Any = None
-    if src.doi:
-        doi_el = html.Div(
-            html.A(f"DOI: {src.doi}", href=f"https://doi.org/{src.doi}", target="_blank", className="small")
-        )
+    doi_el = doi_link(src)
     abstract_btn = html.Div(
         dbc.Button("Abstract ▼", id={"type": f"{cfg.prefix}-abstract-btn", "source": sid}, size="sm", color="link", className="p-0"),
         className="mt-1",

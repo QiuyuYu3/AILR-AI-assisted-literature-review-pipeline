@@ -4,6 +4,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Criteria IDs were dropped from the "what the AI receives" preview and from saved criteria versions; restoring an old version then saving could renumber criteria and unlink existing flag-checks.
+- Extraction Save/Submit wrote null over fields whose widget was missing because the variables changed after the page was opened; it now refuses to save instead.
+- Screening's abstract toggle acted on the first re-rendered card rather than the clicked one.
 - Methods export named a seed on every run; only the OpenAI API takes one.
 - Methods export described AI screening from the current config; it now reports the models and decoding settings the decisions were actually made with.
 - `ailr screen` / `extract` / `calibrate` stamped every decision `prompt_version` "v1" without snapshotting; they now version prompts the same way the UI does.
@@ -14,6 +17,7 @@
 
 ### Changed
 - `llm.seed` defaults to unset; the Anthropic and Gemini clients no longer accept it.
+- UI split into smaller modules: the shared modals, the PDF-preparation tools, the card parts, and project loading each moved out of the file they had grown inside. No behaviour or component ids changed.
 
 ### Removed
 - `extraction.chunk_strategy` and `preprocess.keep_sections`: declared but never read by anything.

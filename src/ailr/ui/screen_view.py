@@ -13,18 +13,18 @@ from ailr.core.source import Source
 from ailr.extraction import compose_screening_prompt
 from ailr.ui import ai_runner, version_ui
 from ailr.ui._actions import _apply_reset, _apply_vote
-from ailr.ui._common import (
-    _short_author_year,
-    get_project,
-    help_icon,
-    prompt_view_toggle,
-    read_criteria,
-    read_screening_additional,
-    read_screening_prompt,
-    render_prompt_body,
-    triggered_click_id,
-    with_help,
+from ailr.ui._cards import (
+    action_banner,
+    decision_controls,
+    doi_link,
+    header_line,
+    meta_line,
+    peer_note,
+    tag_chips,
 )
+from ailr.ui._common import help_icon, prompt_view_toggle, render_prompt_body, triggered_click_id, with_help
+
+from ailr.ui._project import get_project, read_criteria, read_screening_additional, read_screening_prompt
 
 
 def _screen_prompt_text() -> str:
@@ -646,42 +646,7 @@ def register_callbacks(app: Any) -> None:
         Input("screen-last-action", "data"),
     )
     def _render_banner(last):
-        if not last or not isinstance(last, dict):
-            return ""
-        if last.get("blocked"):
-            return dbc.Alert(
-                [
-                    html.Span(f"#{last.get('sid')} was already screened by ", className="me-1"),
-                    html.Strong(str(last.get("by", "another reviewer"))),
-                    html.Span(" — your vote was skipped (assisted mode: one human per paper).", className="ms-1"),
-                ],
-                color="warning",
-                className="py-2 mb-2",
-            )
-        decision = last.get("decision", "")
-        sid = last.get("sid")
-        author_year = last.get("author_year", "")
-        title = last.get("title", "")
-        title_short = (title[:80] + "…") if len(title) > 80 else title
-        color_map = {"include": "success", "exclude": "danger", "uncertain": "warning"}
-        return dbc.Alert(
-            [
-                html.Span("Saved ", className="me-1"),
-                dbc.Badge(decision.upper(), color=color_map.get(decision, "secondary"), className="me-2"),
-                html.Strong(f"#{sid} ", className="me-1"),
-                html.Span(f"{author_year} ", className="me-2") if author_year else None,
-                html.Em(f"“{title_short}”", className="me-3 text-muted small") if title_short else None,
-                dbc.Button(
-                    "Undo",
-                    id="screen-banner-undo",
-                    color="link",
-                    size="sm",
-                    className="p-0",
-                ),
-            ],
-            color="light",
-            className="py-2 mb-2 d-flex align-items-center flex-wrap",
-        )
+        return action_banner(last, undo_id="screen-banner-undo", verb="screened")
 
     @app.callback(
         Output("screen-refresh", "data", allow_duplicate=True),
@@ -818,17 +783,6 @@ def register_callbacks(app: Any) -> None:
         return cards, prev_disabled, next_disabled, page_info, counts_text
 
 
-def _meta_line(src: Source) -> str:
-    parts: list[str] = []
-    if src.journal:
-        parts.append(src.journal)
-    if src.year:
-        parts.append(str(src.year))
-    if src.source_database:
-        parts.append(f"[{src.source_database}]")
-    return " • ".join(parts)
-
-
 def _source_card(
     src: Source,
     my_decision: Optional[str],
@@ -841,71 +795,9 @@ def _source_card(
     stale: bool = False,
 ) -> Any:
     sid = src.id
-    decision_color = {
-        "include": "success",
-        "exclude": "danger",
-        "uncertain": "warning",
-    }
-
-    if my_decision:
-        right = [
-            dbc.Badge(
-                my_decision.upper(),
-                color=decision_color.get(my_decision, "secondary"),
-                className="me-2 p-2",
-                style={"fontSize": "0.9rem"},
-            ),
-            dbc.Button(
-                "Reset",
-                id={"type": "screen-reset", "source": sid},
-                size="sm",
-                color="link",
-                className="p-0 text-decoration-none",
-            ),
-        ]
-    else:
-        right = [
-            dbc.ButtonGroup(
-                [
-                    dbc.Button(
-                        "Include",
-                        id={"type": "screen-decide", "source": sid, "decision": "include"},
-                        color="success",
-                        size="sm",
-                    ),
-                    dbc.Button(
-                        "Exclude",
-                        id={"type": "screen-decide", "source": sid, "decision": "exclude"},
-                        color="danger",
-                        size="sm",
-                    ),
-                    dbc.Button(
-                        "Uncertain",
-                        id={"type": "screen-decide", "source": sid, "decision": "uncertain"},
-                        color="warning",
-                        size="sm",
-                    ),
-                ],
-            ),
-        ]
-
-    peer_indicator: Any = None
-    if workflow == "independent" and peer_count > 0:
-        peer_indicator = html.Small(
-            f"{peer_count} other reviewer(s) voted",
-            className="text-muted d-block mt-1",
-        )
-
-    doi_el: Any = None
-    if src.doi:
-        doi_el = html.Div(
-            html.A(
-                f"DOI: {src.doi}",
-                href=f"https://doi.org/{src.doi}",
-                target="_blank",
-                className="small",
-            )
-        )
+    right = decision_controls(sid, my_decision, prefix="screen")
+    peer_indicator = peer_note(workflow, peer_count)
+    doi_el = doi_link(src)
 
     abstract_btn = html.Div(
         dbc.Button(
@@ -958,30 +850,14 @@ def _source_card(
         className="mt-1",
     )
 
-    left_top = html.Div(
-        [
-            html.Strong(f"#{sid}  ", className="text-muted"),
-            html.Span(_short_author_year(src), className="text-muted me-2"),
-            dbc.Badge("AI screening outdated", color="warning", className="ms-1",
-                      title="Criteria or the screening prompt changed since this paper was AI-screened.") if stale else None,
-        ]
-    )
+    stale_badge = dbc.Badge(
+        "AI screening outdated", color="warning", className="ms-1",
+        title="Criteria or the screening prompt changed since this paper was AI-screened.",
+    ) if stale else None
+    left_top = header_line(src, badges=[stale_badge])
     title_el = html.H6(src.title, className="mb-1")
-    meta_el = html.P(_meta_line(src), className="text-muted small mb-1")
-    tag_chips_el: Any = html.Span()
-    if tags:
-        tag_chips_el = html.Div(
-            [
-                dbc.Badge(
-                    t["name"],
-                    color=t.get("color") or "secondary",
-                    pill=True,
-                    className="me-1",
-                )
-                for t in tags
-            ],
-            className="mt-1 mb-1",
-        )
+    meta_el = meta_line(src, include_database=True)
+    tag_chips_el = tag_chips(tags)
 
     return dbc.Card(
         dbc.CardBody(

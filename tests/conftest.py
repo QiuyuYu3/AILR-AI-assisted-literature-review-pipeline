@@ -6,7 +6,7 @@ tests exercise the actual project -> DB -> UI wiring. Mock only at external boun
 
 import pytest
 
-import ailr.ui._common as common
+import ailr.ui._project as ui_project
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
@@ -18,8 +18,8 @@ def tmp_project(tmp_path, monkeypatch):
     root = tmp_path / "proj"
     project = Project.init(root)
     monkeypatch.setenv("AILR_PROJECT", str(root))
-    monkeypatch.setattr(common, "_project", None)              # reset get_project() cache
-    monkeypatch.setattr(common, "_RECENT_FILE", tmp_path / "recent.json")  # keep ~/.ailr untouched
+    monkeypatch.setattr(ui_project, "_project", None)              # reset get_project() cache
+    monkeypatch.setattr(ui_project, "_RECENT_FILE", tmp_path / "recent.json")  # keep ~/.ailr untouched
     return project
 
 

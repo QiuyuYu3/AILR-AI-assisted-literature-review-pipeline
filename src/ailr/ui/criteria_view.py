@@ -10,7 +10,9 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.criteria import CriteriaSet, CriterionSpec, assign_ids, import_from_text, render_criteria_markdown, save_criteria
 from ailr.ingest.criteria_import import parse_criteria_import
 from ailr.ui import version_ui
-from ailr.ui._common import get_project, read_criteria_set, with_help
+from ailr.ui._common import with_help
+from ailr.ui._project import get_project, read_criteria_set
+
 
 _KIND = "criteria"
 

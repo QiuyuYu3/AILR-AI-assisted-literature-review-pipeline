@@ -14,7 +14,9 @@ from ailr.core.source import Source
 from ailr.ui import ai_runner
 from ailr.extraction import FieldSpec, compose_schema
 from ailr.reviewers import ExtractionResult
-from ailr.ui._common import format_authors, get_project, reload_project
+from ailr.ui._common import format_authors
+from ailr.ui._project import get_project, reload_project
+
 
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
@@ -862,6 +864,7 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
         items.append(html.Div(block, className="small mb-2"))
     if flag_check:
         from ailr.ui._common import criterion_names
+
         from ailr.tasks.extract import _derive_ft_decision
 
         names = criterion_names()

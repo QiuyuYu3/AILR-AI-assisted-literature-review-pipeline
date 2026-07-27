@@ -7,7 +7,9 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
 from ailr.reviewers import ScreeningDecision
-from ailr.ui._common import format_authors, get_project
+from ailr.ui._common import format_authors
+from ailr.ui._project import get_project
+
 
 _TAG_ACTIONS = [
     {"label": "Apply (add) tag", "value": "add"},

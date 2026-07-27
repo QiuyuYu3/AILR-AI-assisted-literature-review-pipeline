@@ -18,7 +18,8 @@ from ailr.metrics import (
     percent_agreement,
     rater_overlaps,
 )
-from ailr.ui._common import get_project
+from ailr.ui._project import get_project
+
 
 _IRR_STAGE_OPTIONS = [
     {"label": "Abstract screening", "value": "abstract"},

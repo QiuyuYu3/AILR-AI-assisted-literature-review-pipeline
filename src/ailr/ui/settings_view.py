@@ -14,17 +14,9 @@ from ailr.extraction import (
     compose_screening_prompt,
     schema_to_markdown,
 )
-from ailr.ui._common import (
-    clear_current_project_data,
-    delete_current_project,
-    get_project,
-    help_icon,
-    prompt_view_toggle,
-    read_criteria,
-    read_screening_additional,
-    reload_project,
-    render_prompt_body,
-)
+from ailr.ui._common import help_icon, prompt_view_toggle, render_prompt_body
+
+from ailr.ui._project import clear_current_project_data, delete_current_project, get_project, read_criteria, read_screening_additional, reload_project
 
 _PROVIDERS = [
     {"label": "Anthropic", "value": "anthropic"},

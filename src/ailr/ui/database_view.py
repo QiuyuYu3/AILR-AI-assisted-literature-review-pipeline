@@ -6,7 +6,8 @@ import dash_ag_grid as dag
 import dash_bootstrap_components as dbc
 from dash import Input, Output, html, no_update
 
-from ailr.ui._common import get_project
+from ailr.ui._project import get_project
+
 
 _TABLE_OPTIONS = [
     {"label": "sources", "value": "sources"},

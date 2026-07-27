@@ -15,7 +15,9 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
 from ailr.ui import ai_runner
-from ailr.ui._common import flag_check_block, get_project
+from ailr.ui._common import flag_check_block
+from ailr.ui._project import get_project
+
 
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
