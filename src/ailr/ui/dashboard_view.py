@@ -5,6 +5,7 @@ from typing import Any, Optional
 import dash_bootstrap_components as dbc
 from dash import html
 
+from ailr.core.config import team_size_for
 from ailr.ui._common import get_project
 
 
@@ -54,7 +55,11 @@ def _build_content(reviewer: Optional[str]) -> Any:
     # Count extraction only among papers still confirmed for it (full-text includes with markdown),
     # so a paper moved back to full-text review stops counting as extracted until it's re-included.
     _ft_conflict_ids = db.unresolved_conflict_ids(pid, cfg.screening.workflow, stage="full_text")
-    eligible_ext_ids = [s.id for s in db.list_full_text_final_includes_with_markdown(pid) if s.id not in _ft_conflict_ids]
+    _ft_team_size = team_size_for(cfg.screening.workflow)
+    eligible_ext_ids = [
+        s.id for s in db.list_full_text_final_includes_with_markdown(pid, team_size=_ft_team_size)
+        if s.id not in _ft_conflict_ids
+    ]
     ai_extracted = len(db.sources_with_extraction(eligible_ext_ids, "ai"))
     human_extracted = len(db.sources_with_submission(eligible_ext_ids))
     # Only independent extraction produces papers waiting on an adjudicated consensus.

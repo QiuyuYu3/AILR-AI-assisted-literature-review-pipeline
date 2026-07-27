@@ -51,7 +51,7 @@ def ai_extraction_panel() -> list[Any]:
 
     return [
         dbc.Label("AI extraction", className="fw-bold"),
-        dbc.Switch(id="extract-ai-mock", label="Mock (no API cost)", value=True, className="small"),
+        dbc.Switch(id="extract-ai-mock", label="Mock (no API calls)", value=True, className="small"),
         dbc.Switch(id="extract-ai-force", label="Force re-extract (overwrite existing AI data)", value=False, className="small"),
         html.P("Runs on papers that passed abstract screening (include) and have full-text markdown. Already-extracted papers are skipped unless 'Force re-extract' is on.", className="text-muted small mb-1"),
         dbc.Button("Run AI extraction", id="extract-ai-run", color="primary", outline=True, size="sm"),

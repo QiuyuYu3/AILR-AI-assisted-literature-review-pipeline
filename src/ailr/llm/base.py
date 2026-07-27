@@ -15,7 +15,12 @@ class ToolSchema:
 
 @dataclass
 class CallMetadata:
-    """Per-call telemetry. Persisted to api_calls table."""
+    """Per-call telemetry. Persisted to api_calls table.
+
+    Token counts only. ailr deliberately does not estimate spend: per-token prices change
+    faster than the package ships, and a stale price table reads as authoritative while
+    being wrong. Multiply these counts by your provider's current rates instead.
+    """
     provider: str
     model: str
     input_tokens: int = 0
@@ -23,7 +28,6 @@ class CallMetadata:
     cached_input_tokens: int = 0
     cache_creation_tokens: int = 0
     latency_ms: int = 0
-    cost_estimate: float = 0.0
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -31,7 +35,7 @@ class LLMClient(ABC):
     """Abstract LLM client. All providers implement complete_structured().
 
     Concrete clients must enforce the tool_schema at the provider level — no free-text
-    JSON parsing. They must also populate CallMetadata with token counts and cost.
+    JSON parsing. They must also populate CallMetadata with token counts.
     """
 
     @abstractmethod

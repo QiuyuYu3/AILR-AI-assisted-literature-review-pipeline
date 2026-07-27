@@ -44,7 +44,7 @@ def _confusion_block(pairs: list, categories: list[str], rater_a: str, rater_b: 
 
 def _api_block(rows: list) -> Any:
     if not rows:
-        return html.Small("(no API calls logged — Mock runs aren't billed)", className="text-muted")
+        return html.Small("(no API calls logged — Mock runs make no real calls)", className="text-muted")
     head = html.Thead(html.Tr([html.Th(h) for h in ["Provider / Model", "Calls", "Input tok", "Output tok", "Avg latency (ms)"]]))
     body = html.Tbody([
         html.Tr([
@@ -345,7 +345,8 @@ def layout() -> Any:
         ),
         html.Hr(className="my-4"),
         html.H4("API usage"),
-        html.P("Per provider/model token + cost + latency. Mock runs are not billed.", className="text-muted small"),
+        html.P("Per provider/model tokens + latency. Multiply by your provider's current rates for spend; "
+               "ailr does not ship a price table. Mock runs make no real calls.", className="text-muted small"),
         _api_block(api_summary),
     ]
 

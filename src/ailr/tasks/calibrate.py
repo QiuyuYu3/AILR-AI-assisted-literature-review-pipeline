@@ -25,7 +25,6 @@ class QuickTestSummary:
     ai_counts: dict[str, int] = field(default_factory=lambda: {"include": 0, "exclude": 0, "uncertain": 0})
     failed: int = 0
     failures: list[dict] = field(default_factory=list)
-    total_cost_estimate: float = 0.0
 
 
 class QuickTestTask:
@@ -91,8 +90,6 @@ class QuickTestTask:
                     flag_check=decision.flag_check,
                 )
                 summary.ai_counts[decision.decision] += 1
-                if isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
-                    summary.total_cost_estimate += self.reviewer.last_metadata.cost_estimate
                 if on_progress:
                     on_progress(idx, sample_size, decision, None)
             except Exception as e:
@@ -101,7 +98,6 @@ class QuickTestTask:
                 if on_progress:
                     on_progress(idx, sample_size, None, e)
 
-        self.project.db.set_test_run_cost(run_id, summary.total_cost_estimate)
         return summary
 
 
@@ -166,7 +162,6 @@ class CalibrationSummary:
     agreement: float = float("nan")
     failed: int = 0
     failures: list[dict] = field(default_factory=list)
-    total_cost_estimate: float = 0.0
 
 
 @dataclass
@@ -177,7 +172,6 @@ class QuickExtractSummary:
     decision_counts: dict[str, int] = field(default_factory=lambda: {"include": 0, "exclude": 0, "uncertain": 0})
     failed: int = 0
     failures: list[dict] = field(default_factory=list)
-    total_cost_estimate: float = 0.0
 
 
 class ExtractionQuickTestTask:
@@ -271,8 +265,6 @@ class ExtractionQuickTestTask:
                 )
                 if ft_decision in summary.decision_counts:
                     summary.decision_counts[ft_decision] += 1
-                if isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
-                    summary.total_cost_estimate += self.reviewer.last_metadata.cost_estimate
                 if on_progress:
                     on_progress(idx, sample_size, None, None)
             except Exception as e:
@@ -281,7 +273,6 @@ class ExtractionQuickTestTask:
                 if on_progress:
                     on_progress(idx, sample_size, None, e)
 
-        self.project.db.set_test_run_cost(run_id, summary.total_cost_estimate)
         return summary
 
 
@@ -399,7 +390,6 @@ class CalibrationTask:
         )
         summary.failed += result.failed
         summary.failures.extend(result.failures)
-        summary.total_cost_estimate += result.total_cost_estimate
         # Candidates are filtered on markdown_path, so a skip here means the file is gone from
         # disk. Left silent it would shrink the sample without saying so.
         if result.skipped_no_markdown:
@@ -437,9 +427,7 @@ class CalibrationTask:
                 summary.ai_counts[decision.decision] += 1
 
                 if isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
-                    meta = self.reviewer.last_metadata
-                    self.project.db.insert_api_call(self.project.project_id, meta)
-                    summary.total_cost_estimate += meta.cost_estimate
+                    self.project.db.insert_api_call(self.project.project_id, self.reviewer.last_metadata)
 
                 if on_progress:
                     on_progress(idx, sample_size, decision, None)

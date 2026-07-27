@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Optional
 
 from ailr.core._db_calibration import CALIBRATION_STAGE
 from ailr.core._db_facade import _row_to_source
+from ailr.core.config import team_size_for
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError
 
@@ -13,8 +14,17 @@ if TYPE_CHECKING:
     from ailr.reviewers import ScreeningDecision
 
 
-# A paper's FINAL verdict at one stage is include: reconciled as include, or some human's latest
-# vote is include and no reconciliation overrode it. Takes (reconcile_stage, stage, reconcile_stage).
+def reconcile_stage_for(stage: str) -> str:
+    """reconciliations.stage uses its own vocabulary, not screening_decisions.stage. The third
+    set of names lives in CALIBRATION_STAGE."""
+    return "abstract_screening" if stage == "abstract" else "full_text_screening"
+
+
+# A paper's FINAL verdict at one stage is include: reconciled as include, or the stage is finished
+# for it (team_size humans have voted) and some human's latest vote is include with no
+# reconciliation overriding it. Papers whose reviewers disagree still satisfy this — they are
+# removed afterwards by final_include_ids, which is the only place that knows the conflict rule.
+# Takes (reconcile_stage, stage, reconcile_stage, stage, team_size).
 _FINAL_INCLUDE_PREDICATE = """
                 EXISTS (SELECT 1 FROM reconciliations r
                         WHERE r.source_id = s.id AND r.stage = ? AND r.final_value = 'include')
@@ -27,6 +37,8 @@ _FINAL_INCLUDE_PREDICATE = """
                                           AND reviewer_type = 'human' AND stage = d.stage))
                   AND NOT EXISTS (SELECT 1 FROM reconciliations r
                                   WHERE r.source_id = s.id AND r.stage = ?)
+                  AND (SELECT COUNT(DISTINCT reviewer_id) FROM screening_decisions
+                       WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) >= ?
                 )
 """
 
@@ -37,17 +49,31 @@ _LATEST_CALIBRATION_ROUND_SQL = (
 )
 
 
-# "final full-text include with markdown" = reconciled-as-include, or human-included with no
-# conflict; gates the to_extract queue (shared with list_full_text_final_includes_with_markdown).
-FT_FINAL_INCLUDE_MD_SQL = """(s.markdown_path IS NOT NULL AND (
+def ft_final_include_md_sql(team_size: int = 1) -> str:
+    """The `_FINAL_INCLUDE_PREDICATE` rule at the full-text stage, plus "markdown present":
+    what gates the to-extract queue. Emitted as a parameterless fragment (stages are literals here
+    and team_size is an int this module controls) so callers can drop it into a larger WHERE
+    without disturbing their own placeholder order.
+
+    Reads the latest vote PER REVIEWER, not the single most recent row for the paper: with two
+    reviewers the latter made the answer depend on who happened to vote last. Papers whose
+    reviewers disagree still pass; the caller subtracts unresolved_conflict_ids.
+    """
+    return f"""(s.markdown_path IS NOT NULL AND (
     EXISTS (SELECT 1 FROM reconciliations r
             WHERE r.source_id = s.id AND r.stage = 'full_text_screening' AND r.final_value = 'include')
-    OR ((SELECT decision FROM screening_decisions d
-         WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
-         ORDER BY d.id DESC LIMIT 1) = 'include'
+    OR (EXISTS (SELECT 1 FROM screening_decisions d
+                WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = 'full_text'
+                  AND d.decision = 'include'
+                  AND d.id = (SELECT MAX(id) FROM screening_decisions
+                              WHERE source_id = d.source_id AND reviewer_id = d.reviewer_id
+                                AND reviewer_type = 'human' AND stage = 'full_text'))
         AND NOT EXISTS (SELECT 1 FROM reconciliations r
-                        WHERE r.source_id = s.id AND r.stage = 'full_text_screening'))
+                        WHERE r.source_id = s.id AND r.stage = 'full_text_screening')
+        AND (SELECT COUNT(DISTINCT reviewer_id) FROM screening_decisions
+             WHERE source_id = s.id AND reviewer_type = 'human' AND stage = 'full_text') >= {int(team_size)})
 ))"""
+
 
 def _route_filter(route: Optional[str]) -> str:
     """PRISMA 2020 reports two identification arms; every flow count can be scoped to one of them.
@@ -592,7 +618,7 @@ class ScreeningMixin:
                          "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = 'full_text')")
             params.append(reviewer_id)
         elif status == "to_extract":
-            where.append(FT_FINAL_INCLUDE_MD_SQL)
+            where.append(ft_final_include_md_sql(team_size))
             where.append("NOT EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
                          "AND e.extractor_type = 'human' AND e.field_name = '_submitted')")
         elif status == "extracted_mine":
@@ -664,45 +690,69 @@ class ScreeningMixin:
         ).fetchall()
         return [_row_to_source(r) for r in rows]
 
-    def final_include_md_ids(self, source_ids: list[int]) -> set[int]:
+    def final_include_md_ids(self, source_ids: list[int], team_size: int = 1) -> set[int]:
         """Subset of the given sources that are 'final full-text include with markdown' (extraction-
-        eligible): reconciled-as-include, or human-included with no conflict, and markdown present."""
+        eligible): reconciled-as-include, or human-included with the stage finished, and markdown
+        present. Unresolved conflicts still appear here; the caller subtracts them."""
         if not source_ids:
             return set()
         ph = ",".join("?" for _ in source_ids)
-        sql = f"SELECT s.id FROM sources s WHERE s.id IN ({ph}) AND {FT_FINAL_INCLUDE_MD_SQL}"
+        sql = f"SELECT s.id FROM sources s WHERE s.id IN ({ph}) AND {ft_final_include_md_sql(team_size)}"
         return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
 
-    def count_final_include_studies(self, project_id: int, route: Optional[str] = None) -> int:
-        """Included STUDIES, where several reports of one study count once. PRISMA 2020's included
-        box reports this alongside the number of reports. Equal to the report count unless someone
-        has grouped companion reports."""
-        sql = f"""
-            SELECT COUNT(DISTINCT COALESCE(s.study_group_id, s.id)) AS n FROM sources s
-            WHERE s.project_id = ? {_route_filter(route)}
-              AND ({_FINAL_INCLUDE_PREDICATE})
-        """
-        return self._conn.execute(
-            sql, (project_id, "full_text_screening", "full_text", "full_text_screening")
-        ).fetchone()["n"]
+    def final_include_ids(self, project_id: int, stage: str = "abstract", *, workflow: str,
+                          require_markdown: bool = False, route: Optional[str] = None,
+                          not_retrieved: Optional[bool] = None) -> set[int]:
+        """PAPERS whose review at this stage is FINISHED and settled on include.
 
-    def count_final_includes(self, project_id: int, stage: str = "abstract", require_markdown: bool = False,
-                             route: Optional[str] = None, not_retrieved: Optional[bool] = None) -> int:
-        """PAPERS (not decisions) whose final decision at this stage is include: reconciled-as-include,
-        or at least one human's LATEST verdict is include with no reconciliation recorded. For the
-        PRISMA flow, where two reviewers including the same paper must count once.
-        `not_retrieved` narrows to (or excludes) reports marked as impossible to obtain."""
-        reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
+        Three states exist, not two: include, exclude, and not-yet-decided. A paper only counts
+        as included once the stage is actually done with it — every reviewer the workflow calls
+        for has voted, and either they agree or an adjudicator has ruled. A paper one of two
+        reviewers has judged, or one they disagree on with no adjudication, is unfinished
+        business and belongs in neither the included nor the excluded box.
+
+        The conflict rule itself lives in unresolved_conflict_ids and is only referenced here,
+        so the two can never drift apart.
+        """
+        reconcile_stage = reconcile_stage_for(stage)
         md = "AND s.markdown_path IS NOT NULL" if require_markdown else ""
         nr = ""
         if not_retrieved is not None:
             nr = f"AND COALESCE(s.full_text_not_retrieved, 0) = {1 if not_retrieved else 0}"
         sql = f"""
-            SELECT COUNT(*) AS n FROM sources s
+            SELECT s.id FROM sources s
             WHERE s.project_id = ? {md} {nr} {_route_filter(route)}
               AND ({_FINAL_INCLUDE_PREDICATE})
         """
-        return self._conn.execute(sql, (project_id, reconcile_stage, stage, reconcile_stage)).fetchone()["n"]
+        params = (project_id, reconcile_stage, stage, reconcile_stage, stage, team_size_for(workflow))
+        settled = {r["id"] for r in self._conn.execute(sql, params).fetchall()}
+        return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
+
+    def count_final_include_studies(self, project_id: int, *, workflow: str,
+                                    route: Optional[str] = None) -> int:
+        """Included STUDIES, where several reports of one study count once. PRISMA 2020's included
+        box reports this alongside the number of reports. Equal to the report count unless someone
+        has grouped companion reports."""
+        ids = self.final_include_ids(project_id, "full_text", workflow=workflow, route=route)
+        if not ids:
+            return 0
+        ph = ",".join("?" for _ in ids)
+        row = self._conn.execute(
+            f"SELECT COUNT(DISTINCT COALESCE(study_group_id, id)) AS n FROM sources WHERE id IN ({ph})",
+            list(ids),
+        ).fetchone()
+        return row["n"]
+
+    def count_final_includes(self, project_id: int, stage: str = "abstract", *, workflow: str,
+                             require_markdown: bool = False, route: Optional[str] = None,
+                             not_retrieved: Optional[bool] = None) -> int:
+        """How many PAPERS (not decisions) final_include_ids returns. For the PRISMA flow, where
+        two reviewers including the same paper must count once.
+        `not_retrieved` narrows to (or excludes) reports marked as impossible to obtain."""
+        return len(self.final_include_ids(
+            project_id, stage, workflow=workflow, require_markdown=require_markdown,
+            route=route, not_retrieved=not_retrieved,
+        ))
 
     def list_sources_overview(self, project_id: int) -> list[dict]:
         """Joined view for the Sources overview UI: source row + latest AI/human decision + extraction
@@ -809,7 +859,7 @@ class ScreeningMixin:
             params.append(stage)
         n = self._conn.execute(f"SELECT COUNT(*) AS n FROM screening_decisions WHERE {where}", params).fetchone()["n"]
         self._conn.execute(f"DELETE FROM screening_decisions WHERE {where}", params)
-        # mock screening/calibration API-call rows (token/cost tracking)
+        # mock screening/calibration API-call rows (token tracking)
         self._conn.execute(
             "DELETE FROM api_calls WHERE project_id = ? AND provider = 'mock' AND model = 'mock-screen'",
             (project_id,),
@@ -890,7 +940,8 @@ class ScreeningMixin:
             out[r["source_id"]] = r["n"]
         return out
 
-    def full_text_page_meta(self, source_ids: list[int], reviewer_id: str, stage: str = "full_text") -> dict:
+    def full_text_page_meta(self, source_ids: list[int], reviewer_id: str, stage: str = "full_text",
+                            team_size: int = 1) -> dict:
         """One-round-trip per-source metadata for the full-text page: this reviewer's latest decision,
         peer-reviewer count, latest AI decision, note count, human submitter, and extraction-eligibility.
         Each piece is a scalar-per-source LEFT JOIN (no fan-out), so this returns exactly what the six
@@ -908,7 +959,7 @@ class ScreeningMixin:
                    ai.decision AS ai_decision,
                    COALESCE(nt.n, 0) AS note_count,
                    sub.extractor_id AS extracted_by,
-                   CASE WHEN {FT_FINAL_INCLUDE_MD_SQL} THEN 1 ELSE 0 END AS extract_eligible
+                   CASE WHEN {ft_final_include_md_sql(team_size)} THEN 1 ELSE 0 END AS extract_eligible
             FROM sources s
             LEFT JOIN (
                 SELECT sd.source_id, sd.decision FROM screening_decisions sd
@@ -1052,7 +1103,7 @@ class ScreeningMixin:
         """Independent mode: both humans have voted but there is no clean agreed include/exclude —
         either they differ, or anyone voted 'uncertain' (uncertain is unresolved, needs adjudication).
         Excludes already-reconciled sources."""
-        reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
+        reconcile_stage = reconcile_stage_for(stage)
         sql = f"SELECT s.* FROM sources s WHERE {_INDEPENDENT_CONFLICT_WHERE} ORDER BY s.id"
         rows = self._conn.execute(sql, (project_id, stage, stage, stage, reconcile_stage)).fetchall()
         return [_row_to_source(r) for r in rows]
@@ -1061,20 +1112,27 @@ class ScreeningMixin:
         """Assisted mode: sources where the latest AI verdict differs from the latest human verdict
         (or the AI is 'uncertain'), with no reconciliation yet. The AI counts as the second (blinded)
         reviewer."""
-        reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
+        reconcile_stage = reconcile_stage_for(stage)
         sql = _assisted_conflict_sql("s.*", with_order=True)
         rows = self._conn.execute(sql, (stage, stage, project_id, reconcile_stage)).fetchall()
         return [_row_to_source(r) for r in rows]
 
     def unresolved_conflict_ids(self, project_id: int, workflow: str, stage: str = "abstract") -> set[int]:
         """Ids with an unresolved conflict at this stage, using the same rule as the Conflicts tab for
-        this workflow (AI-vs-human in assisted, human-vs-human in independent)."""
-        conflicts = (
-            self.list_assisted_conflicts(project_id, stage=stage)
-            if workflow == "assisted"
-            else self.list_screening_conflicts(project_id, stage=stage)
-        )
-        return {s.id for s in conflicts if s.id is not None}
+        this workflow (AI-vs-human in assisted, human-vs-human in independent).
+
+        THE definition of "unresolved conflict" for the whole codebase: the queues, the dashboard,
+        and the PRISMA counts all call this rather than re-expressing the rule. Selects ids only —
+        it is called per page render and per PRISMA figure, where hydrating Source rows is waste.
+        """
+        reconcile_stage = reconcile_stage_for(stage)
+        if workflow == "assisted":
+            sql = _assisted_conflict_sql("s.id")
+            params: tuple = (stage, stage, project_id, reconcile_stage)
+        else:
+            sql = f"SELECT s.id FROM sources s WHERE {_INDEPENDENT_CONFLICT_WHERE}"
+            params = (project_id, stage, stage, stage, reconcile_stage)
+        return {r["id"] for r in self._conn.execute(sql, params).fetchall()}
 
     def get_human_decisions(self, source_id: int, stage: str = "abstract") -> list[dict]:
         rows = self._conn.execute(
@@ -1125,7 +1183,7 @@ class ScreeningMixin:
         rationale: Optional[str] = None,
         stage: str = "abstract",
     ) -> int:
-        reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
+        reconcile_stage = reconcile_stage_for(stage)
         try:
             cur = self._conn.execute(
                 """
@@ -1168,13 +1226,13 @@ class ScreeningMixin:
 
     def count_unresolved_screening_conflicts(self, project_id: int, stage: str = "abstract") -> int:
         """Independent-mode unresolved-conflict count; same WHERE as list_screening_conflicts."""
-        reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
+        reconcile_stage = reconcile_stage_for(stage)
         sql = f"SELECT COUNT(*) AS n FROM sources s WHERE {_INDEPENDENT_CONFLICT_WHERE}"
         return self._conn.execute(sql, (project_id, stage, stage, stage, reconcile_stage)).fetchone()["n"]
 
     def count_unresolved_assisted_conflicts(self, project_id: int, stage: str = "abstract") -> int:
         """Assisted-mode unresolved-conflict count; same query body as list_assisted_conflicts."""
-        reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
+        reconcile_stage = reconcile_stage_for(stage)
         sql = _assisted_conflict_sql("COUNT(*) AS n")
         return self._conn.execute(sql, (stage, stage, project_id, reconcile_stage)).fetchone()["n"]
 

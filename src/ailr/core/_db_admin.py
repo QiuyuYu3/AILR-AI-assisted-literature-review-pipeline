@@ -1,4 +1,4 @@
-"""Raw-table inspection, test extractions, API-cost summaries, and tags."""
+"""Raw-table inspection, test extractions, API usage summaries, and tags."""
 
 import json
 import sqlite3
@@ -131,7 +131,7 @@ class AdminMixin:
             return len(ids)
 
     def api_call_summary(self, project_id: int) -> list[dict]:
-        """Per-(provider, model) aggregates from api_calls."""
+        """Per-(provider, model) token aggregates from api_calls. No spend estimate: see CallMetadata."""
         sql = """
             SELECT
                 provider,
@@ -139,12 +139,11 @@ class AdminMixin:
                 COUNT(*) AS calls,
                 SUM(input_tokens) AS input_tokens,
                 SUM(output_tokens) AS output_tokens,
-                SUM(cost_estimate) AS cost_estimate,
                 AVG(latency_ms) AS avg_latency_ms
             FROM api_calls
             WHERE project_id = ?
             GROUP BY provider, model
-            ORDER BY cost_estimate DESC
+            ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC
         """
         return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 

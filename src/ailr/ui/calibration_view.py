@@ -186,7 +186,7 @@ def layout(stage: str = "abstract") -> Any:
                              dbc.Input(id=f"{p}-n", type="number", min=1, step=1, value=default_n, size="sm")],
                             id=f"{p}-n-col", width=3),
                     dbc.Col([dbc.Label(" ", className="small d-block"),
-                             dbc.Switch(id=f"{p}-mock", label="Mock (no API cost)", value=True, className="small")], width=3),
+                             dbc.Switch(id=f"{p}-mock", label="Mock (no API calls)", value=True, className="small")], width=3),
                     dbc.Col([dbc.Label(" ", className="small d-block"),
                              dbc.Button("Run", id=f"{p}-run", color="primary", size="sm")], width="auto"),
                     dbc.Col([dbc.Label(" ", className="small d-block"),

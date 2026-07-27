@@ -12,6 +12,7 @@ from typing import Any, Optional
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
+from ailr.core.config import team_size_for
 from ailr.core.source import Source
 from ailr.ui import ai_runner
 from ailr.ui._actions import _apply_reset, _apply_vote
@@ -693,7 +694,7 @@ def register_callbacks(app: Any) -> None:
         if not rid:
             return [dbc.Alert("Enter your reviewer ID above to begin.", color="info")], "", True, True, ""
 
-        team_size = 2 if workflow == "independent" else 1
+        team_size = team_size_for(workflow)
         try:
             psize = int(pagesize)
         except (TypeError, ValueError):
@@ -755,7 +756,7 @@ def register_callbacks(app: Any) -> None:
 
         page_ids = [s.id for s in page_sources if s.id is not None]
         # One round-trip for all per-source scalar metadata (was six separate queries).
-        meta = db.full_text_page_meta(page_ids, rid, stage="full_text")
+        meta = db.full_text_page_meta(page_ids, rid, stage="full_text", team_size=team_size)
         my_decisions = meta["my_decisions"]
         peer_counts = meta["peer_counts"] if workflow == "independent" else {}
         extract_ids = meta["extract_eligible"] - ft_conflict_ids  # extraction-eligible, minus unresolved conflicts

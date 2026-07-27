@@ -108,6 +108,5 @@ class MockLLMClient(LLMClient):
             input_tokens=(len(system) + len(user_message)) // 4,
             output_tokens=128,
             latency_ms=self._latency_ms,
-            cost_estimate=0.0,
         )
         return output, meta

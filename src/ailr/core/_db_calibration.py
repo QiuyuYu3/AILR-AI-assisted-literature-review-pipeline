@@ -23,9 +23,8 @@ class CalibrationMixin:
             cur = self._conn.execute(
                 """
                 INSERT INTO api_calls
-                    (project_id, provider, model, input_tokens, output_tokens,
-                     cost_estimate, latency_ms)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (project_id, provider, model, input_tokens, output_tokens, latency_ms)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project_id,
@@ -33,7 +32,6 @@ class CalibrationMixin:
                     metadata.model,
                     metadata.input_tokens,
                     metadata.output_tokens,
-                    metadata.cost_estimate,
                     metadata.latency_ms,
                 ),
             )
@@ -183,15 +181,10 @@ class CalibrationMixin:
             self._conn.commit()
             return cur.lastrowid
 
-    def set_test_run_cost(self, run_id: int, cost: float) -> None:
-        with self._lock, self._conn.transaction():
-            self._conn.execute("UPDATE test_runs SET total_cost_estimate = ? WHERE id = ?", (cost, run_id))
-            self._conn.commit()
-
     def list_test_runs(self, project_id: int, stage: str = "abstract") -> list[dict]:
         rows = self._conn.execute(
             """
-            SELECT id, sample_size, total_cost_estimate, note, created_at
+            SELECT id, sample_size, note, created_at
             FROM test_runs WHERE project_id = ? AND stage = ?
             ORDER BY id DESC
             """,

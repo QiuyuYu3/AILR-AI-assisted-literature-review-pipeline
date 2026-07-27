@@ -2,7 +2,7 @@
 
 Public surface:
     - LLMClient: provider-agnostic interface (ABC)
-    - CallMetadata: per-call usage + cost + latency record
+    - CallMetadata: per-call token usage + latency record
     - ToolSchema: provider-agnostic JSON-Schema-based output contract
     - make_llm_client: factory mapping provider name -> concrete client
 

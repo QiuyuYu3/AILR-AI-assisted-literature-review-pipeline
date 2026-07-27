@@ -5,7 +5,7 @@ import sqlite3
 from typing import TYPE_CHECKING, Optional
 
 from ailr.core._db_facade import _row_to_source
-from ailr.core._db_screening import FT_FINAL_INCLUDE_MD_SQL
+from ailr.core._db_screening import ft_final_include_md_sql
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError
 
@@ -305,7 +305,7 @@ class ExtractionMixin:
             f"AND stage = 'full_text' AND {in_proj}",
             (project_id,),
         )
-        # mock extraction API-call rows (token/cost tracking)
+        # mock extraction API-call rows (token tracking)
         self._conn.execute(
             "DELETE FROM api_calls WHERE project_id = ? AND provider = 'mock' AND model = 'mock-extract'",
             (project_id,),
@@ -377,15 +377,16 @@ class ExtractionMixin:
         """
         return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
-    def list_full_text_final_includes_with_markdown(self, project_id: int) -> list[Source]:
+    def list_full_text_final_includes_with_markdown(self, project_id: int, team_size: int = 1) -> list[Source]:
         """Extraction-verify queue: papers (with markdown) whose FINAL full-text decision is
         include — i.e. resolved-as-include in conflicts (reconciliation), or human-included
-        with no conflict. The AI's own verdict is the blinded second opinion (surfaced in
-        conflicts), not what gates this queue. 'Move back to full-text' removes a paper by
+        with the stage finished. The AI's own verdict is the blinded second opinion (surfaced in
+        conflicts), not what gates this queue. Unresolved conflicts still appear here; the caller
+        subtracts unresolved_conflict_ids. 'Move back to full-text' removes a paper by
         clearing the human's full-text verdict + any full-text reconciliation (AI kept)."""
         sql = f"""
             SELECT s.* FROM sources s
-            WHERE s.project_id = ? AND {FT_FINAL_INCLUDE_MD_SQL}
+            WHERE s.project_id = ? AND {ft_final_include_md_sql(team_size)}
             ORDER BY s.id
         """
         return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]

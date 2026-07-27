@@ -9,14 +9,11 @@ from typing import Any, Optional
 
 from dash import no_update
 
+from ailr.core._db_screening import reconcile_stage_for as _reconcile_stage
 from ailr.reviewers import ScreeningDecision
 from ailr.ui._common import _short_author_year
 
 _VOTE_REASONING = {"abstract": "(inline screening)", "full_text": "(full-text review)"}
-
-
-def _reconcile_stage(stage: str) -> str:
-    return "abstract_screening" if stage == "abstract" else "full_text_screening"
 
 
 def _apply_vote(

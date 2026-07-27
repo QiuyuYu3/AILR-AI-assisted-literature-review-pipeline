@@ -8,6 +8,7 @@ from typing import Any, Optional
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
+from ailr.core.config import team_size_for
 from ailr.core.source import Source
 from ailr.extraction import compose_screening_prompt
 from ailr.ui import ai_runner, version_ui
@@ -184,7 +185,7 @@ def ai_screening_panel() -> list[Any]:
     return [
         dbc.Label("Run AI screening", className="fw-bold"),
         html.P("Runs AI on the abstracts and records its decisions (the prompt is snapshotted as a version).", className="text-muted small mb-1"),
-        dbc.Switch(id="screen-ai-mock", label="Mock (no API cost)", value=True, className="small"),
+        dbc.Switch(id="screen-ai-mock", label="Mock (no API calls)", value=True, className="small"),
         html.P("For every decision the AI also records a PASS / FAIL / UNCERTAIN verdict, reason, and confidence for each criterion (shown in the review). This keeps each include/exclude auditable.",
                className="text-muted small mb-1"),
         dbc.Button("Run AI screening", id="screen-ai-run", color="primary", outline=True, size="sm"),
@@ -773,7 +774,7 @@ def register_callbacks(app: Any) -> None:
             return empty, True, True, "", ""
 
         # Team-aware "To screen": independent = 2 humans per paper, assisted = 1 human (+ AI).
-        team_size = 2 if workflow == "independent" else 1
+        team_size = team_size_for(workflow)
         try:
             psize = int(pagesize)
         except (TypeError, ValueError):

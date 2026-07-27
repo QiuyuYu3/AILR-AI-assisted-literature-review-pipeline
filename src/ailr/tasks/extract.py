@@ -23,7 +23,6 @@ class ExtractRunSummary:
     skipped_no_markdown: int = 0
     failed: int = 0
     failures: list[dict] = field(default_factory=list)
-    total_cost_estimate: float = 0.0
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cached_input_tokens: int = 0
@@ -167,7 +166,6 @@ class ExtractionTask:
 
                     if not batch and meta is not None:
                         self.project.db.insert_api_call(self.project.project_id, meta)
-                        summary.total_cost_estimate += meta.cost_estimate
                         summary.total_input_tokens += meta.input_tokens
                         summary.total_output_tokens += meta.output_tokens
                         summary.total_cached_input_tokens += meta.cached_input_tokens

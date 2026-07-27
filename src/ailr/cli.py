@@ -134,7 +134,7 @@ def import_pdfs(
 def screen(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     limit: Annotated[Optional[int], typer.Option("--limit", help="Process at most N un-screened sources.")] = None,
-    mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call, no token cost).")] = False,
+    mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call, no tokens spent).")] = False,
     workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save screening.workflow: assisted | independent.")] = None,
     include_ai: Annotated[bool, typer.Option("--include-ai", help="In independent workflow, run AI as a reference reviewer.")] = False,
 ) -> None:
@@ -193,7 +193,6 @@ def screen(
             typer.echo(f"  failed:        {summary.failed}", err=True)
         typer.echo("")
         typer.echo(f"Tokens:          in={summary.total_input_tokens}  out={summary.total_output_tokens}  cached_in={summary.total_cached_input_tokens}")
-        typer.echo(f"Est. cost:       ${summary.total_cost_estimate:.4f}")
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -203,7 +202,7 @@ def screen(
 def extract(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     limit: Annotated[Optional[int], typer.Option("--limit", help="Process at most N included sources.")] = None,
-    mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call, no token cost).")] = False,
+    mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call, no tokens spent).")] = False,
     force: Annotated[bool, typer.Option("--force", help="Re-extract even if extractions already exist for the source.")] = False,
     all_sources: Annotated[bool, typer.Option("--all", help="Extract from every source with markdown, not just include'd ones.")] = False,
     workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save extraction.workflow: verify | independent.")] = None,
@@ -258,7 +257,6 @@ def extract(
                 typer.echo(f"  - [{f['source_id']}] {_truncate(f['title'], 70)}: {f['error'][:120]}", err=True)
         typer.echo("")
         typer.echo(f"Tokens:  in={summary.total_input_tokens}  out={summary.total_output_tokens}  cached_in={summary.total_cached_input_tokens}")
-        typer.echo(f"Est. cost: ${summary.total_cost_estimate:.4f}")
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -426,7 +424,6 @@ def calibrate(
                 "percent_agreement": None if summary.agreement != summary.agreement else summary.agreement,
                 "failed": summary.failed,
                 "failures": summary.failures,
-                "total_cost_estimate": summary.total_cost_estimate,
             }
             typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
             return
@@ -452,9 +449,6 @@ def calibrate(
         else:
             typer.echo("Agreement: no paired AI+human decisions yet on this sample.")
             typer.echo(f"  Next: `ailr ui {project}` to enter human decisions on the calibration sample.")
-        if summary.total_cost_estimate > 0:
-            typer.echo("")
-            typer.echo(f"Est. cost this run: ${summary.total_cost_estimate:.4f}")
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -465,7 +459,7 @@ def metrics(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     as_json: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
 ) -> None:
-    """Print AI/human screening summary, agreement (Cohen's kappa), API costs."""
+    """Print AI/human screening summary, agreement (Cohen's kappa), API token usage."""
     try:
         proj = Project.load(project)
         ai_counts = proj.db.screening_summary(proj.project_id, "ai")

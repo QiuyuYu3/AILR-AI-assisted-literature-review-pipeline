@@ -188,6 +188,13 @@ def merge_preset_into(base: dict[str, Any], preset: dict[str, Any]) -> dict[str,
     return result
 
 
+def team_size_for(workflow: str) -> int:
+    """Human reviewers a workflow calls for: 2 in `independent` (dual-blind), 1 in `assisted`
+    (one human plus the AI as the blinded second opinion). A stage is only finished for a paper
+    once this many humans have voted on it."""
+    return 2 if workflow == "independent" else 1
+
+
 def resolve_stage_llm(top_level: LLMConfig, override: Optional[StageLLMOverride]) -> LLMConfig:
     if override is None:
         return top_level
