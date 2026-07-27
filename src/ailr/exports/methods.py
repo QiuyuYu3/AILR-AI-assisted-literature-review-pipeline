@@ -31,6 +31,45 @@ def reporting_guideline(project_type: str) -> str:
     return "the PRISMA 2020 statement"
 
 
+def _registration_lines(cfg, db, pid: int) -> list[str]:
+    """PRISMA item 24. Saying the review was not registered is a required answer, not an omission,
+    so this section is emitted either way."""
+    meta = cfg.project
+    lines = ["## Registration and protocol", ""]
+
+    if meta.registry and meta.registration_number:
+        lines.append(f"This review was registered with {meta.registry} ({meta.registration_number}).")
+    elif meta.registry:
+        lines.append(f"This review was registered with {meta.registry}; the registration number is [add it].")
+    else:
+        lines.append("This review was not registered.")
+
+    if meta.protocol_url:
+        lines.append(f"The protocol is available at {meta.protocol_url}.")
+    else:
+        lines.append("No protocol was prepared in advance. [If one was, replace this with where it can be read.]")
+
+    amendments = [a for a in db.list_amendments(pid) if a["is_amendment"]]
+    lines.append("")
+    if amendments:
+        lines.append(
+            f"{len(amendments)} amendment(s) were made to the protocol after its first version. "
+            f"Each revision was recorded when it was saved:"
+        )
+        lines.append("")
+        lines.append("| Part | Version | Date | Note |")
+        lines.append("|---|---|---|---|")
+        for a in amendments:
+            note = (a["notes"] or "").replace("\n", " ").replace("|", "\\|")
+            lines.append(f"| {a['part']} | {a['version']} | {a['created_at'] or ''} | {note} |")
+        lines.append("")
+        lines.append("_Explain why each amendment was made; the tool records that they happened, not the reasoning._")
+    else:
+        lines.append("The protocol was not amended after the review began.")
+    lines.append("")
+    return lines
+
+
 def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
     """Agreement for the reviewer pair with the most shared records at this stage, plus a short
     line for any further pairs. Votes are read pre-adjudication and `uncertain` counts as include
@@ -99,6 +138,7 @@ def build_methods_skeleton(
         f"screening steps reported following PRISMA-trAIce."
     )
     lines.append("")
+    lines.extend(_registration_lines(cfg, db, pid))
     lines.append("## Search and ingestion")
     lines.append(
         f"Records were identified through searches of {db_str} (N = {counts['records_identified']} retrieved). "

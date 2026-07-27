@@ -282,6 +282,36 @@ class CalibrationMixin:
         ).fetchone()
         return dict(row) if row else None
 
+    # Kinds shown in the amendment log, mapped to the wording PRISMA item 24c expects.
+    _AMENDABLE = (
+        ("artifact", "criteria", "Eligibility criteria"),
+        ("artifact", "variables", "Extraction variables"),
+        ("prompt", "screening", "Screening prompt"),
+        ("prompt", "extraction", "Extraction prompt"),
+    )
+
+    def list_amendments(self, project_id: int) -> list[dict]:
+        """Every saved revision of the protocol's parts, newest first. v1 is the original, so
+        anything after it is an amendment to what the protocol said."""
+        out: list[dict] = []
+        for source, kind, label in self._AMENDABLE:
+            table = "artifact_versions" if source == "artifact" else "prompt_versions"
+            col = "kind" if source == "artifact" else "prompt_type"
+            rows = self._conn.execute(
+                f"SELECT version, notes, created_at FROM {table} WHERE project_id = ? AND {col} = ? "
+                "ORDER BY created_at, version",
+                (project_id, kind),
+            ).fetchall()
+            for i, r in enumerate(rows):
+                out.append({
+                    "part": label,
+                    "version": r["version"],
+                    "created_at": r["created_at"],
+                    "notes": r["notes"],
+                    "is_amendment": i > 0,      # v1 is the protocol as first written
+                })
+        return sorted(out, key=lambda d: (d["created_at"] or "", d["part"]), reverse=True)
+
     def list_prompt_versions(self, project_id: int, prompt_type: str) -> list[dict]:
         rows = self._conn.execute(
             """

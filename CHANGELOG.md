@@ -4,6 +4,7 @@
 ## [Unreleased]
 
 ### Added
+- Protocol → Registration (PRISMA item 24): register name, registration number, and protocol URL, saved to `lit_review.yaml`. The methods export states them, or states that the review was not registered, which PRISMA requires either way. Below the form, an amendment log built from the revisions the criteria / variables / prompt editors already snapshot on every Save; it also goes into the methods export as a table.
 - Full-text calibration: Full text → Workflow → AI extraction now offers the same Quick test / Full calibration choice as abstract screening. A round draws a sample from the full-text queue, runs the real extraction on it (the AI's full-text verdict comes from its per-criterion check), and reports κ against your decisions once you review the sample under Full-text review → "Calibration sample". Needs `extraction.flag_check` on; each paper is one full-text call.
 - 95% CI on Cohen's κ (Fleiss-Cohen-Everitt asymptotic variance, matches `vcd::Kappa`), shown on the reliability report and carried into the methods export and `ailr metrics`.
 

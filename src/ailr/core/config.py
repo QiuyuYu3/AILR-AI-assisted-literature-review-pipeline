@@ -28,6 +28,11 @@ class ProjectMeta(BaseModel):
     description: str = ""
     mode: Literal["strict", "assisted", "custom"] = "assisted"
     mode_preset: Optional[str] = None
+    # PRISMA 2020 item 24: the register the review is filed with, its number, and where the
+    # protocol can be read. Blank is a valid answer and reports as "not registered".
+    registry: str = ""
+    registration_number: str = ""
+    protocol_url: str = ""
 
 
 class LLMConfig(BaseModel):
@@ -262,6 +267,16 @@ def save_project_type(project_dir: Path, project_type: str) -> None:
     if project_type not in ("scoping", "systematic"):
         raise ConfigError(f"Unknown review type: {project_type}")
     _edit_config_block(project_dir, "project", lambda block: block.update({"type": project_type}))
+
+
+def save_registration(project_dir: Path, registry: str, registration_number: str, protocol_url: str) -> None:
+    """Update the PRISMA item 24 fields. Blanks are kept as blanks, not dropped, so the methods
+    export can say "not registered" rather than leaving the reader to guess."""
+    _edit_config_block(project_dir, "project", lambda block: block.update({
+        "registry": (registry or "").strip(),
+        "registration_number": (registration_number or "").strip(),
+        "protocol_url": (protocol_url or "").strip(),
+    }))
 
 
 def save_stage_workflow(project_dir: Path, stage: Literal["screening", "extraction"], workflow: str) -> None:
