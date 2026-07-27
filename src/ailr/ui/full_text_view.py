@@ -396,10 +396,11 @@ def register_callbacks(app: Any) -> None:
         Output("ft-last-action", "data"),
         Input({"type": "ft-decide", "source": ALL, "decision": ALL}, "n_clicks"),
         Input({"type": "ft-reset", "source": ALL}, "n_clicks"),
+        Input({"type": "ft-retrieval", "source": ALL, "flag": ALL}, "n_clicks"),
         State("shared-reviewer", "value"),
         prevent_initial_call=True,
     )
-    def _on_action(_d, _r, reviewer):
+    def _on_action(_d, _r, _n, reviewer):
         rid = (reviewer or "").strip()
         # Act on the button that actually carries the click — not ctx.triggered_id, which can point at
         # a value-less freshly-rendered button and apply the decision to the wrong paper when a click
@@ -417,6 +418,9 @@ def register_callbacks(app: Any) -> None:
 
         if isinstance(triggered, dict) and triggered.get("type") == "ft-reset":
             return _apply_reset(db, int(triggered["source"]), rid, stage="full_text")
+
+        if isinstance(triggered, dict) and triggered.get("type") == "ft-retrieval":
+            db.set_full_text_not_retrieved(int(triggered["source"]), bool(int(triggered["flag"])))
 
         return {"ts": _t.time()}, no_update
 
@@ -975,6 +979,26 @@ def _ft_card(
             className="mt-1",
         )
 
+    # PRISMA counts a report as "not retrieved" only once a human says the full text could not be
+    # obtained; until then a paper without markdown is just work outstanding.
+    retrieval_el: Any = None
+    if src.full_text_not_retrieved:
+        retrieval_el = html.Div(
+            [
+                dbc.Badge("Full text not retrieved", color="dark", className="me-2"),
+                dbc.Button("Undo", id={"type": "ft-retrieval", "source": sid, "flag": 0},
+                           size="sm", color="link", className="p-0 text-decoration-none"),
+            ],
+            className="mt-1",
+        )
+    elif not src.markdown_path:
+        retrieval_el = html.Div(
+            dbc.Button("Mark full text as not retrieved", id={"type": "ft-retrieval", "source": sid, "flag": 1},
+                       size="sm", color="link", className="p-0 text-decoration-none text-muted",
+                       title="Counts this report under PRISMA's 'reports not retrieved'."),
+            className="mt-1",
+        )
+
     left = html.Div(
         [
             html.Strong(f"#{sid}  ", className="text-muted"),
@@ -995,7 +1019,7 @@ def _ft_card(
                 dbc.Row(
                     [
                         dbc.Col(
-                            [left, title_el, meta_el, low_text_badge, abstract_block, tag_chips_el, doi_el, read_btn, ai_panel, actions_row, extract_row],
+                            [left, title_el, meta_el, low_text_badge, retrieval_el, abstract_block, tag_chips_el, doi_el, read_btn, ai_panel, actions_row, extract_row],
                             width=9,
                         ),
                         dbc.Col(

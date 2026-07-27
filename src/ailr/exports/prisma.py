@@ -13,14 +13,14 @@ def _arm_counts(db: Any, pid: int, route: str) -> dict[str, int]:
     deduplication or title/abstract box in the template, but ailr screens both arms through the
     same queue, so the same numbers are reported for each."""
     sought = db.count_final_includes(pid, "abstract", route=route)
-    retrieved = db.count_final_includes(pid, "abstract", require_markdown=True, route=route)
+    not_retrieved = db.count_final_includes(pid, "abstract", route=route, not_retrieved=True)
     return {
         "identified": db.count_sources(pid, route=route),
         "screened": db.count_sources_screened(pid, "human", stage="abstract", route=route),
         "excluded_abstract": db.screening_summary(pid, "human", stage="abstract", route=route)["exclude"],
         "sought": sought,
-        "retrieved": retrieved,
-        "not_retrieved": max(sought - retrieved, 0),
+        "retrieved": max(sought - not_retrieved, 0),
+        "not_retrieved": not_retrieved,
         "assessed": db.count_sources_screened(pid, "human", stage="full_text", route=route),
         "included": db.count_final_includes(pid, "full_text", route=route),
     }
@@ -42,7 +42,10 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     # decision-based (latest per reviewer) — identical in assisted mode (one human per paper).
     abstract_screened = db.count_sources_screened(pid, "human", stage="abstract")
     reports_sought = db.count_final_includes(pid, "abstract")
-    reports_retrieved = db.count_final_includes(pid, "abstract", require_markdown=True)
+    # "Not retrieved" is what a human marked as unobtainable, not merely what has no markdown yet:
+    # an unconverted PDF is work outstanding, which PRISMA does not report as a retrieval failure.
+    reports_not_retrieved = db.count_final_includes(pid, "abstract", not_retrieved=True)
+    reports_retrieved = max(reports_sought - reports_not_retrieved, 0)
     full_text_assessed = db.count_sources_screened(pid, "human", stage="full_text")
     studies_included = db.count_final_includes(pid, "full_text")
 
@@ -69,7 +72,7 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         "ai_abstract_uncertain": ai_abstract["uncertain"],
         "reports_sought": reports_sought,
         "reports_retrieved": reports_retrieved,
-        "reports_not_retrieved": max(reports_sought - reports_retrieved, 0),
+        "reports_not_retrieved": reports_not_retrieved,
         "full_text_assessed": full_text_assessed,
         "full_text_excluded": full_text["exclude"],
         # Papers, not votes: two reviewers excluding the same report is one excluded report.

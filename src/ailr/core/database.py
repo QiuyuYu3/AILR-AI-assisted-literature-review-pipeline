@@ -111,6 +111,14 @@ class Database(
                 conn.exec_driver_sql(
                     "UPDATE sources SET identification_route = 'database' WHERE identification_route IS NULL"
                 )
+        if "full_text_not_retrieved" not in src_cols:
+            with self._engine.begin() as conn:
+                conn.exec_driver_sql(
+                    "ALTER TABLE sources ADD COLUMN full_text_not_retrieved INTEGER DEFAULT 0"
+                )
+                conn.exec_driver_sql(
+                    "UPDATE sources SET full_text_not_retrieved = 0 WHERE full_text_not_retrieved IS NULL"
+                )
         # composite indexes speed the screening list / status filters / vote locks and the
         # extraction marker lookups (existing DBs only; fresh ones get them from create_all).
         # CREATE INDEX IF NOT EXISTS works on SQLite + PostgreSQL.

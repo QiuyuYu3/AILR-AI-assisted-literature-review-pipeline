@@ -297,6 +297,14 @@ class CalibrationTask:
     def __init__(self, project: Project, reviewer: Reviewer, stage: str = "screening") -> None:
         if stage not in ("screening", "extraction"):
             raise ValueError(f"Unknown stage: {stage}")
+        stage_cfg = project.config.screening if stage == "screening" else project.config.extraction
+        if stage_cfg.workflow == "independent":
+            raise AILRError(
+                f"Calibration does not apply to the {stage} stage in `independent` workflow: two "
+                "humans decide every record, so the AI is a reference rather than a reviewer and "
+                "tuning it to agree with one of them gates nothing. Its agreement with each "
+                "reviewer is on Reports -> Reliability."
+            )
         self.project = project
         self.reviewer = reviewer
         self.stage = stage

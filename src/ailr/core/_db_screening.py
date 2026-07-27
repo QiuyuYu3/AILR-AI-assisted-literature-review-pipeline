@@ -646,15 +646,19 @@ class ScreeningMixin:
         return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
 
     def count_final_includes(self, project_id: int, stage: str = "abstract", require_markdown: bool = False,
-                             route: Optional[str] = None) -> int:
+                             route: Optional[str] = None, not_retrieved: Optional[bool] = None) -> int:
         """PAPERS (not decisions) whose final decision at this stage is include: reconciled-as-include,
         or at least one human's LATEST verdict is include with no reconciliation recorded. For the
-        PRISMA flow, where two reviewers including the same paper must count once."""
+        PRISMA flow, where two reviewers including the same paper must count once.
+        `not_retrieved` narrows to (or excludes) reports marked as impossible to obtain."""
         reconcile_stage = "abstract_screening" if stage == "abstract" else "full_text_screening"
         md = "AND s.markdown_path IS NOT NULL" if require_markdown else ""
+        nr = ""
+        if not_retrieved is not None:
+            nr = f"AND COALESCE(s.full_text_not_retrieved, 0) = {1 if not_retrieved else 0}"
         sql = f"""
             SELECT COUNT(*) AS n FROM sources s
-            WHERE s.project_id = ? {md} {_route_filter(route)}
+            WHERE s.project_id = ? {md} {nr} {_route_filter(route)}
               AND (
                 EXISTS (SELECT 1 FROM reconciliations r
                         WHERE r.source_id = s.id AND r.stage = ? AND r.final_value = 'include')

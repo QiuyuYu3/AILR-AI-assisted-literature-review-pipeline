@@ -151,6 +151,17 @@ class SourcesMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to update source {source_id}: {e}") from e
 
+    def set_full_text_not_retrieved(self, source_id: int, flag: bool) -> None:
+        """PRISMA's 'report not retrieved': the full text was sought and could not be obtained."""
+        try:
+            self._conn.execute(
+                "UPDATE sources SET full_text_not_retrieved = ? WHERE id = ?",
+                (1 if flag else 0, source_id),
+            )
+            self._conn.commit()
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to set not-retrieved on source {source_id}: {e}") from e
+
     def count_sources_missing_doi(self, project_id: int) -> int:
         return self._conn.execute(
             "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND COALESCE(is_duplicate, 0) = 0 "

@@ -86,36 +86,67 @@ def _bad_n_alert() -> Any:
     return dbc.Alert("Enter a valid sample size.", color="warning", className="py-1 mb-0")
 
 
+def _is_independent(project: Any, stage: str) -> bool:
+    cfg = project.config.screening if stage == "abstract" else project.config.extraction
+    return cfg.workflow == "independent"
+
+
 def layout(stage: str = "abstract") -> Any:
     p = _prefix(stage)
     project = get_project()
     if stage == "abstract":
         default_n = min(5, project.config.screening.calibration.min)
         intro = "Try the screening prompt on a sample before running the whole corpus."
+        full_bullet = html.Li(
+            ["Full calibration writes real AI decisions + a sample; review it in ",
+             html.Strong("Screening → status ‘Calibration sample’"), " to get κ."],
+            className="small",
+        )
+        quick_bullet = html.Li(
+            "Quick test runs into a separate test table — iterate the prompt freely without touching real data.",
+            className="small",
+        )
+    else:
+        default_n = min(3, project.config.extraction.calibration.min)
+        intro = "Try the extraction prompt on a few papers before running the whole full-text queue."
+        full_bullet = html.Li(
+            ["Full calibration runs the real extraction on a sample; review those papers in ",
+             html.Strong("Full-text review → status ‘Calibration sample’"),
+             " to get κ. Each paper is one full-text call, so keep N small."],
+            className="small",
+        )
+        quick_bullet = html.Li(
+            "Quick test runs into a separate test table — eyeball the extracted fields and the derived "
+            "full-text decision without touching real data.",
+            className="small",
+        )
+
+    # Calibration tunes the AI until it can be trusted as a reviewer. Under `independent` the AI is
+    # not a reviewer — two humans decide everything — so there is nothing for κ to gate, and the
+    # AI-vs-human figure belongs on the reliability report with every other pair.
+    independent = _is_independent(project, stage)
+    if independent:
         mode_block = [
-            dbc.Label("Mode", className="fw-bold"),
-            dbc.RadioItems(id=f"{p}-mode", options=_MODE_OPTIONS, value="quick"),
+            dbc.RadioItems(id=f"{p}-mode", options=_MODE_OPTIONS[:1], value="quick", className="d-none"),
             html.Ul(
                 [
-                    html.Li("Quick test runs into a separate test table — iterate the prompt freely without touching real data.", className="small"),
-                    html.Li(["Full calibration writes real AI decisions + a sample; review it in ", html.Strong("Screening → status ‘Calibration sample’"), " to get κ."], className="small"),
+                    quick_bullet,
+                    html.Li(
+                        ["Full calibration is off in ", html.Strong("independent"),
+                         " workflow: two humans decide every record, so tuning the AI to agree with one "
+                         "of them gates nothing. Its agreement is on ", html.Strong("Reports → Reliability"),
+                         ", alongside the human-vs-human figure."],
+                        className="small",
+                    ),
                 ],
                 className="mt-1",
             ),
         ]
     else:
-        default_n = min(3, project.config.extraction.calibration.min)
-        intro = "Try the extraction prompt on a few papers before running the whole full-text queue."
         mode_block = [
             dbc.Label("Mode", className="fw-bold"),
             dbc.RadioItems(id=f"{p}-mode", options=_MODE_OPTIONS, value="quick"),
-            html.Ul(
-                [
-                    html.Li("Quick test runs into a separate test table — eyeball the extracted fields and the derived full-text decision without touching real data.", className="small"),
-                    html.Li(["Full calibration runs the real extraction on a sample; review those papers in ", html.Strong("Full-text review → status ‘Calibration sample’"), " to get κ. Each paper is one full-text call, so keep N small."], className="small"),
-                ],
-                className="mt-1",
-            ),
+            html.Ul([quick_bullet, full_bullet], className="mt-1"),
         ]
 
     return html.Div(

@@ -23,6 +23,9 @@ class Source:
     identification_route: str = "database"
     pdf_path: Optional[Path] = None
     markdown_path: Optional[Path] = None
+    # PRISMA's "reports not retrieved": the full text was sought and could not be obtained.
+    # Distinct from simply having no markdown yet, which only means not done.
+    full_text_not_retrieved: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
     imported_at: Optional[datetime] = None
 

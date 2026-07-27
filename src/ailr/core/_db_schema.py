@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS sources (
     metadata_json TEXT,
     is_duplicate INTEGER DEFAULT 0,
     identification_route TEXT DEFAULT 'database',
+    full_text_not_retrieved INTEGER DEFAULT 0,
     imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id),
     UNIQUE(project_id, doi)
@@ -312,6 +313,8 @@ Table(
     # PRISMA 2020 splits identification into two arms: databases/registers, and everything found
     # another way (citation searching, hand searching, websites). 'database' | 'other'.
     Column("identification_route", Text, server_default=text("'database'")),
+    # PRISMA's "reports not retrieved": sought and not obtainable, as opposed to not done yet.
+    Column("full_text_not_retrieved", Integer, server_default=text("0")),
     Column("imported_at", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     UniqueConstraint("project_id", "doi"),
     Index("idx_sources_project", "project_id"),

@@ -8,6 +8,8 @@
 - 95% CI on Cohen's κ (Fleiss-Cohen-Everitt asymptotic variance, matches `vcd::Kappa`), shown on the reliability report and carried into the methods export and `ailr metrics`.
 
 ### Changed
+- PRISMA's "reports not retrieved" is now something you mark on the full-text card, not something inferred from a missing markdown file. A converted-but-scanned PDF or one you simply have not fetched yet counts as retrieved (work outstanding), which is what PRISMA means.
+- Full calibration is hidden in `independent` workflow at both stages, and the task refuses it: two humans decide every record, so tuning the AI to agree with one of them gates nothing. Quick test stays; the AI's agreement is on Reports → Reliability.
 - Methods and PRISMA exports name the checklist that matches the review type: PRISMA-ScR for scoping, PRISMA 2020 for systematic.
 
 ### Fixed
