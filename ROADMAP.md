@@ -50,6 +50,19 @@ actions, adjudication) for delete-then-insert; `ON CONFLICT DO NOTHING` on the i
 loser fails silently instead of erroring in the UI; and cleaning up any pre-existing duplicate
 rows in shared databases before creating the index.
 
+Update 2026-07-27 (0.31.0): the second trigger had already fired unnoticed — Sources bulk decisions
+wrote human votes outside the lock. Fixed; the application-level lock is again the only way a human
+vote is written. The index stays deferred on the concurrency trigger alone.
+
+### Server-side paging for the Sources and Database grids
+Decided 2026-07-27 to NOT convert them yet. Both hand ag-grid every row and page in the browser,
+unlike Screening and Full-text which page in SQL. Deferred because moving Sources over also means
+pushing its quick filter and per-column filters into SQL; `database_view` is the easy half and could
+take a plain row limit on its own.
+
+Revisit when a project passes a couple of thousand sources, or when the Database tab on
+`extractions` gets slow. Detail in `ailr_ui_handover.md`, item B-2.
+
 ## Completed Features
 
 ### v0.1.0

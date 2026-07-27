@@ -254,6 +254,12 @@ def _compare(project: Any, sid: int) -> tuple[list[tuple[FieldSpec, Any, Any]], 
     return agreed, cards, state
 
 
+def _shape(state: Any) -> dict[str, list[str]]:
+    """Which fields disagree and which distinct answers each has. Comparing this between render
+    time and save time detects a reviewer editing their extraction while the page was open."""
+    return {field: sorted(answers) for field, answers in (state or {}).items()}
+
+
 # ----- Callbacks ----------------------------------------------------------------------------
 
 
@@ -369,7 +375,17 @@ def register_callbacks(app: Any) -> None:
                 color="warning", className="py-1 mb-0",
             ), no_update, no_update
 
-        agreed, _cards, _state = _compare(project, int(sid))
+        # The picks were made against the comparison as it stood when the page rendered, while the
+        # agreed fields below are read fresh. If the other reviewer re-submitted in between, the two
+        # halves would come from different moments — refuse and re-render rather than mix them.
+        agreed, _cards, fresh_state = _compare(project, int(sid))
+        if _shape(state) != _shape(fresh_state):
+            return dbc.Alert(
+                "The extractions for this paper changed since you opened it — someone submitted "
+                "again. The comparison below has been refreshed; please redo your choices.",
+                color="warning", className="py-1 mb-0",
+            ), {"ts": (save_n or 0)}, no_update
+
         results = [
             ExtractionResult(extractor_type="consensus", extractor_id=rid, source_id=int(sid),
                              field_name=f.name, value=value, source_quote=quote, prompt_version="consensus")

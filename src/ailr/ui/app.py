@@ -169,8 +169,11 @@ def build_app() -> Dash:
 
     @app.server.route("/pdf/<int:sid>")
     def _serve_pdf(sid: int):
-        src = get_project().db.get_source(sid)
-        if src is None:
+        project = get_project()
+        src = project.db.get_source(sid)
+        # get_source looks up by id alone; on a shared database that spans several projects the id
+        # of a source in another project would otherwise serve its PDF from this project's UI.
+        if src is None or src.project_id != project.project_id:
             abort(404)
         p = resolve_pdf_path(src)
         if p is None or not p.exists():

@@ -1,10 +1,12 @@
 # Changelog — ailr
 
 ---
-## [Unreleased]
+## [0.31.0] – 2026-07-27
 
 ### Fixed
+- `/pdf/<id>` resolved a source by id alone, so on a database holding several projects it served PDFs belonging to another one. PDFs recorded as absolute paths outside the project (the Zotero flow) are unaffected.
 - Sources → bulk decision bypassed the vote lock: on a paper another reviewer had already screened the vote was written but ignored by every queue and PRISMA count, while still counting towards inter-rater agreement. It now goes through the same lock as the inline buttons and reports what it skipped.
+- Consensus could be saved from two moments at once: the agreed fields were read fresh while the picked answers came from the page as it was opened, so a reviewer re-submitting in between produced a record matching neither. It now refuses and re-renders the comparison.
 - Criteria IDs were dropped from the "what the AI receives" preview and from saved criteria versions; restoring an old version then saving could renumber criteria and unlink existing flag-checks.
 - Extraction Save/Submit wrote null over fields whose widget was missing because the variables changed after the page was opened; it now refuses to save instead.
 - Screening's abstract toggle acted on the first re-rendered card rather than the clicked one.
