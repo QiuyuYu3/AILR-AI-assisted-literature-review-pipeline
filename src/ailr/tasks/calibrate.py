@@ -101,22 +101,18 @@ class QuickTestTask:
         return summary
 
 
-def sample_agreement(project: Project, sample_ids: list[int], stage: str = "abstract") -> dict:
-    """AI-vs-human agreement on a set of sources at one decision stage (abstract / full_text).
-    Used by the calibration UI to recompute κ after humans review the sample."""
-    result = {
-        "paired_count": 0,
-        "kappa": float("nan"),
-        "agreement": float("nan"),
-        "ai_counts": {"include": 0, "exclude": 0, "uncertain": 0},
-        "human_counts": {"include": 0, "exclude": 0, "uncertain": 0},
-        "disagreements": [],
-    }
-    if not sample_ids:
-        return result
+_KAPPA_CATEGORIES = ["include", "exclude", "uncertain"]
 
+
+def _latest_by_reviewer_type(project: Project, sample_ids: list[int], stage: str) -> dict[int, dict[str, str]]:
+    """{source_id: {reviewer_type: decision}} for these sources at ONE decision stage, latest wins.
+
+    One stage only: a full_text decision must not enter screening κ, and vice versa. ORDER BY id
+    so the last row per (source, reviewer_type) is the one kept.
+    """
+    if not sample_ids:
+        return {}
     placeholders = ",".join("?" for _ in sample_ids)
-    # ORDER BY id so the latest decision per (source, reviewer_type) wins in the dict below.
     rows = project.db._conn.execute(
         f"""
         SELECT source_id, reviewer_type, decision FROM screening_decisions
@@ -125,28 +121,41 @@ def sample_agreement(project: Project, sample_ids: list[int], stage: str = "abst
         """,
         [*sample_ids, stage],
     ).fetchall()
-
     by_source: dict[int, dict[str, str]] = {}
     for r in rows:
         by_source.setdefault(r["source_id"], {})[r["reviewer_type"]] = r["decision"]
+    return by_source
 
+
+def _agreement_stats(by_source: dict[int, dict[str, str]]) -> dict:
+    """AI-vs-human κ, percent agreement, per-side counts, and the disagreeing sources."""
+    ai_counts = {c: 0 for c in _KAPPA_CATEGORIES}
+    human_counts = {c: 0 for c in _KAPPA_CATEGORIES}
     for v in by_source.values():
-        if v.get("ai") in result["ai_counts"]:
-            result["ai_counts"][v["ai"]] += 1
-        if v.get("human") in result["human_counts"]:
-            result["human_counts"][v["human"]] += 1
+        if v.get("ai") in ai_counts:
+            ai_counts[v["ai"]] += 1
+        if v.get("human") in human_counts:
+            human_counts[v["human"]] += 1
 
     pairs = [(v["ai"], v["human"]) for v in by_source.values() if "ai" in v and "human" in v]
-    result["paired_count"] = len(pairs)
-    if pairs:
-        result["kappa"] = cohen_kappa(pairs, categories=["include", "exclude", "uncertain"])
-        result["agreement"] = percent_agreement(pairs)
-    result["disagreements"] = [
-        {"source_id": sid, "ai": v["ai"], "human": v["human"]}
-        for sid, v in by_source.items()
-        if "ai" in v and "human" in v and v["ai"] != v["human"]
-    ]
-    return result
+    return {
+        "paired_count": len(pairs),
+        "kappa": cohen_kappa(pairs, categories=_KAPPA_CATEGORIES) if pairs else float("nan"),
+        "agreement": percent_agreement(pairs) if pairs else float("nan"),
+        "ai_counts": ai_counts,
+        "human_counts": human_counts,
+        "disagreements": [
+            {"source_id": sid, "ai": v["ai"], "human": v["human"]}
+            for sid, v in by_source.items()
+            if "ai" in v and "human" in v and v["ai"] != v["human"]
+        ],
+    }
+
+
+def sample_agreement(project: Project, sample_ids: list[int], stage: str = "abstract") -> dict:
+    """AI-vs-human agreement on a set of sources at one decision stage (abstract / full_text).
+    Used by the calibration UI to recompute κ after humans review the sample."""
+    return _agreement_stats(_latest_by_reviewer_type(project, sample_ids, stage))
 
 
 @dataclass
@@ -453,39 +462,14 @@ class CalibrationTask:
         self, summary: CalibrationSummary, sample_ids: list[int]
     ) -> dict[int, dict[str, str]]:
         """Fill in human counts, pairs, κ. Returns the latest decision per (source, reviewer type)
-        so callers can reuse it."""
-        if not sample_ids:
+        so callers can reuse it. Shares its query and its κ with sample_agreement(), so the number
+        a round reports and the number the calibration page recomputes can never disagree."""
+        by_source = _latest_by_reviewer_type(self.project, sample_ids, self.decision_stage)
+        if not by_source:
             return {}
-
-        placeholders = ",".join("?" for _ in sample_ids)
-        # One stage only (a full_text decision must not enter screening κ, and vice versa);
-        # ORDER BY id so the latest decision per (source, reviewer_type) wins in the dict below.
-        sql = f"""
-            SELECT
-                d.source_id,
-                d.reviewer_type,
-                d.decision
-            FROM screening_decisions d
-            WHERE d.source_id IN ({placeholders}) AND d.stage = ?
-            ORDER BY d.id
-        """
-        rows = self.project.db._conn.execute(sql, [*sample_ids, self.decision_stage]).fetchall()
-
-        by_source: dict[int, dict[str, str]] = {}
-        for r in rows:
-            by_source.setdefault(r["source_id"], {})[r["reviewer_type"]] = r["decision"]
-
-        for human_decision in [v.get("human") for v in by_source.values()]:
-            if human_decision:
-                summary.human_counts[human_decision] = summary.human_counts.get(human_decision, 0) + 1
-
-        pairs = [
-            (v["ai"], v["human"])
-            for v in by_source.values()
-            if "ai" in v and "human" in v
-        ]
-        summary.paired_count = len(pairs)
-        if pairs:
-            summary.kappa = cohen_kappa(pairs, categories=["include", "exclude", "uncertain"])
-            summary.agreement = percent_agreement(pairs)
+        stats = _agreement_stats(by_source)
+        summary.human_counts = stats["human_counts"]
+        summary.paired_count = stats["paired_count"]
+        summary.kappa = stats["kappa"]
+        summary.agreement = stats["agreement"]
         return by_source

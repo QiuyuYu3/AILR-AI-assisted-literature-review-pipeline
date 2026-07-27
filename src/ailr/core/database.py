@@ -19,7 +19,7 @@ from ailr.core._db_admin import AdminMixin
 from ailr.core._db_calibration import CalibrationMixin
 from ailr.core._db_extraction import ExtractionMixin
 from ailr.core._db_facade import _EngineConn, _make_engine, _normalize_db_url
-from ailr.core._db_schema import SCHEMA_SQL, metadata  # noqa: F401  (re-exported for compatibility)
+from ailr.core._db_schema import metadata
 from ailr.core._db_screening import ScreeningMixin
 from ailr.core._db_screening_aux import ScreeningAuxMixin
 from ailr.core._db_sources import SourcesMixin

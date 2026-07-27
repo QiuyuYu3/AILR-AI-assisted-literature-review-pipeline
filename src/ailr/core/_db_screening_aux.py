@@ -324,13 +324,6 @@ class ScreeningAuxMixin:
         ).fetchone()
         return row["n"] if row else 0
 
-    def has_screening_reconciliation(self, source_id: int) -> bool:
-        row = self._conn.execute(
-            "SELECT 1 FROM reconciliations WHERE source_id = ? AND stage = 'screening' LIMIT 1",
-            (source_id,),
-        ).fetchone()
-        return row is not None
-
     def screening_disagreements(self, project_id: int) -> list[dict]:
         """Paired AI+human decisions where verdicts differ. Includes title + both reasoning fields."""
         sql = """

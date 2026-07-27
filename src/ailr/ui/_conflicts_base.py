@@ -28,7 +28,7 @@ class ConflictConfig:
     prefix: str               # pattern-id 'type' prefix, e.g. "conflict" / "ft-conflict"
     store_prefix: str         # static component-id prefix, e.g. "conflicts" / "ft-conflicts"
     stage: str                # query stage: "abstract" / "full_text"
-    reconcile_list_stage: str # list_reconciliations stage: "screening" / "full_text_screening"
+    reconcile_list_stage: str # reconciliations.stage: "abstract_screening" / "full_text_screening"
     title: str
     assisted_desc: str
     independent_desc: str

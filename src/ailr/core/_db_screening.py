@@ -1224,10 +1224,16 @@ class ScreeningMixin:
     def list_reconciliations(
         self,
         project_id: int,
-        stage: str = "screening",
+        stage: str,
         limit: int = 50,
     ) -> list[dict]:
-        """Recent reconciliations for a project + stage, newest first. Joins source title."""
+        """Recent reconciliations for a project + stage, newest first. Joins source title.
+
+        `stage` is a reconciliations.stage value ('abstract_screening' / 'full_text_screening'),
+        not a screening_decisions.stage one — use reconcile_stage_for() to convert. Required on
+        purpose: the old default was 'screening', which matches no row, so a forgotten argument
+        returned an empty list instead of failing.
+        """
         sql = """
             SELECT r.id, r.source_id, r.final_value, r.adjudicator, r.rationale, r.timestamp,
                    s.title, s.year
