@@ -38,7 +38,6 @@ extraction:
   prompt: prompts/extraction.txt
   additional: prompts/extraction_additional.txt
   schema_path: schema.yaml   # the extraction variables (edit them in Protocol -> Variables)
-  chunk_strategy: full       # full | methods_only | custom
   # workflow: verify | independent
   #   verify     = AI extracts, human verifies/edits (PI-recommended)
   #   independent = human extracts blind, AI hidden until submit
@@ -50,7 +49,6 @@ extraction:
 preprocess:
   pdf_backend: pymupdf       # pymupdf | marker | grobid
   strip_references: true
-  keep_sections: []
 
 storage:
   database: data/review.sqlite   # local SQLite, used when database_url is blank

@@ -10,6 +10,9 @@
 ### Changed
 - `llm.seed` defaults to unset; the Anthropic and Gemini clients no longer accept it.
 
+### Removed
+- `extraction.chunk_strategy` and `preprocess.keep_sections`: declared but never read by anything.
+
 ---
 ## [0.30.0] – 2026-07-27
 

@@ -93,7 +93,6 @@ class ExtractionConfig(BaseModel):
         validation_alias=AliasChoices("workflow", "blinding"),
         description="verify = AI extracts, human verifies/edits. independent = human extracts blind, AI hidden until submit.",
     )
-    chunk_strategy: Literal["full", "methods_only", "custom"] = "full"
     output_format: Literal["with_quotes", "value_only"] = "with_quotes"
     flag_check: bool = True
     target_kappa: float = 0.7
@@ -107,7 +106,6 @@ class ExtractionConfig(BaseModel):
 class PreprocessConfig(BaseModel):
     pdf_backend: Literal["pymupdf", "marker", "grobid"] = "pymupdf"
     strip_references: bool = True
-    keep_sections: list[str] = Field(default_factory=list)
     low_text_threshold: int = 2000  # converted markdown shorter than this ~ likely scanned/failed PDF
     workers: int = 4  # parallel PDF->markdown conversions (pymupdf only; marker forced to 1)
 
