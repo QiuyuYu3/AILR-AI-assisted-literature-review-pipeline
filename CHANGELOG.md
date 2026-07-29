@@ -3,6 +3,9 @@
 ---
 ## [Unreleased]
 
+### Fixed
+- When the model serialized a structured field into a JSON string that does not parse, it was stored as that raw string instead of failing; the paper is now reported as failed so it can be re-run.
+
 ---
 ## [0.32.0] – 2026-07-29
 

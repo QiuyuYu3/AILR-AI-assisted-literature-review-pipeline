@@ -390,6 +390,23 @@ def _normalize_flag_check(raw: Any) -> Optional[list[dict[str, Any]]]:
     return None
 
 
+def _parse_json_blob(raw: Any, field: FieldSpec, *, opens: str = "[{") -> Any:
+    """Models sometimes serialize a structured field into a JSON string instead of returning the
+    structure. Tool use only guarantees the whole tool_input is valid JSON, not that it matches the
+    declared schema, so nothing has checked the inside of that string. Parse it back, and fail the
+    paper if it does not parse rather than storing an unusable string silently — raw_output keeps
+    the original text either way."""
+    if not (isinstance(raw, str) and raw.strip()[:1] in opens):
+        return raw
+    try:
+        return json.loads(raw)
+    except ValueError as e:
+        raise LLMError(
+            f"Field {field.name!r} came back as a JSON string that does not parse ({e}). "
+            f"Re-run this paper."
+        ) from e
+
+
 def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tuple[Any, Optional[str]]:
     if not with_quotes:
         return raw, None
@@ -399,19 +416,11 @@ def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tup
         return raw, None
     # list of scalars (multi-select) is wrapped as {value: [...], quote}
     if field.type == "list" and field.item_type != "object":
-        if isinstance(raw, str) and raw.strip()[:1] in ("[", "{"):
-            try:
-                raw = json.loads(raw)
-            except ValueError:
-                pass
+        raw = _parse_json_blob(raw, field)
         outer_quote = None
         if isinstance(raw, dict) and "value" in raw:
             raw, outer_quote = raw.get("value"), raw.get("quote")
-            if isinstance(raw, str) and raw.strip()[:1] == "[":
-                try:
-                    raw = json.loads(raw)
-                except ValueError:
-                    pass
+            raw = _parse_json_blob(raw, field, opens="[")
         # Model sometimes over-wraps each item as {value, quote} even though the schema asks for one
         # quote per field. Flatten to values, and keep EVERY quote — source_quote is a single column,
         # so they are stacked blank-line separated (QUOTE_SEPARATOR) and split again for display.
@@ -421,14 +430,7 @@ def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tup
             return [x.get("value") for x in raw], (outer_quote or joined)
         return raw, outer_quote
     # Object / list-of-objects: keep full structure (quotes live at leaves inside).
-    # Models sometimes return the nested structure as a JSON string; parse it so the
-    # stored value is always a real list/dict.
-    if isinstance(raw, str) and raw.strip()[:1] in ("[", "{"):
-        try:
-            raw = json.loads(raw)
-        except ValueError:
-            pass
-    return raw, None
+    return _parse_json_blob(raw, field), None
 
 
 def _format_source_message(source: Source) -> str:
