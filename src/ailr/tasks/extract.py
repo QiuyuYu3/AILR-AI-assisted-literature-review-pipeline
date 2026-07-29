@@ -24,6 +24,7 @@ class ExtractRunSummary:
     skipped_no_markdown: int = 0
     failed: int = 0
     failures: list[dict] = field(default_factory=list)
+    archived: int = 0  # rows from a previous AI run retired by a forced re-extract
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cached_input_tokens: int = 0
@@ -173,6 +174,14 @@ class ExtractionTask:
                             ))
                             all_ft_decisions.append(ft_decision)
                     else:
+                        # A forced re-extract only ever APPENDS rows, so note where the previous AI
+                        # run ends before writing; it is retired below once the new rows are in.
+                        # Doing it in that order means a failed call leaves the old extraction alone.
+                        previous_max = (
+                            self.project.db.max_ai_extraction_id(source.id)
+                            if force and self.reviewer.reviewer_type == "ai"
+                            else None
+                        )
                         for result in extraction.results:
                             self.project.db.insert_extraction(result)
                         if extraction.flag_check is not None:
@@ -183,14 +192,17 @@ class ExtractionTask:
                                 flag_check=extraction.flag_check,
                             )
                             if force:
-                                # The derived full-text verdict is unique per
-                                # (source, reviewer, stage, reviewer_type), so a re-run collides
-                                # with the verdict its own earlier run wrote. Drop that one first;
-                                # without this the whole paper fails AFTER its fields are saved.
+                                # This run derives a new full-text verdict for the same paper and
+                                # reviewer; drop the one its own earlier run wrote rather than
+                                # leaving two verdicts that only MAX(id) can tell apart.
                                 self.project.db.delete_stage_decisions(
                                     source.id, "full_text", reviewer_type=self.reviewer.reviewer_type
                                 )
                             self.project.db.insert_screening_decision(ft_decision)
+                        if previous_max is not None:
+                            summary.archived += self.project.db.archive_ai_extractions_upto(
+                                source.id, previous_max
+                            )
 
                     if not batch and meta is not None:
                         call_metas.append(meta)

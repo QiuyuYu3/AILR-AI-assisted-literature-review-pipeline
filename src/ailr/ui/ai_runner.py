@@ -223,6 +223,8 @@ def _extraction_summary_text(summary: Any) -> str:
             f"({summary.quote_quoted / summary.quote_values:.0%}), "
             f"{summary.quote_verbatim}/{summary.quote_checked} verbatim."
         )
+    if summary.archived:
+        text += f" Kept {summary.archived} row(s) from the previous AI run as an earlier version."
     # Without this a failed paper reported only "failed 1", with the reason sitting unread in
     # summary.failures.
     for f in getattr(summary, "failures", [])[:3]:
@@ -232,12 +234,10 @@ def _extraction_summary_text(summary: Any) -> str:
 
 def _run_single_extraction(key: str, project: Any, mock: bool, source_id: int) -> None:
     try:
-        # The task only ever appends rows, so note where the previous run ends BEFORE extracting and
-        # retire everything up to that mark afterwards. Retiring first would leave the paper with no
-        # AI extraction at all whenever the new call fails.
-        previous_max = project.db.max_ai_extraction_id(source_id)
         client = _make_client(project, "extract", mock)
         reviewer = LLMReviewer(client, prompt_version=extraction_prompt_version(project))
+        # force=True: retiring the paper's previous AI run is ExtractionTask's job, so a single-paper
+        # re-run and a forced batch run behave identically.
         summary = ExtractionTask(project, reviewer).run(
             only_includes=False, force=True, source_ids=[source_id],
             on_progress=_progress_cb(key), batch=False,
@@ -245,10 +245,6 @@ def _run_single_extraction(key: str, project: Any, mock: bool, source_id: int) -
         text = _extraction_summary_text(summary)
         if not summary.total_candidates:
             text = "This paper has no full-text markdown, so there was nothing to extract."
-        elif summary.extracted and previous_max is not None:
-            archived = project.db.archive_ai_extractions_upto(source_id, previous_max)
-            if archived:
-                text += f" The previous AI run ({archived} row(s)) is kept as an earlier version."
         elif not summary.extracted:
             text += " Previous AI extraction kept."
         with _lock:
