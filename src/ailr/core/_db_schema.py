@@ -91,6 +91,10 @@ Table(
     Index("idx_screening_source", "source_id"),
     # the screening list, status filters, and vote locks all filter on these three together
     Index("idx_screening_lookup", "source_id", "reviewer_type", "stage"),
+    # One current verdict per reviewer per paper per stage. A re-run must REPLACE its own earlier
+    # verdict, not add a second one; without this rule a re-run silently leaves two contradictory
+    # rows and every reader has to fall back to MAX(id).
+    Index("idx_screening_unique", "source_id", "reviewer_id", "stage", "reviewer_type", unique=True),
 )
 
 Table(
@@ -108,6 +112,9 @@ Table(
     Column("is_newly_discovered", Integer, server_default=text("0")),
     Column("llm_params", Text),
     Column("prompt_version", Text),
+    # What the model actually returned for THIS field, before unwrapping — the only way to tell a
+    # bare value apart from a {value, quote, confidence} object after the fact.
+    Column("raw_output", Text),
     Column("timestamp", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     Index("idx_extractions_source", "source_id"),
     # submitted/flag_check markers and per-extractor lookups filter on these three together

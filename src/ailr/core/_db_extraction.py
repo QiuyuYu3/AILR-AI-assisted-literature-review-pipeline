@@ -44,8 +44,8 @@ class ExtractionMixin:
                 INSERT INTO extractions
                     (source_id, extractor_type, extractor_id, field_name, value,
                      source_quote, page_or_section, confidence, is_newly_discovered,
-                     llm_params, prompt_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     llm_params, prompt_version, raw_output)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     result.source_id,
@@ -59,6 +59,7 @@ class ExtractionMixin:
                     1 if result.is_newly_discovered else 0,
                     json.dumps(result.llm_params) if result.llm_params else None,
                     result.prompt_version,
+                    result.raw_output,
                 ),
             )
             self._conn.commit()
@@ -90,7 +91,7 @@ class ExtractionMixin:
         cols = (
             "source_id", "extractor_type", "extractor_id", "field_name", "value",
             "source_quote", "page_or_section", "confidence", "is_newly_discovered",
-            "llm_params", "prompt_version",
+            "llm_params", "prompt_version", "raw_output",
         )
         group = "(" + ",".join("?" for _ in cols) + ")"
         try:
@@ -103,6 +104,7 @@ class ExtractionMixin:
                         json.dumps(r.value), r.source_quote, r.page_or_section, r.confidence,
                         1 if r.is_newly_discovered else 0,
                         json.dumps(r.llm_params) if r.llm_params else None, r.prompt_version,
+                        r.raw_output,
                     ])
                 self._conn.execute(
                     f"INSERT INTO extractions ({','.join(cols)}) VALUES {','.join(group for _ in part)}",

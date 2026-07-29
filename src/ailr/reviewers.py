@@ -62,6 +62,7 @@ class ExtractionResult:
     is_newly_discovered: bool = False
     llm_params: Optional[dict[str, Any]] = None
     prompt_version: Optional[str] = None
+    raw_output: Optional[str] = None
     timestamp: Optional[datetime] = None
 
 
@@ -300,6 +301,7 @@ class LLMReviewer(Reviewer):
                     confidence=confidence,
                     llm_params=self._llm_params(metadata),
                     prompt_version=self._prompt_version,
+                    raw_output=json.dumps(raw, ensure_ascii=False, default=str),
                 )
             )
 
