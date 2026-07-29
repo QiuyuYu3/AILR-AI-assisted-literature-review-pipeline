@@ -8,7 +8,7 @@ from typing import Any
 
 import dash_ag_grid as dag
 import dash_bootstrap_components as dbc
-from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
+from dash import ALL, MATCH, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.core.config import save_stage_workflow
 from ailr.core.source import Source
@@ -147,8 +147,14 @@ def layout() -> Any:
                 className="align-items-center g-2 mb-1",
             ),
             html.Div(id="extract-feedback", className="small text-success mb-1"),
-            # AI's value per field, for the clientside "changed from AI" highlight.
+            # AI's value per field, for the clientside "changed from AI" highlight and the
+            # "Use" buttons. Grids are kept separately: their widget takes rowData, not a value.
             dcc.Store(id="extract-ai-values", data={}),
+            dcc.Store(id="extract-ai-grids", data={}),
+            # The same two shapes per AI run (current + each one a re-run retired), for the
+            # "fill all" picker only. The per-field buttons stay on the current run, which is
+            # what the "AI proposed" line beside them shows.
+            dcc.Store(id="extract-ai-versions", data={}),
             html.Hr(className="my-1"),
 
             # ── Two independently-scrolling panes that flex-fill the remaining height ──
@@ -206,6 +212,28 @@ def layout() -> Any:
                             html.H6("Your extraction", className="d-inline me-2"),
                             html.Small("(edit AI's values; AI original shown under each field)", className="text-muted"),
                             html.Div(id="extract-form-container", className="mt-2"),
+                            # Bottom of the form, and only in verify: takes the whole form back to
+                            # AI's values at once. Shown here rather than at the top so it is not
+                            # the first thing you reach for.
+                            html.Div(
+                                [
+                                    dbc.Select(
+                                        id="extract-useall-version",
+                                        options=[],
+                                        size="sm",
+                                        style={"width": "auto"},
+                                        className="me-2",
+                                    ),
+                                    dcc.ConfirmDialogProvider(
+                                        dbc.Button("Fill all fields from AI", size="sm", color="secondary", outline=True),
+                                        id="extract-useall",
+                                        message="",
+                                    ),
+                                ],
+                                id="extract-useall-wrap",
+                                className="mt-2",
+                                style={"display": "none"},
+                            ),
                             html.Small("Save draft keeps your edits without finalizing — click it before leaving, edits aren't kept otherwise. Submit marks the paper done and returns you to the list.", className="text-muted d-block mt-3"),
                         ],
                         style=scroll_pane,
@@ -414,6 +442,11 @@ def register_callbacks(app: Any) -> None:
         Output("extract-feedback", "children"),
         Output("extract-ai-values", "data"),
         Output("extract-release-wrap", "style"),
+        Output("extract-ai-grids", "data"),
+        Output("extract-useall-wrap", "style"),
+        Output("extract-ai-versions", "data"),
+        Output("extract-useall-version", "options"),
+        Output("extract-useall-version", "value"),
         Input("extract-store", "data"),
         Input("shared-reviewer", "value"),
         Input("extract-refresh", "data"),
@@ -425,17 +458,20 @@ def register_callbacks(app: Any) -> None:
         sid = (store or {}).get("sid")
 
         hidden, shown = {"display": "none"}, {"display": "inline-block"}
+        # The fill-all row holds a picker beside its button, so it lays out as a flex row.
+        useall_shown = {"display": "flex", "alignItems": "center"}
+        blank_useall = ({}, hidden, {}, [], None)  # ai_grids, wrap style, versions, options, value
         if not sid:
             hint = html.Div("Open a paper from the Full-text review page to extract it.", className="text-muted")
-            return "", hint, "", True, True, "", {}, hidden
+            return "", hint, "", True, True, "", {}, hidden, *blank_useall
         src = db.get_source(int(sid))
         if src is None:
-            return "", html.Div("That paper is no longer available.", className="text-muted"), "", True, True, "", {}, hidden
+            return "", html.Div("That paper is no longer available.", className="text-muted"), "", True, True, "", {}, hidden, *blank_useall
 
         if not rid:
             return (_source_card(project.root, src),
                     dbc.Alert("Enter your reviewer ID above to begin.", color="info"),
-                    "", True, True, "", {}, hidden)
+                    "", True, True, "", {}, hidden, *blank_useall)
 
         fields = compose_schema(project.root / project.config.extraction.schema_path)
         workflow = project.config.extraction.workflow
@@ -448,17 +484,11 @@ def register_callbacks(app: Any) -> None:
                     html.Div([_claim_notice(workflow, display_ids),
                               _readonly_tables(db, src, display_ids, [f for f in fields if f.verify])]),
                     _ai_panel(db, src, workflow, rid),
-                    True, True, "", {}, hidden)
+                    True, True, "", {}, hidden, *blank_useall)
 
         ai_data: dict[str, Any] | None = None
         if workflow == "verify":
-            # Scalar fields AND scalar lists keep their quote in the separate source_quote
-            # column; wrap them as {value, quote} so the form can show it. Object /
-            # list-of-object values stay raw (quotes are nested at the leaves).
-            ai_data = {}
-            for r in db.list_extractions(src.id, extractor_type="ai"):
-                v = r["value"]
-                ai_data[r["field_name"]] = v if isinstance(v, dict) else {"value": v, "quote": r.get("source_quote"), "confidence": r.get("confidence")}
+            ai_data = _ai_data_from_rows(db.list_extractions(src.id, extractor_type="ai"))
         # Editable fields prefill from THIS reviewer's saved values (overriding AI); the AI value
         # stays visible as the "AI proposed" reference. Latest row wins (ORDER BY id).
         human_data = {
@@ -474,12 +504,20 @@ def register_callbacks(app: Any) -> None:
         # of that claim until you submit, after which the extraction is final.
         can_release = workflow == "verify" and bool(human_data) and not db.has_submitted(src.id, rid)
 
+        versions, version_options = _ai_versions(db, src, verify_fields, ai_data)
+        current = versions.get("current", {})
+
         return (_source_card(project.root, src),
                 _build_form(verify_fields, prefill_data=prefill_data, ai_data=ai_data),
                 _ai_panel(db, src, workflow, rid),
                 False, False, "",
-                _ai_compare_values(verify_fields, ai_data),
-                shown if can_release else hidden)
+                current.get("values", {}),
+                shown if can_release else hidden,
+                current.get("grids", {}),
+                useall_shown if versions else hidden,
+                versions,
+                version_options,
+                "current" if versions else None)
 
     # Buttons that act on the open paper. Submit / move / duplicate finish the paper and return to the
     # full-text list; Save persists a draft and stays put. Each is gated on its own n_clicks so a
@@ -607,16 +645,19 @@ def register_callbacks(app: Any) -> None:
         State({"type": "ex-diffbadge", "field": ALL}, "id"),
     )
 
+    # "Use AI rows" shares this callback rather than adding a duplicate output on the same grids.
     @app.callback(
         Output({"type": "ex-grid", "field": ALL}, "rowData"),
         Input({"type": "ex-addrow", "field": ALL}, "n_clicks"),
         Input({"type": "ex-delrow", "field": ALL}, "n_clicks"),
+        Input({"type": "ex-usegrid", "field": ALL}, "n_clicks"),
         State({"type": "ex-grid", "field": ALL}, "rowData"),
         State({"type": "ex-grid", "field": ALL}, "selectedRows"),
         State({"type": "ex-grid", "field": ALL}, "id"),
+        State("extract-ai-grids", "data"),
         prevent_initial_call=True,
     )
-    def _edit_grid_rows(add_clicks, del_clicks, all_rows, all_selected, grid_ids):
+    def _edit_grid_rows(add_clicks, del_clicks, use_clicks, all_rows, all_selected, grid_ids, ai_grids):
         triggered = ctx.triggered_id
         # A freshly rendered form fires this callback with n_clicks=None; without the value check
         # that mount would add a phantom row.
@@ -630,11 +671,66 @@ def register_callbacks(app: Any) -> None:
                 continue
             if triggered["type"] == "ex-addrow":
                 rows.append(_with_row_key({}))
+            elif triggered["type"] == "ex-usegrid":
+                rows = [_with_row_key(r) for r in (ai_grids or {}).get(gid["field"], [])]
             else:
                 drop = {r.get(_ROW_KEY) for r in (selected or []) if r.get(_ROW_KEY)}
                 rows = [r for r in rows if r.get(_ROW_KEY) not in drop]
             out.append(rows)
         return out
+
+    # Per-field "Use": drop AI's value into the widget. Nothing is written until Save/Submit, so a
+    # mis-click is undone by reopening the paper.
+    @app.callback(
+        Output({"type": "ex-value", "field": MATCH}, "value", allow_duplicate=True),
+        Input({"type": "ex-use", "field": MATCH}, "n_clicks"),
+        State({"type": "ex-use", "field": MATCH}, "id"),
+        State("extract-ai-values", "data"),
+        prevent_initial_call=True,
+    )
+    def _use_ai_field(n, btn_id, ai_values):
+        if not n:
+            return no_update
+        value = (ai_values or {}).get(btn_id["field"])
+        return no_update if value is None else value
+
+    @app.callback(
+        Output("extract-useall", "message"),
+        Input("extract-useall-version", "value"),
+        Input("extract-ai-versions", "data"),
+    )
+    def _useall_message(version, versions):
+        chosen = (versions or {}).get(version or "current") or {}
+        n = len(chosen.get("values") or {}) + len(chosen.get("grids") or {})
+        return (
+            f"Replace {n} field(s) on this form with the values from {chosen.get('label', 'the AI run')}? "
+            "Fields that run left empty are not touched, and nothing is written to the database "
+            "until you click Save draft or Submit."
+        )
+
+    # Same thing for the whole form at once, behind a confirm dialog. Fields the chosen run left
+    # empty keep whatever is in them: blanking those would be the one edit that is tedious to redo.
+    @app.callback(
+        Output({"type": "ex-value", "field": ALL}, "value", allow_duplicate=True),
+        Output({"type": "ex-grid", "field": ALL}, "rowData", allow_duplicate=True),
+        Input("extract-useall", "submit_n_clicks"),
+        State("extract-useall-version", "value"),
+        State("extract-ai-versions", "data"),
+        State({"type": "ex-value", "field": ALL}, "id"),
+        State({"type": "ex-grid", "field": ALL}, "id"),
+        prevent_initial_call=True,
+    )
+    def _use_ai_all(submit, version, versions, value_ids, grid_ids):
+        if not submit:
+            return [no_update] * len(value_ids), [no_update] * len(grid_ids)
+        chosen = (versions or {}).get(version or "current") or {}
+        ai_values, ai_grids = chosen.get("values") or {}, chosen.get("grids") or {}
+        values = [ai_values.get(i["field"], no_update) for i in value_ids]
+        grids = [
+            [_with_row_key(r) for r in ai_grids[i["field"]]] if i["field"] in ai_grids else no_update
+            for i in grid_ids
+        ]
+        return values, grids
 
 
 def reader_body(project: Any, sid: int, mode: str) -> Any:
@@ -713,11 +809,74 @@ def _ai_compare_values(fields: list[FieldSpec], ai_data: dict[str, Any] | None) 
             continue
         v, _ = _unwrap_cell(cell)
         if f.type == "list":
-            if isinstance(v, list):
-                out[f.name] = "\n".join(_ai_list_items(v))
+            text = "\n".join(_ai_list_items(v)) if isinstance(v, list) else ""
+            if text:
+                out[f.name] = text
         elif v is not None:
             out[f.name] = v
     return out
+
+
+def _ai_grid_rows(fields: list[FieldSpec], ai_data: dict[str, Any] | None) -> dict[str, list[dict]]:
+    """AI's rows per list-of-object field, already in ag-grid rowData shape, so the "Use AI rows"
+    buttons can refill a grid without another database read."""
+    out: dict[str, list[dict]] = {}
+    if not ai_data:
+        return out
+    for f in fields:
+        if not (f.type == "list" and f.item_type == "object"):
+            continue
+        v, _ = _unwrap_cell(ai_data.get(f.name))
+        if isinstance(v, list) and v:
+            out[f.name] = [_with_row_key(_flatten_list_item(it, f.item_fields or [])) for it in v]
+    return out
+
+
+def _ai_data_from_rows(rows: Any) -> dict[str, Any]:
+    """Extraction rows -> the {field: cell} shape the form reads. Scalar fields AND scalar lists
+    keep their quote in the separate source_quote column; wrap them as {value, quote} so the form
+    can show it. Object / list-of-object values stay raw (quotes are nested at the leaves)."""
+    out: dict[str, Any] = {}
+    for r in rows or []:
+        v = r["value"]
+        out[r["field_name"]] = v if isinstance(v, dict) else {"value": v, "quote": r.get("source_quote"), "confidence": r.get("confidence")}
+    return out
+
+
+def _ai_versions(db: Any, src: Source, fields: list[FieldSpec], ai_data: dict[str, Any] | None) -> tuple[dict, list[dict]]:
+    """Fillable values for the current AI run and every run a re-run retired, newest first.
+    Old runs are matched to the CURRENT schema by field name, so fields added since simply have
+    nothing to fill and fields dropped since are ignored."""
+    if not ai_data:
+        return {}, []
+    versions = {"current": {
+        "label": "the current AI run",
+        "values": _ai_compare_values(fields, ai_data),
+        "grids": _ai_grid_rows(fields, ai_data),
+    }}
+    options = [{"label": "Current AI run", "value": "current"}]
+    for i, run in enumerate(db.list_superseded_ai_runs(src.id)):
+        data = _ai_data_from_rows(run["rows"])
+        key = f"run{i}"
+        versions[key] = {
+            "label": f"the AI run of {run['timestamp']}",
+            "values": _ai_compare_values(fields, data),
+            "grids": _ai_grid_rows(fields, data),
+        }
+        options.append({"label": f"Earlier run: {run['timestamp']}", "value": key})
+    return versions, options
+
+
+def _use_ai_button(field: str, label: str = "Use", btn_type: str = "ex-use") -> Any:
+    """Fills this field's widget from the AI store. Never writes: Save/Submit still decides."""
+    return dbc.Button(
+        label,
+        id={"type": btn_type, "field": field},
+        size="sm",
+        color="link",
+        className="p-0 ms-2 align-baseline",
+        style={"fontSize": "0.75rem"},
+    )
 
 
 def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data: dict[str, Any] | None) -> Any:
@@ -786,6 +945,9 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
                                 color="danger",
                                 outline=True,
                             ),
+                            # Replaces every row with AI's, so it only makes sense when AI has rows.
+                            _use_ai_button(field.name, "Use AI rows", btn_type="ex-usegrid")
+                            if isinstance(ai_val, list) and ai_val else None,
                         ],
                         className="mt-2",
                     ),
@@ -942,6 +1104,7 @@ def _ai_list_reference(field_name: str, ai_val: Any, ai_quote: Any = None, diffe
             [
                 _changed_badge(field_name, differs),
                 "AI proposed: " + "; ".join(items),
+                _use_ai_button(field_name),
             ],
             className="text-muted d-block fst-italic mt-1",
         ) if items else None,
@@ -1044,6 +1207,7 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
                     _changed_badge(dotted),
                     f"AI proposed: {ai_value}",
                     html.Span(f"  · conf {ai_conf}", className="fw-bold ms-1") if ai_conf is not None else None,
+                    _use_ai_button(dotted),
                 ],
                 className="text-muted d-block",
                 style={"fontStyle": "italic"},
