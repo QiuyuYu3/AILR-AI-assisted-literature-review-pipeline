@@ -1,6 +1,24 @@
 # Changelog — ailr
 
 ---
+## [Unreleased]
+
+### Fixed
+- AI extraction kept only the first quote when the model attached one to each item of a list field; all of them are now stored.
+- Wide CSV export emitted no `_quote` column for list fields, dropping their evidence entirely.
+- Extraction form hid a list field's AI quote whenever the proposed value was empty.
+- "Changed from AI" highlighting only appeared on re-render, so edits looked unmarked until the paper was reopened; it now updates as you type.
+
+### Added
+- Projects → Recent: `×` removes an entry from the list without touching the project folder.
+- Extraction: a locked paper now says who claimed it, and you can release your own unsubmitted claim.
+
+### Changed
+- AI quote blocks in the extraction view start expanded.
+- Summary drops its title line, which repeated the app header.
+- Summary's extraction card leads with the human count and names how many drafts are still open; AI moves to a sub-metric.
+
+---
 ## [0.31.0] – 2026-07-27
 
 ### Fixed

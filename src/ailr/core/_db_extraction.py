@@ -132,6 +132,18 @@ class ExtractionMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete extractions: {e}") from e
 
+    def delete_reviewer_extractions(self, source_id: int, reviewer_id: str) -> int:
+        """Remove one human reviewer's extraction rows for a source, releasing their claim on it."""
+        try:
+            cur = self._conn.execute(
+                "DELETE FROM extractions WHERE source_id = ? AND extractor_type = 'human' AND extractor_id = ?",
+                (source_id, reviewer_id),
+            )
+            self._conn.commit()
+            return cur.rowcount
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to delete reviewer extractions: {e}") from e
+
     def has_extraction(self, source_id: int, extractor_type: str = "ai") -> bool:
         row = self._conn.execute(
             "SELECT 1 FROM extractions WHERE source_id = ? AND extractor_type = ? AND field_name NOT IN ('_flag_check', '_submitted') LIMIT 1",

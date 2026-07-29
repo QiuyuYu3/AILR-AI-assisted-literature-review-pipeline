@@ -29,9 +29,9 @@ def _flatten_columns(fields: list[FieldSpec]) -> list[tuple[str, FieldSpec, bool
             for sub in f.fields or []:
                 cols.append((f"{f.name}.{sub.name}", sub, True))
         elif f.type == "list" and f.item_type == "object":
-            cols.append((f.name, f, False))
+            cols.append((f.name, f, False))  # quotes live inside the items, not in source_quote
         elif f.type == "list":
-            cols.append((f.name, f, False))
+            cols.append((f.name, f, True))   # list of scalars carries one source_quote for the field
         else:
             cols.append((f.name, f, True))
     return cols
@@ -43,6 +43,8 @@ def _cell_value(field_name: str, owning: FieldSpec, value: Any, *, is_leaf: bool
         return "", ""
 
     if not is_leaf:
+        if isinstance(value, dict) and "value" in value:
+            value = value.get("value")
         try:
             return json.dumps(value, ensure_ascii=False), ""
         except (TypeError, ValueError):
@@ -88,10 +90,15 @@ def _group_by_extractor(ex_rows: list[dict]) -> dict[str, dict[str, Any]]:
             continue
         fields = grouped.setdefault(row.get("extractor_id") or "", {})
         val = row["value"]
-        if isinstance(val, (dict, list)):
-            fields[row["field_name"]] = val
+        quote = row.get("source_quote")
+        if isinstance(val, dict):
+            fields[row["field_name"]] = val      # object field: quotes sit at its leaves
+        elif isinstance(val, list):
+            # A list of scalars keeps its quote in source_quote, so re-pair it. Lists of objects
+            # have none and stay bare, keeping their exported shape unchanged.
+            fields[row["field_name"]] = {"value": val, "quote": quote} if quote else val
         else:
-            fields[row["field_name"]] = {"value": val, "quote": row.get("source_quote")}
+            fields[row["field_name"]] = {"value": val, "quote": quote}
     return grouped
 
 

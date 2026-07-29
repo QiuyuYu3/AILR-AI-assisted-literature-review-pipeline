@@ -11,7 +11,7 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.exceptions import AILRError
-from ailr.ui._project import create_project, list_recent_projects, switch_project
+from ailr.ui._project import create_project, list_recent_projects, remove_recent_project, switch_project
 
 
 _MODE_OPTIONS = [
@@ -37,12 +37,25 @@ def _recent_block():
         return html.Div("No recent projects.", className="text-muted small")
     return html.Div(
         [
-            dbc.Button(
-                Path(p).name + "  —  " + p,
-                id={"type": "pm-recent", "path": p},
-                color="link",
-                size="sm",
-                className="d-block text-start p-1",
+            html.Div(
+                [
+                    dbc.Button(
+                        Path(p).name + "  —  " + p,
+                        id={"type": "pm-recent", "path": p},
+                        color="link",
+                        size="sm",
+                        className="text-start p-1 flex-grow-1 text-truncate",
+                    ),
+                    dbc.Button(
+                        "×",
+                        id={"type": "pm-recent-remove", "path": p},
+                        color="link",
+                        size="sm",
+                        className="text-muted p-1",
+                        title="Remove from this list. The project folder and its data are untouched.",
+                    ),
+                ],
+                className="d-flex align-items-center",
             )
             for p in recent
         ]
@@ -125,7 +138,7 @@ def layout():
                                     ),
                                     html.Div(id="pm-open-feedback", className="small mb-3"),
                                     html.H6("Recent", className="mt-2"),
-                                    _recent_block(),
+                                    html.Div(_recent_block(), id="pm-recent-list"),
                                 ]
                             ),
                             className="h-100",
@@ -188,6 +201,10 @@ def register_callbacks(app):
     )
     def _open(_btn, _recent_clicks, path):
         trig = ctx.triggered_id
+        # Re-rendering the recent list re-fires this callback with every n_clicks at None; only act
+        # on a real click, else removing an entry would look like a failed open.
+        if not ctx.triggered or not ctx.triggered[0]["value"]:
+            return no_update, no_update
         target = None
         if isinstance(trig, dict) and trig.get("type") == "pm-recent":
             target = trig.get("path")
@@ -202,3 +219,15 @@ def register_callbacks(app):
         except Exception as e:
             return no_update, dbc.Alert(f"Could not open project: {e}", color="danger", className="py-2 mb-0")
         return f"/?o={int(time.time())}", no_update
+
+    @app.callback(
+        Output("pm-recent-list", "children"),
+        Input({"type": "pm-recent-remove", "path": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _remove_recent(clicks):
+        trig = ctx.triggered_id
+        if not isinstance(trig, dict) or not any(clicks or []):
+            return no_update
+        remove_recent_project(Path(trig["path"]))
+        return _recent_block()

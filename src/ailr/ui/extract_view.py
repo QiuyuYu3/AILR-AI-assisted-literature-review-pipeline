@@ -13,7 +13,7 @@ from ailr.core.config import save_stage_workflow
 from ailr.core.source import Source
 from ailr.ui import ai_runner
 from ailr.extraction import FieldSpec, compose_schema
-from ailr.reviewers import ExtractionResult
+from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult
 from ailr.ui._common import format_authors
 from ailr.ui._project import get_project, reload_project
 
@@ -28,6 +28,8 @@ _WORKFLOW_OPTIONS = [
 _REQUIRED_EXTRACTORS = 2  # independent extraction: how many humans must extract each paper
 
 _APP_CHROME_PX = 115  # height of the app header + tab bar above this view; the panes flex-fill the rest
+
+_DIFF_STYLE = {"borderLeft": "3px solid #f0ad4e", "paddingLeft": "8px"}
 
 
 def extraction_workflow_block() -> list[Any]:
@@ -140,6 +142,8 @@ def layout() -> Any:
                 className="align-items-center g-2 mb-1",
             ),
             html.Div(id="extract-feedback", className="small text-success mb-1"),
+            # AI's value per field, for the clientside "changed from AI" highlight.
+            dcc.Store(id="extract-ai-values", data={}),
             html.Hr(className="my-1"),
 
             # ── Two independently-scrolling panes that flex-fill the remaining height ──
@@ -162,6 +166,18 @@ def layout() -> Any:
                                     dbc.Button("Duplicate", id="extract-duplicate", size="sm", color="link", className="p-0 me-3 text-danger"),
                                     dbc.Button("↺ Move to screening", id="extract-move-screen", size="sm", color="link", className="p-0 me-3 text-secondary"),
                                     dbc.Button("↺ Move back to full-text", id="extract-move-ft", size="sm", color="link", className="p-0 text-secondary"),
+                                    # Only shown when you hold an unsubmitted claim on this paper.
+                                    html.Div(
+                                        dcc.ConfirmDialogProvider(
+                                            dbc.Button("Release this paper", size="sm", color="link", className="p-0 ms-3 text-secondary"),
+                                            id="extract-release",
+                                            message="Discard your draft for this paper and release it so another reviewer can extract it? Your saved values are deleted.",
+                                        ),
+                                        id="extract-release-wrap",
+                                        # inline-block, not the d-inline class: ConfirmDialogProvider
+                                        # renders its own block-level div, which would break the row.
+                                        style={"display": "none"},
+                                    ),
                                 ],
                                 className="mt-1 mb-1",
                             ),
@@ -340,6 +356,8 @@ def register_callbacks(app: Any) -> None:
         Output("extract-submit", "disabled"),
         Output("extract-save", "disabled"),
         Output("extract-feedback", "children"),
+        Output("extract-ai-values", "data"),
+        Output("extract-release-wrap", "style"),
         Input("extract-store", "data"),
         Input("shared-reviewer", "value"),
         Input("extract-refresh", "data"),
@@ -350,17 +368,18 @@ def register_callbacks(app: Any) -> None:
         rid = (reviewer or "").strip()
         sid = (store or {}).get("sid")
 
+        hidden, shown = {"display": "none"}, {"display": "inline-block"}
         if not sid:
             hint = html.Div("Open a paper from the Full-text review page to extract it.", className="text-muted")
-            return "", hint, "", True, True, ""
+            return "", hint, "", True, True, "", {}, hidden
         src = db.get_source(int(sid))
         if src is None:
-            return "", html.Div("That paper is no longer available.", className="text-muted"), "", True, True, ""
+            return "", html.Div("That paper is no longer available.", className="text-muted"), "", True, True, "", {}, hidden
 
         if not rid:
             return (_source_card(project.root, src),
                     dbc.Alert("Enter your reviewer ID above to begin.", color="info"),
-                    "", True, True, "")
+                    "", True, True, "", {}, hidden)
 
         fields = compose_schema(project.root / project.config.extraction.schema_path)
         workflow = project.config.extraction.workflow
@@ -370,9 +389,10 @@ def register_callbacks(app: Any) -> None:
         locked, display_ids = _compute_locked(db, src, rid, workflow)
         if locked:
             return (_source_card(project.root, src),
-                    _readonly_tables(db, src, display_ids, [f for f in fields if f.verify]),
+                    html.Div([_claim_notice(workflow, display_ids),
+                              _readonly_tables(db, src, display_ids, [f for f in fields if f.verify])]),
                     _ai_panel(db, src, workflow, rid),
-                    True, True, "")
+                    True, True, "", {}, hidden)
 
         ai_data: dict[str, Any] | None = None
         if workflow == "verify":
@@ -393,10 +413,17 @@ def register_callbacks(app: Any) -> None:
         ai_values = {k: (v["value"] if isinstance(v, dict) and "value" in v else v) for k, v in (ai_data or {}).items()}
         prefill_data = {**ai_values, **human_data}
 
+        verify_fields = [f for f in fields if f.verify]
+        # You hold this paper as soon as a draft exists (see other_human_extracted); offer a way out
+        # of that claim until you submit, after which the extraction is final.
+        can_release = workflow == "verify" and bool(human_data) and not db.has_submitted(src.id, rid)
+
         return (_source_card(project.root, src),
-                _build_form([f for f in fields if f.verify], prefill_data=prefill_data, ai_data=ai_data),
+                _build_form(verify_fields, prefill_data=prefill_data, ai_data=ai_data),
                 _ai_panel(db, src, workflow, rid),
-                False, False, "")
+                False, False, "",
+                _ai_compare_values(verify_fields, ai_data),
+                shown if can_release else hidden)
 
     # Buttons that act on the open paper. Submit / move / duplicate finish the paper and return to the
     # full-text list; Save persists a draft and stays put. Each is gated on its own n_clicks so a
@@ -410,6 +437,7 @@ def register_callbacks(app: Any) -> None:
         Input("extract-move-ft", "n_clicks"),
         Input("extract-move-screen", "n_clicks"),
         Input("extract-duplicate", "n_clicks"),
+        Input("extract-release", "submit_n_clicks"),
         State("extract-store", "data"),
         State("shared-reviewer", "value"),
         State({"type": "ex-value", "field": ALL}, "value"),
@@ -420,7 +448,7 @@ def register_callbacks(app: Any) -> None:
         State({"type": "ex-grid", "field": ALL}, "id"),
         prevent_initial_call=True,
     )
-    def _actions(submit, save, move_ft, move_screen, dup, store, reviewer,
+    def _actions(submit, save, move_ft, move_screen, dup, release, store, reviewer,
                  val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids):
         trigger = ctx.triggered_id
         rid = (reviewer or "").strip()
@@ -476,7 +504,52 @@ def register_callbacks(app: Any) -> None:
             db.mark_source_duplicate(src.id, True)
             return {"sid": None}, no_update, "full_text"
 
+        if trigger == "extract-release" and release:
+            # Deleting this reviewer's rows drops the claim (other_human_extracted finds nothing),
+            # so the paper goes back to being available to anyone.
+            if not db.has_submitted(src.id, rid):
+                db.delete_reviewer_extractions(src.id, rid)
+            return {"sid": None}, no_update, "full_text"
+
         return no_update, no_update, no_update
+
+    # "Changed from AI" highlight, recomputed in the browser on every keystroke. Kept clientside on
+    # purpose: it must not re-render the form (that would replace what you are typing with a
+    # database read-back). Matching is by field name, not by list position, so the two
+    # pattern-matching groups do not have to line up.
+    app.clientside_callback(
+        """
+        function(values, aiValues, valueIds, diffIds, badgeIds) {
+            const ai = aiValues || {};
+            const current = {};
+            (valueIds || []).forEach(function (id, i) { current[id.field] = (values || [])[i]; });
+            const norm = function (v) { return (v === null || v === undefined) ? "" : String(v).trim(); };
+            const changed = function (field) {
+                if (!Object.prototype.hasOwnProperty.call(ai, field)) return false;
+                return norm(current[field]) !== norm(ai[field]);
+            };
+            return [
+                (diffIds || []).map(function (id) {
+                    return changed(id.field)
+                        ? {borderLeft: "3px solid #f0ad4e", paddingLeft: "8px"}
+                        : {};
+                }),
+                (badgeIds || []).map(function (id) {
+                    return changed(id.field) ? {} : {display: "none"};
+                }),
+            ];
+        }
+        """,
+        Output({"type": "ex-diff", "field": ALL}, "style"),
+        Output({"type": "ex-diffbadge", "field": ALL}, "style"),
+        Input({"type": "ex-value", "field": ALL}, "value"),
+        # An Input, not a State: the form and this store are filled by the same render, and the
+        # highlight has to recompute once the AI values land.
+        Input("extract-ai-values", "data"),
+        State({"type": "ex-value", "field": ALL}, "id"),
+        State({"type": "ex-diff", "field": ALL}, "id"),
+        State({"type": "ex-diffbadge", "field": ALL}, "id"),
+    )
 
     @app.callback(
         Output({"type": "ex-grid", "field": ALL}, "rowData"),
@@ -552,6 +625,33 @@ def _build_form(fields: list[FieldSpec], prefill_data: dict[str, Any] | None = N
     return [_field_block(f, prefill_data, ai_data) for f in fields]
 
 
+def _ai_compare_values(fields: list[FieldSpec], ai_data: dict[str, Any] | None) -> dict[str, Any]:
+    """Flat {dotted field: AI value} in the same shape the widget holds, so the clientside
+    diff callback can compare by string. List-of-object (ag-grid) is left out: its editor
+    is not a plain input, so it has no clientside comparison."""
+    out: dict[str, Any] = {}
+    if not ai_data:
+        return out
+    for f in fields:
+        cell = ai_data.get(f.name)
+        if f.type == "object":
+            sub = cell if isinstance(cell, dict) else {}
+            for s in f.fields or []:
+                v, _ = _unwrap_cell(sub.get(s.name))
+                if v is not None:
+                    out[f"{f.name}.{s.name}"] = v
+            continue
+        if f.type == "list" and f.item_type == "object":
+            continue
+        v, _ = _unwrap_cell(cell)
+        if f.type == "list":
+            if isinstance(v, list):
+                out[f.name] = "\n".join(_ai_list_items(v))
+        elif v is not None:
+            out[f.name] = v
+    return out
+
+
 def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data: dict[str, Any] | None) -> Any:
     if field.type == "object":
         pre_sub = prefill_data.get(field.name) if prefill_data else None
@@ -618,19 +718,25 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
         src_list = prefill_data.get(field.name) if prefill_data else None
         if isinstance(src_list, list):
             prefill_text = "\n".join(str(v) for v in src_list)
+        ai_text = "\n".join(_ai_list_items(ai_val))
+        differs = bool(ai_text) and prefill_text.strip() != ai_text.strip()
         return dbc.Card(
             dbc.CardBody(
-                [
-                    html.H6(f"{field.name} (list of {field.item_type})"),
-                    _desc(field),
-                    dbc.Textarea(
-                        id={"type": "ex-value", "field": field.name},
-                        placeholder="one item per line",
-                        style={"height": "80px"},
-                        value=prefill_text,
-                    ),
-                    _ai_list_reference(ai_val, ai_quote),
-                ]
+                html.Div(
+                    [
+                        html.H6(f"{field.name} (list of {field.item_type})"),
+                        _desc(field),
+                        dbc.Textarea(
+                            id={"type": "ex-value", "field": field.name},
+                            placeholder="one item per line",
+                            style={"height": "80px"},
+                            value=prefill_text,
+                        ),
+                        _ai_list_reference(field.name, ai_val, ai_quote, differs),
+                    ],
+                    id={"type": "ex-diff", "field": field.name},
+                    style=_DIFF_STYLE if differs else {},
+                )
             ),
             className="mb-2",
         )
@@ -694,29 +800,62 @@ def _flatten_list_item(item: Any, item_fields: list[FieldSpec]) -> dict:
     return out
 
 
+def _split_quotes(quotes: Any) -> list[str]:
+    """One field can carry several quotes stacked in its single source_quote cell."""
+    out: list[str] = []
+    for q in (quotes if isinstance(quotes, list) else [quotes]):
+        if not q:
+            continue
+        out.extend(part.strip() for part in str(q).split(QUOTE_SEPARATOR) if part.strip())
+    return out
+
+
 def _quote_details(quotes: Any) -> Any:
-    """Collapsible 'AI quote' block; quotes can run long, so they start folded."""
-    qs = [q for q in (quotes if isinstance(quotes, list) else [quotes]) if q]
+    qs = _split_quotes(quotes)
     if not qs:
         return None
     label = "AI quote" if len(qs) == 1 else f"AI quotes ({len(qs)})"
     return html.Details(
         [html.Summary(html.Small(label, className="text-muted"))]
         + [html.Small(f"“{q}”", className="text-muted d-block fst-italic ms-3") for q in qs],
+        open=True,
     )
 
 
-def _ai_list_reference(ai_val: Any, ai_quote: Any = None) -> Any:
-    """Read-only 'AI proposed' line for a list-of-string field (matches the leaf widget's reference)."""
-    if not isinstance(ai_val, list) or not ai_val:
-        return None
-    items = [str(_unwrap_cell(v)[0]) for v in ai_val if _unwrap_cell(v)[0] not in (None, "")]
-    if not items:
+def _ai_list_items(ai_val: Any) -> list[str]:
+    if not isinstance(ai_val, list):
+        return []
+    return [str(_unwrap_cell(v)[0]) for v in ai_val if _unwrap_cell(v)[0] not in (None, "")]
+
+
+def _ai_list_reference(field_name: str, ai_val: Any, ai_quote: Any = None, differs: bool = False) -> Any:
+    """Read-only 'AI proposed' line for a list-of-string field (matches the leaf widget's reference).
+    The quote renders even when AI proposed nothing, so an empty value never hides its evidence."""
+    items = _ai_list_items(ai_val)
+    quote_block = _quote_details(ai_quote)
+    if not items and quote_block is None:
         return None
     return html.Div([
-        html.Small("AI proposed: " + "; ".join(items), className="text-muted d-block fst-italic mt-1"),
-        _quote_details(ai_quote),
+        html.Small(
+            [
+                _changed_badge(field_name, differs),
+                "AI proposed: " + "; ".join(items),
+            ],
+            className="text-muted d-block fst-italic mt-1",
+        ) if items else None,
+        quote_block,
     ])
+
+
+def _changed_badge(dotted: str, differs: bool = False) -> Any:
+    """'changed from AI' marker, shown/hidden by the clientside diff callback as you type."""
+    return dbc.Badge(
+        "changed from AI",
+        id={"type": "ex-diffbadge", "field": dotted},
+        color="warning",
+        className="me-2",
+        style={} if differs else {"display": "none"},
+    )
 
 
 def _ai_grid_reference(ai_val: Any, item_fields: list[FieldSpec]) -> Any:
@@ -800,7 +939,7 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
         children.append(
             html.Small(
                 [
-                    dbc.Badge("changed from AI", color="warning", className="me-2") if differs else None,
+                    _changed_badge(dotted),
                     f"AI proposed: {ai_value}",
                     html.Span(f"  · conf {ai_conf}", className="fw-bold ms-1") if ai_conf is not None else None,
                 ],
@@ -819,8 +958,12 @@ def _leaf_widget(field: FieldSpec, dotted: str, prefill_cell: Any = None, ai_cel
             value=pre_quote or "",
         )
     )
-    block_style = {"borderLeft": "3px solid #f0ad4e", "paddingLeft": "8px"} if differs else None
-    return html.Div(children, className="mb-2", style=block_style)
+    return html.Div(
+        children,
+        id={"type": "ex-diff", "field": dotted},
+        className="mb-2",
+        style=_DIFF_STYLE if differs else {},
+    )
 
 
 def _desc(field: FieldSpec) -> Any:
@@ -1003,6 +1146,17 @@ def _compute_locked(db: Any, src: Source, rid: str, workflow: str) -> tuple[bool
         submitters = db.extraction_submitters(src.id)
         return (len(submitters) >= _REQUIRED_EXTRACTORS), submitters
     return False, []
+
+
+def _claim_notice(workflow: str, display_ids: list[str]) -> Any:
+    """Say WHY the form is read-only — a locked paper otherwise just looks broken."""
+    who = ", ".join(i for i in display_ids if i) or "another reviewer"
+    if workflow == "verify":
+        msg = (f"Claimed by {who}. Saving a draft claims a paper and only one reviewer extracts each "
+               f"paper, so this one is read-only for you.")
+    else:
+        msg = f"All required reviewers have submitted ({who}), so this paper is read-only."
+    return dbc.Alert(msg, color="secondary", className="py-2 small")
 
 
 def _readonly_tables(db: Any, src: Source, submitter_ids: list[str], fields: list[FieldSpec]) -> Any:

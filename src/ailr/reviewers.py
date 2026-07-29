@@ -20,6 +20,12 @@ from ailr.extraction import (
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 
 
+# Several quotes can end up in one `source_quote` cell (a list field whose items each got their
+# own quote). A blank line separates them: extracted quotes are contiguous sentences from the
+# paper, so they never contain one themselves.
+QUOTE_SEPARATOR = "\n\n"
+
+
 @dataclass
 class ScreeningDecision:
     """A single screening decision. One row in the screening_decisions table.
@@ -401,10 +407,13 @@ def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tup
                     raw = json.loads(raw)
                 except ValueError:
                     pass
-        # model sometimes over-wraps each item as {value, quote}: flatten to values + first quote
+        # Model sometimes over-wraps each item as {value, quote} even though the schema asks for one
+        # quote per field. Flatten to values, and keep EVERY quote — source_quote is a single column,
+        # so they are stacked blank-line separated (QUOTE_SEPARATOR) and split again for display.
         if isinstance(raw, list) and raw and all(isinstance(x, dict) and "value" in x for x in raw):
-            quotes = [x.get("quote") for x in raw if x.get("quote")]
-            return [x.get("value") for x in raw], (outer_quote or (quotes[0] if quotes else None))
+            quotes = [str(x["quote"]).strip() for x in raw if x.get("quote")]
+            joined = QUOTE_SEPARATOR.join(quotes) if quotes else None
+            return [x.get("value") for x in raw], (outer_quote or joined)
         return raw, outer_quote
     # Object / list-of-objects: keep full structure (quotes live at leaves inside).
     # Models sometimes return the nested structure as a JSON string; parse it so the
