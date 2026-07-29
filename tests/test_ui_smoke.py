@@ -35,6 +35,7 @@ def test_build_app(seeded_project):
 
     app = build_app()
     assert app.layout is not None
+    assert app.callback_map          # every view actually registered its callbacks
 
 
 _LAYOUTS = [
@@ -63,6 +64,12 @@ _LAYOUTS = [
 ]
 
 
+def _node_count(x) -> int:
+    children = getattr(x, "children", None)
+    kids = children if isinstance(children, (list, tuple)) else [children] if children is not None else []
+    return 1 + sum(_node_count(k) for k in kids)
+
+
 @pytest.mark.parametrize("build", [b for _, b in _LAYOUTS], ids=[n for n, _ in _LAYOUTS])
 def test_layout_renders(seeded_project, build):
-    assert build() is not None
+    assert _node_count(build()) > 1   # a real component tree, not an empty shell

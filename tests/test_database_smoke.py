@@ -4,8 +4,8 @@ Verifies the assembled Database still wires every domain together
 (Sources / Screening / ScreeningAux / Extraction / Calibration / Admin).
 """
 
-from ailr.reviewers import ExtractionResult, ScreeningDecision
 from ailr.core.source import Source
+from ailr.reviewers import ExtractionResult, ScreeningDecision
 
 
 def test_database_roundtrip(db):
