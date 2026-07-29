@@ -10,6 +10,7 @@
 - AI extraction kept only the first quote when the model attached one to each item of a list field; all of them are now stored.
 - Wide CSV export emitted no `_quote` column for list fields, dropping their evidence entirely.
 - Extraction form hid a list field's AI quote whenever the proposed value was empty.
+- The extraction page's flag_check panel dropped each criterion verdict's supporting quote; captured all along, now shown.
 - "Changed from AI" highlighting only appeared on re-render, so edits looked unmarked until the paper was reopened; it now updates as you type.
 
 ### Added

@@ -1025,6 +1025,8 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
             items.append(html.Div(title, className="small fw-bold mb-0"))
             if fc.get("reason"):
                 items.append(html.Div(fc["reason"], className="small ms-3 mb-1"))
+            if fc.get("quote"):
+                items.append(html.Div(_quote_details(fc["quote"]), className="ms-3 mb-1"))
     return dbc.Card(dbc.CardBody(items), color="light")
 
 
