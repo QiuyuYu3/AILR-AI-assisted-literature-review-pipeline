@@ -66,8 +66,6 @@ def _build_content(reviewer: Optional[str]) -> Any:
     ]
     ai_extracted = len(db.sources_with_extraction(eligible_ext_ids, "ai"))
     human_extracted = len(db.sources_with_submission(eligible_ext_ids))
-    # A saved draft is a human extraction in progress; only Submit counts as done.
-    human_drafts = len(db.sources_with_extraction(eligible_ext_ids, "human")) - human_extracted
     # Only independent extraction produces papers waiting on an adjudicated consensus.
     awaiting_consensus = (
         len(db.sources_needing_consensus(eligible_ext_ids))
@@ -129,20 +127,13 @@ def _build_content(reviewer: Optional[str]) -> Any:
             ),
         ),
         _stage_card(
-            # Human count leads, like the two screening cards: AI output is input to the review,
-            # not progress through it.
             title="Full-text extraction",
-            main_metric=f"{human_extracted}",
-            main_label="human extractions submitted",
+            main_metric=f"{ai_extracted}",
+            main_label="AI-extracted sources",
             sub_metrics=[
-                ("AI-extracted", ai_extracted, "info"),
                 ("with markdown", with_md, "info"),
+                ("verified by human", human_extracted, "primary"),
             ] + ([("awaiting reconciliation", awaiting_consensus, "warning")] if awaiting_consensus else []),
-            extra=html.Small(
-                f"across {len(eligible_ext_ids)} paper(s) eligible for extraction"
-                + (f"  •  {human_drafts} in progress (draft, not submitted)" if human_drafts > 0 else ""),
-                className="text-muted",
-            ),
         ),
         _stage_card(
             title="API usage",

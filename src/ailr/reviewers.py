@@ -160,7 +160,10 @@ class LLMReviewer(Reviewer):
         *,
         prompt_version: str = "v1",
         max_tokens: int = 2048,
-        max_tokens_extract: int = 8192,
+        # The API requires max_tokens on every call, so some cap must exist. 16K is the safe
+        # ceiling for non-streaming SDK calls (HTTP timeout risk above that); real extractions
+        # were measured brushing the old 8192 cap, and quotes lengthen output further.
+        max_tokens_extract: int = 16000,
     ) -> None:
         self._client = llm_client
         self._prompt_version = prompt_version

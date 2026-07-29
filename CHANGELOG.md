@@ -4,6 +4,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Quick-extract calibration ran without the additional-instructions file, so it tested a prompt the real run never uses; it now composes the same prompt as `ailr extract`.
+- Abstract quick-test calibration hardcoded `flag_check=True`; it now follows `screening.flag_check` like the real run.
+- Extraction output cap raised 8192 → 16000 tokens; real runs were measured within 3% of the old ceiling, and a truncated tool-use JSON fails the whole paper.
 - AI extraction kept only the first quote when the model attached one to each item of a list field; all of them are now stored.
 - Wide CSV export emitted no `_quote` column for list fields, dropping their evidence entirely.
 - Extraction form hid a list field's AI quote whenever the proposed value was empty.
@@ -12,11 +15,13 @@
 ### Added
 - Projects → Recent: `×` removes an entry from the list without touching the project folder.
 - Extraction: a locked paper now says who claimed it, and you can release your own unsubmitted claim.
+- Full-text list marks papers someone holds an unsubmitted draft on; they used to read "To extract".
 
 ### Changed
+- Extraction prompt template and the schema's `quote` description now require a quote whenever a field has a value, including categorical answers. The old wording ("supporting this value, or null if not stated") left categorical fields almost entirely unquoted.
+- Under `verify`, the To-extract queue hides papers another reviewer already holds.
 - AI quote blocks in the extraction view start expanded.
 - Summary drops its title line, which repeated the app header.
-- Summary's extraction card leads with the human count and names how many drafts are still open; AI moves to a sub-metric.
 
 ---
 ## [0.31.0] – 2026-07-27

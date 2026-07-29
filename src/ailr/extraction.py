@@ -264,6 +264,16 @@ _CONFIDENCE_PROP = {
     "description": "Your confidence in this extracted value, 1 (guess) to 10 (explicit in the paper).",
 }
 
+# Wording matters here: "supporting this value, or null if not stated" reads to a model as
+# permission to skip the quote whenever its answer is a category label rather than the paper's own
+# words, which is how categorical fields ended up almost entirely unquoted.
+_QUOTE_DESCRIPTION = (
+    "Text copied word for word from the paper that this value comes from. Required whenever the "
+    "value is not null, including when your answer is a category you picked rather than the paper's "
+    "own wording: quote the passage you read that category off. Null only if the paper contains no "
+    "such passage. Never write text that is not in the paper."
+)
+
 
 def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool, top_level: bool = False) -> dict[str, Any]:
     if field.type == "object":
@@ -309,7 +319,7 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool, top_level: boo
                 "value": arr,
                 "quote": {
                     "type": ["string", "null"],
-                    "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
+                    "description": _QUOTE_DESCRIPTION + " One quote covers the whole list, not one per item.",
                 },
             }
             req = ["value", "quote"]
@@ -331,7 +341,7 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool, top_level: boo
             "value": leaf,
             "quote": {
                 "type": ["string", "null"],
-                "description": "Verbatim quote from the paper supporting this value, or null if not stated.",
+                "description": _QUOTE_DESCRIPTION,
             },
         }
         req = ["value", "quote"]

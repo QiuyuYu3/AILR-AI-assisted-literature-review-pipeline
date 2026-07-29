@@ -82,7 +82,7 @@ class QuickTestTask:
 
         for idx, source in enumerate(sample, 1):
             try:
-                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids, flag_check=True)
+                decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids, flag_check=self.project.config.screening.flag_check)
                 self.project.db.insert_test_decision(
                     run_id=run_id,
                     source_id=source.id,
@@ -211,6 +211,10 @@ class ExtractionQuickTestTask:
         config = self.project.config
         prompt_template = (self.project.root / config.extraction.prompt).read_text(encoding="utf-8")
         criteria_text, criterion_ids = resolve_criteria(self.project.root, config.screening)
+        # Same composed prompt as the real run (tasks/extract.py) — additional included. A
+        # calibration that omits any part of it measures a prompt nobody actually runs.
+        additional_path = self.project.root / config.extraction.additional
+        additional_text = additional_path.read_text(encoding="utf-8") if additional_path.exists() else ""
         fields = compose_schema(self.project.root / config.extraction.schema_path)
         with_quotes = config.extraction.output_format == "with_quotes"
         flag_check = config.extraction.flag_check
@@ -260,6 +264,7 @@ class ExtractionQuickTestTask:
                     fields=fields,
                     prompt_template=prompt_template,
                     criteria_text=criteria_text,
+                    additional_text=additional_text,
                     with_quotes=with_quotes,
                     flag_check=flag_check,
                     criterion_ids=criterion_ids,

@@ -632,6 +632,14 @@ class ScreeningMixin:
             where.append("(SELECT COUNT(DISTINCT extractor_id) FROM extractions "
                          "WHERE source_id = s.id AND extractor_type = 'human' AND field_name = '_submitted') < ?")
             params.append(extractors_required)
+            if extractors_required == 1:
+                # One extractor per paper (verify): a saved draft claims it, so it is no longer
+                # available to anyone else and has no business sitting in their queue. Independent
+                # needs two extractors, so a draft there must not close the queue.
+                where.append("NOT EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
+                             "AND e.extractor_type = 'human' AND e.extractor_id != ? "
+                             "AND e.field_name != '_flag_check')")
+                params.append(reviewer_id)
         elif status == "extracted_mine":
             where.append("(SELECT extractor_id FROM extractions e WHERE e.source_id = s.id "
                          "AND e.extractor_type = 'human' AND e.field_name = '_submitted' "
@@ -966,12 +974,13 @@ class ScreeningMixin:
     def full_text_page_meta(self, source_ids: list[int], reviewer_id: str, stage: str = "full_text",
                             team_size: int = 1) -> dict:
         """One-round-trip per-source metadata for the full-text page: this reviewer's latest decision,
-        peer-reviewer count, latest AI decision, note count, human submitter, and extraction-eligibility.
+        peer-reviewer count, latest AI decision, note count, human submitter, who holds an unsubmitted
+        claim, and extraction-eligibility.
         Each piece is a scalar-per-source LEFT JOIN (no fan-out), so this returns exactly what the six
         separate calls (get_decisions_by_reviewer / count_peer_reviewers / get_latest_ai_decisions /
         count_notes / human_extractors_for_sources / final_include_md_ids) did — just in one query."""
-        empty = {"my_decisions": {}, "peer_counts": {}, "ai_decisions": {},
-                 "note_counts": {}, "extracted_by": {}, "extract_eligible": set()}
+        empty = {"my_decisions": {}, "peer_counts": {}, "ai_decisions": {}, "note_counts": {},
+                 "extracted_by": {}, "claimed_by": {}, "extract_eligible": set()}
         if not source_ids:
             return empty
         ph = ",".join("?" for _ in source_ids)
@@ -982,6 +991,7 @@ class ScreeningMixin:
                    ai.decision AS ai_decision,
                    COALESCE(nt.n, 0) AS note_count,
                    sub.extractor_id AS extracted_by,
+                   claim.extractor_id AS claimed_by,
                    CASE WHEN {ft_final_include_md_sql(team_size)} THEN 1 ELSE 0 END AS extract_eligible
             FROM sources s
             LEFT JOIN (
@@ -1009,11 +1019,17 @@ class ScreeningMixin:
                       WHERE extractor_type = 'human' AND field_name = '_submitted' GROUP BY source_id) m
                   ON m.source_id = e.source_id AND m.mid = e.id
             ) sub ON sub.source_id = s.id
+            LEFT JOIN (
+                SELECT e.source_id, e.extractor_id FROM extractions e
+                JOIN (SELECT source_id, MAX(id) AS mid FROM extractions
+                      WHERE extractor_type = 'human' AND field_name != '_flag_check' GROUP BY source_id) m
+                  ON m.source_id = e.source_id AND m.mid = e.id
+            ) claim ON claim.source_id = s.id
             WHERE s.id IN ({ph})
         """
         params = [reviewer_id, stage, reviewer_id, stage, stage, *source_ids]
-        out = {**empty, "my_decisions": {}, "peer_counts": {}, "ai_decisions": {},
-               "note_counts": {}, "extracted_by": {}, "extract_eligible": set()}
+        out = {**empty, "my_decisions": {}, "peer_counts": {}, "ai_decisions": {}, "note_counts": {},
+               "extracted_by": {}, "claimed_by": {}, "extract_eligible": set()}
         for r in self._conn.execute(sql, params).fetchall():
             sid = r["source_id"]
             if r["my_decision"] is not None:
@@ -1025,6 +1041,8 @@ class ScreeningMixin:
                 out["note_counts"][sid] = r["note_count"]
             if r["extracted_by"] is not None:
                 out["extracted_by"][sid] = r["extracted_by"]
+            if r["claimed_by"] is not None:
+                out["claimed_by"][sid] = r["claimed_by"]
             if r["extract_eligible"]:
                 out["extract_eligible"].add(sid)
         return out

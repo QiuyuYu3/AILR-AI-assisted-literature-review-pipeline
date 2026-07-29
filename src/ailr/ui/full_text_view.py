@@ -531,6 +531,7 @@ def register_callbacks(app: Any) -> None:
         peer_counts = meta["peer_counts"] if workflow == "independent" else {}
         extract_ids = meta["extract_eligible"] - ft_conflict_ids  # extraction-eligible, minus unresolved conflicts
         extracted_by = meta["extracted_by"]                       # {sid: extractor_id who submitted}
+        claimed_by = meta["claimed_by"]                           # {sid: extractor_id holding it, draft included}
         ai_by_source = meta["ai_decisions"]
         note_counts = meta["note_counts"]
         tags_by_source = db.get_tags_for_sources(page_ids)        # one-to-many, kept as its own query
@@ -547,6 +548,7 @@ def register_callbacks(app: Any) -> None:
                 s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), rid,
                 can_extract=s.id in extract_ids, expand_abstract=bool(expand_all),
                 extracted_by=extracted_by.get(s.id),
+                claimed_by=claimed_by.get(s.id),
                 extract_verify=project.config.extraction.workflow == "verify",
                 low_text=_low_text_md(project.root, s.id, project.config.preprocess.low_text_threshold),
                 tags=tags_by_source.get(s.id, []),
@@ -600,6 +602,7 @@ def _ft_card(
     can_extract: bool = False,
     expand_abstract: bool = False,
     extracted_by: Optional[str] = None,
+    claimed_by: Optional[str] = None,
     extract_verify: bool = False,
     low_text: bool = False,
     tags: Optional[list[dict]] = None,
@@ -714,8 +717,19 @@ def _ft_card(
             className="mt-2",
         )
     elif can_extract:
-        locked = extracted_by is not None and extracted_by != reviewer_id and extract_verify
-        if extracted_by is None:
+        # A saved draft claims a paper under `verify` just as a submission does, so the queue has to
+        # show it — otherwise a paper someone is mid-way through still reads "To extract".
+        drafted_by = claimed_by if extracted_by is None and extract_verify else None
+        locked = (
+            (extracted_by is not None and extracted_by != reviewer_id)
+            or (drafted_by is not None and drafted_by != reviewer_id)
+        ) and extract_verify
+        if drafted_by is not None:
+            status_badge = dbc.Badge(
+                "Your draft — in progress" if drafted_by == reviewer_id else f"In progress by {drafted_by}",
+                color="info", className="align-middle",
+            )
+        elif extracted_by is None:
             status_badge = dbc.Badge("To extract", color="secondary", className="align-middle")
         elif extracted_by == reviewer_id:
             status_badge = dbc.Badge("Extracted by you", color="success", className="align-middle")

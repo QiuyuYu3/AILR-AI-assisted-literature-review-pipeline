@@ -14,7 +14,9 @@ Extract the following fields from the paper in the user message.
 
 - Base every answer on what is explicitly stated in the paper. Do not infer, guess, or paraphrase.
 - If a field's information is not stated, output null. Do not invent values.
-- For each leaf field, also give a `quote`: a verbatim sentence or short passage from the paper supporting the value. If nothing supports it, set the quote to null.
+- Whenever you give a field a value, give its `quote` too: text copied word for word from the paper that the value comes from. This includes fields you answer by picking a category rather than in the paper's own wording. Quote the passage you read that category off.
+- Set a `quote` to null only when the value itself is null, or when the paper truly contains no passage behind it. Never write a quote that does not appear word for word in the paper.
+- A field answered with a list of options carries one quote for the whole field, not one quote per option.
 - For repeating groups (e.g. multiple findings per paper), output one entry per occurrence.
 
 # INCLUSION RE-CHECK
