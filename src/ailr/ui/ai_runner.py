@@ -95,6 +95,12 @@ def start_extraction(project: Any, mock: bool, all_sources: bool = False, force:
     return _start("extraction", _run_extraction, project, mock, all_sources, force)
 
 
+def start_single_extraction(project: Any, source_id: int, mock: bool = False) -> bool:
+    """Re-extract one paper. Shares the "extraction" job key with the batch run so the two can
+    never write the same rows at once."""
+    return _start("extraction", _run_single_extraction, project, mock, source_id)
+
+
 def start_preprocess(project: Any, force: bool = False, only_ids=None) -> bool:
     return _start("preprocess", _run_preprocess, project, force, only_ids)
 
@@ -205,6 +211,49 @@ def _run_calibration(key: str, project: Any, mock: bool, n: int, stage: str = "s
             _jobs[key].update({"running": False, "error": str(e)})
 
 
+def _extraction_summary_text(summary: Any) -> str:
+    text = (
+        f"Extracted {summary.extracted}/{summary.total_candidates} "
+        f"(already done {summary.skipped_already_done}, failed {summary.failed}). "
+        f"{summary.total_input_tokens + summary.total_output_tokens:,} tokens"
+    )
+    if summary.quote_values:
+        text += (
+            f" Quotes: {summary.quote_quoted}/{summary.quote_values} values quoted "
+            f"({summary.quote_quoted / summary.quote_values:.0%}), "
+            f"{summary.quote_verbatim}/{summary.quote_checked} verbatim."
+        )
+    return text
+
+
+def _run_single_extraction(key: str, project: Any, mock: bool, source_id: int) -> None:
+    try:
+        # The task only ever appends rows, so note where the previous run ends BEFORE extracting and
+        # retire everything up to that mark afterwards. Retiring first would leave the paper with no
+        # AI extraction at all whenever the new call fails.
+        previous_max = project.db.max_ai_extraction_id(source_id)
+        client = _make_client(project, "extract", mock)
+        reviewer = LLMReviewer(client, prompt_version=extraction_prompt_version(project))
+        summary = ExtractionTask(project, reviewer).run(
+            only_includes=False, force=True, source_ids=[source_id],
+            on_progress=_progress_cb(key), batch=False,
+        )
+        text = _extraction_summary_text(summary)
+        if not summary.total_candidates:
+            text = "This paper has no full-text markdown, so there was nothing to extract."
+        elif summary.extracted and previous_max is not None:
+            archived = project.db.archive_ai_extractions_upto(source_id, previous_max)
+            if archived:
+                text += f" The previous AI run ({archived} row(s)) is kept as an earlier version."
+        elif not summary.extracted:
+            text += " Previous AI extraction kept."
+        with _lock:
+            _jobs[key].update({"running": False, "summary": text})
+    except Exception as e:
+        with _lock:
+            _jobs[key].update({"running": False, "error": str(e)})
+
+
 def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> None:
     try:
         # A real run supersedes earlier mock results: clear them first so they don't block re-extraction.
@@ -214,17 +263,7 @@ def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = Fals
         summary = ExtractionTask(project, reviewer).run(
             only_includes=not all_sources, force=force, on_progress=_progress_cb(key), batch=mock
         )
-        text = (
-            f"Extracted {summary.extracted}/{summary.total_candidates} "
-            f"(already done {summary.skipped_already_done}, failed {summary.failed}). "
-            f"{summary.total_input_tokens + summary.total_output_tokens:,} tokens"
-        )
-        if summary.quote_values:
-            text += (
-                f" Quotes: {summary.quote_quoted}/{summary.quote_values} values quoted "
-                f"({summary.quote_quoted / summary.quote_values:.0%}), "
-                f"{summary.quote_verbatim}/{summary.quote_checked} verbatim."
-            )
+        text = _extraction_summary_text(summary)
         if replaced:
             text += f" Replaced {replaced} earlier mock extraction row(s)."
         with _lock:

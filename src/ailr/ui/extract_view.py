@@ -170,7 +170,20 @@ def layout() -> Any:
                                 [
                                     dbc.Button("Duplicate", id="extract-duplicate", size="sm", color="link", className="p-0 me-3 text-danger"),
                                     dbc.Button("↺ Move to screening", id="extract-move-screen", size="sm", color="link", className="p-0 me-3 text-secondary"),
-                                    dbc.Button("↺ Move back to full-text", id="extract-move-ft", size="sm", color="link", className="p-0 text-secondary"),
+                                    dbc.Button("↺ Move back to full-text", id="extract-move-ft", size="sm", color="link", className="p-0 me-3 text-secondary"),
+                                    # Same inline-block wrapper as Release: ConfirmDialogProvider
+                                    # renders a block-level div that would otherwise break the row.
+                                    html.Div(
+                                        dcc.ConfirmDialogProvider(
+                                            dbc.Button("↻ Re-run AI extraction", size="sm", color="link", className="p-0 text-secondary"),
+                                            id="extract-rerun",
+                                            message="Re-run the AI extraction for this paper with the current prompt and schema? "
+                                                    "This calls the API and costs tokens. The previous AI extraction is kept as an "
+                                                    "earlier version, and your saved values are not touched, but the form reloads "
+                                                    "when the run finishes — save any unsaved edits first.",
+                                        ),
+                                        style={"display": "inline-block"},
+                                    ),
                                     # Only shown when you hold an unsubmitted claim on this paper.
                                     html.Div(
                                         dcc.ConfirmDialogProvider(
@@ -186,6 +199,8 @@ def layout() -> Any:
                                 ],
                                 className="mt-1 mb-1",
                             ),
+                            html.Div(id="extract-rerun-status", className="small mb-1"),
+                            dcc.Interval(id="extract-rerun-poll", interval=1500, disabled=True),
                             html.Div(id="extract-ai-panel"),
                             html.Hr(),
                             html.H6("Your extraction", className="d-inline me-2"),
@@ -296,6 +311,42 @@ def register_callbacks(app: Any) -> None:
         if not sid:
             return html.Small("Open a paper from the Full-text review page.", className="text-muted")
         return reader_body(get_project(), int(sid), mode)
+
+    # Re-extract the open paper with the current prompt/schema. Shares the runner's "extraction" job
+    # key with the batch run, so it refuses to start while a full run is going.
+    @app.callback(
+        Output("extract-rerun-poll", "disabled"),
+        Output("extract-rerun-status", "children"),
+        Input("extract-rerun", "submit_n_clicks"),
+        State("extract-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _rerun_one(n, store):
+        sid = (store or {}).get("sid")
+        if not n or not sid:
+            return no_update, no_update
+        started = ai_runner.start_single_extraction(get_project(), int(sid))
+        if not started:
+            return True, dbc.Alert("An AI extraction run is already in progress.", color="warning", className="py-1 mb-0")
+        return False, dbc.Alert("Re-running AI extraction for this paper…", color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output("extract-rerun-status", "children", allow_duplicate=True),
+        Output("extract-rerun-poll", "disabled", allow_duplicate=True),
+        Output("extract-refresh", "data", allow_duplicate=True),
+        Input("extract-rerun-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def _rerun_poll(_n):
+        st = ai_runner.get_status("extraction")
+        if st.get("running"):
+            return html.Small("Re-running AI extraction…", className="text-muted"), False, no_update
+        if st.get("error"):
+            return dbc.Alert(f"Re-run failed: {st['error']}", color="danger", className="py-1 mb-0"), True, no_update
+        if st.get("summary"):
+            # Refresh so the form and the AI reference pick up the new extraction.
+            return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}
+        return no_update, True, no_update
 
     @app.callback(
         Output("extract-ai-poll", "disabled"),
@@ -1023,6 +1074,53 @@ def _desc(field: FieldSpec) -> Any:
     return html.Span()
 
 
+def _ai_row_block(row: dict) -> Any:
+    """One field of an AI extraction: value, its quote(s), and confidence."""
+    quotes: list = []
+    clean = _strip_nested_quotes(row["value"], quotes)
+    if row.get("source_quote"):
+        quotes.insert(0, row["source_quote"])
+    block: list[Any] = [
+        html.Div([
+            html.Strong(f"{row['field_name']}: "),
+            html.Code(json.dumps(clean, ensure_ascii=False), style={"whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
+        ]),
+    ]
+    if quotes:
+        block.append(html.Div(_quote_details(quotes), className="ms-3"))
+    meta = []
+    if row.get("confidence") is not None:
+        meta.append(f"confidence: {row['confidence']}")
+    if row.get("page_or_section"):
+        meta.append(f"@ {row['page_or_section']}")
+    if meta:
+        block.append(html.Div(" • ".join(meta), className="text-muted ms-3", style={"fontSize": "0.75rem"}))
+    return html.Div(block, className="small mb-2")
+
+
+def _superseded_ai_block(db: Any, src: Source) -> Any:
+    """Collapsed view of AI extractions a re-run replaced. They stay in the database, so a re-run
+    that reads the paper differently can still be compared against what it replaced."""
+    runs = db.list_superseded_ai_runs(src.id)
+    if not runs:
+        return None
+    # One collapsible per run, all inside one outer collapsible: re-running several times would
+    # otherwise dump every version into the panel at once.
+    body = [
+        html.Details(
+            [html.Summary(html.Small(f"Run of {run['timestamp']}", className="text-muted"))]
+            + [_ai_row_block(r) for r in run["rows"]],
+            className="ms-2 mt-1",
+        )
+        for run in runs
+    ]
+    label = "Earlier AI version" if len(runs) == 1 else f"Earlier AI versions ({len(runs)})"
+    return html.Details(
+        [html.Summary(html.Small(label, className="text-muted"))] + body,
+        className="mt-2",
+    )
+
+
 def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
     ai_rows = db.list_extractions(src.id, extractor_type="ai")
     flag_check = db.get_flag_check(src.id, extractor_type="ai")
@@ -1035,27 +1133,7 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
         return dbc.Alert("AI extraction hidden until you submit (workflow: independent).", color="secondary")
 
     items: list[Any] = [html.H6("AI extraction")]
-    for row in ai_rows:
-        quotes: list = []
-        clean = _strip_nested_quotes(row["value"], quotes)
-        if row.get("source_quote"):
-            quotes.insert(0, row["source_quote"])
-        block: list[Any] = [
-            html.Div([
-                html.Strong(f"{row['field_name']}: "),
-                html.Code(json.dumps(clean, ensure_ascii=False), style={"whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
-            ]),
-        ]
-        if quotes:
-            block.append(html.Div(_quote_details(quotes), className="ms-3"))
-        meta = []
-        if row.get("confidence") is not None:
-            meta.append(f"confidence: {row['confidence']}")
-        if row.get("page_or_section"):
-            meta.append(f"@ {row['page_or_section']}")
-        if meta:
-            block.append(html.Div(" • ".join(meta), className="text-muted ms-3", style={"fontSize": "0.75rem"}))
-        items.append(html.Div(block, className="small mb-2"))
+    items.extend(_ai_row_block(row) for row in ai_rows)
     if flag_check:
         from ailr.ui._common import criterion_names
 
@@ -1078,6 +1156,7 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
                 items.append(html.Div(fc["reason"], className="small ms-3 mb-1"))
             if fc.get("quote"):
                 items.append(html.Div(_quote_details(fc["quote"]), className="ms-3 mb-1"))
+    items.append(_superseded_ai_block(db, src))
     return dbc.Card(dbc.CardBody(items), color="light")
 
 

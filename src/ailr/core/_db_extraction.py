@@ -2,7 +2,8 @@
 
 import json
 import sqlite3
-from typing import TYPE_CHECKING, Optional
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Optional
 
 from ailr.core._db_facade import _row_to_source
 from ailr.core._db_screening import ft_final_include_md_sql
@@ -11,6 +12,26 @@ from ailr.exceptions import DatabaseError
 
 if TYPE_CHECKING:
     from ailr.reviewers import ExtractionResult
+
+
+# extractor_type given to an AI extraction that a re-run replaced. Every query in the app matches
+# 'ai' exactly, so re-typing a row retires it everywhere at once without deleting the data.
+AI_SUPERSEDED = "ai_superseded"
+
+# Rows further apart than this belong to different runs (see list_superseded_ai_runs).
+_RUN_GAP_SECONDS = 120
+
+
+def _as_datetime(ts: Any) -> Optional[datetime]:
+    """timestamp comes back as a datetime on Postgres and as a string on SQLite."""
+    if isinstance(ts, datetime):
+        return ts
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 class ExtractionMixin:
@@ -131,6 +152,55 @@ class ExtractionMixin:
             return cur.rowcount
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete extractions: {e}") from e
+
+    def max_ai_extraction_id(self, source_id: int) -> Optional[int]:
+        row = self._conn.execute(
+            "SELECT MAX(id) AS m FROM extractions WHERE source_id = ? AND extractor_type = 'ai'",
+            (source_id,),
+        ).fetchone()
+        return row["m"] if row else None
+
+    def archive_ai_extractions_upto(self, source_id: int, max_id: int) -> int:
+        """Retire a source's AI rows from an earlier run (id <= max_id) by re-typing them, keeping
+        anything written after that mark as the live AI extraction. Nothing is deleted: every query
+        matches extractor_type = 'ai' exactly, so the old run drops out of the app while staying in
+        the table for comparison. A single-paper re-run calls this only once the new rows have
+        landed, so a failed run leaves the previous extraction untouched."""
+        try:
+            cur = self._conn.execute(
+                f"UPDATE extractions SET extractor_type = '{AI_SUPERSEDED}' "
+                "WHERE source_id = ? AND extractor_type = 'ai' AND id <= ?",
+                (source_id, max_id),
+            )
+            self._conn.commit()
+            return cur.rowcount
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to archive superseded AI extractions: {e}") from e
+
+    def list_superseded_ai_runs(self, source_id: int) -> list[dict]:
+        """Retired AI extractions for a source, newest run first.
+
+        Rows are split into runs by the gap between consecutive timestamps, not by the timestamp
+        itself: one run writes its fields row by row, so they can straddle a second (or minute)
+        boundary and would split into two apparent versions if grouped on the value. Two real runs
+        are always minutes apart — a human clicks the button between them.
+        """
+        rows = self.list_extractions(source_id, extractor_type=AI_SUPERSEDED)  # ordered by id
+        runs: list[dict] = []
+        previous: Optional[datetime] = None
+        for row in rows:
+            ts = _as_datetime(row.get("timestamp"))
+            new_run = (
+                not runs
+                or ts is None
+                or previous is None
+                or (ts - previous).total_seconds() > _RUN_GAP_SECONDS
+            )
+            if new_run:
+                runs.append({"timestamp": str(row.get("timestamp"))[:19], "rows": []})
+            runs[-1]["rows"].append(row)
+            previous = ts
+        return list(reversed(runs))
 
     def delete_reviewer_extractions(self, source_id: int, reviewer_id: str) -> int:
         """Remove one human reviewer's extraction rows for a source, releasing their claim on it."""

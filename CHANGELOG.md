@@ -15,6 +15,7 @@
 - Extraction list-of-object tables could only add rows, never remove them, so a mis-added row was saved as an empty object; rows are now selectable and deletable, and blank rows are dropped on save.
 
 ### Added
+- Extraction page: re-run the AI extraction for the open paper with the current prompt and schema. The run it replaces is kept as an earlier version, viewable under the AI extraction panel.
 - Verbatim quote audit: every AI quote is checked word-for-word against the paper's markdown. Coverage + verbatim rates on the extraction run summary, a per-field breakdown on quick-extract calibration results, and a project-wide report with not-found CSV on Reports.
 - Projects → Recent: `×` removes an entry from the list without touching the project folder.
 - Extraction: a locked paper now says who claimed it, and you can release your own unsubmitted claim.
