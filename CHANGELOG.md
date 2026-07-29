@@ -12,6 +12,8 @@
 - Extraction form hid a list field's AI quote whenever the proposed value was empty.
 - The extraction page's flag_check panel dropped each criterion verdict's supporting quote; captured all along, now shown.
 - "Changed from AI" highlighting only appeared on re-render, so edits looked unmarked until the paper was reopened; it now updates as you type.
+- Re-extracting a paper failed at the last step: the derived full-text verdict collided with the one the earlier run wrote (unique per source/reviewer/stage), so the paper was reported as failed even though its fields had already been saved. A forced re-run now replaces that verdict.
+- Extraction run summaries reported "failed N" without the reason; the recorded error (and its exception type) is now shown.
 - Extraction list-of-object tables could only add rows, never remove them, so a mis-added row was saved as an empty object; rows are now selectable and deletable, and blank rows are dropped on save.
 
 ### Added

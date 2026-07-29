@@ -223,6 +223,10 @@ def _extraction_summary_text(summary: Any) -> str:
             f"({summary.quote_quoted / summary.quote_values:.0%}), "
             f"{summary.quote_verbatim}/{summary.quote_checked} verbatim."
         )
+    # Without this a failed paper reported only "failed 1", with the reason sitting unread in
+    # summary.failures.
+    for f in getattr(summary, "failures", [])[:3]:
+        text += f" | #{f.get('source_id')} failed: {f.get('error')}"
     return text
 
 

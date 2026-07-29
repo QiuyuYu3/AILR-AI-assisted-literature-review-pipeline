@@ -182,6 +182,14 @@ class ExtractionTask:
                                 extractor_id=self.reviewer.reviewer_id,
                                 flag_check=extraction.flag_check,
                             )
+                            if force:
+                                # The derived full-text verdict is unique per
+                                # (source, reviewer, stage, reviewer_type), so a re-run collides
+                                # with the verdict its own earlier run wrote. Drop that one first;
+                                # without this the whole paper fails AFTER its fields are saved.
+                                self.project.db.delete_stage_decisions(
+                                    source.id, "full_text", reviewer_type=self.reviewer.reviewer_type
+                                )
                             self.project.db.insert_screening_decision(ft_decision)
 
                     if not batch and meta is not None:
@@ -195,8 +203,10 @@ class ExtractionTask:
                         on_progress(done, len(candidates), source, None)
                 except Exception as e:
                     summary.failed += 1
+                    # Type included: several DB/IO errors stringify to an empty message, which
+                    # reported as "failed" with no reason at all.
                     summary.failures.append(
-                        {"source_id": source.id, "title": source.title, "error": str(e)}
+                        {"source_id": source.id, "title": source.title, "error": f"{type(e).__name__}: {e}"}
                     )
                     if on_progress:
                         on_progress(done, len(candidates), source, e)
