@@ -1,6 +1,7 @@
 """Screening decisions, conflicts, and reconciliations."""
 
 import json
+import re
 import sqlite3
 from typing import TYPE_CHECKING, Optional
 
@@ -111,20 +112,40 @@ _SORT_ORDERS = {
 }
 
 
+_PAPER_ID_PATTERN = re.compile(r"^#?(\d+)$")
+
+
+def _paper_id(kw: str) -> Optional[int]:
+    """The paper number in '#123' / '123', or None. Values too large for an int column are text."""
+    m = _PAPER_ID_PATTERN.match(kw)
+    if not m:
+        return None
+    sid = int(m.group(1))
+    return sid if sid < 2**31 else None
+
+
 def _keyword_filter(keyword: str, within: str) -> tuple[Optional[str], list]:
     """(WHERE clause, params) for the keyword search, or (None, []). Case-insensitive via
     lower(col) LIKE (portable across SQLite and PostgreSQL); author search matches the stored JSON text."""
     kw = (keyword or "").strip().lower()
     if not kw:
         return None, []
+    sid = _paper_id(kw)
+    if sid is not None and kw.startswith("#"):  # '#123' can only mean the paper number
+        return "s.id = ?", [sid]
     like = f"%{kw}%"
     if within and within.startswith("authors"):
-        return "lower(s.authors) LIKE ?", [like]
-    if within == "all":
+        clause, params = "lower(s.authors) LIKE ?", [like]
+    elif within == "all":
         cols = ["s.title", "s.abstract", "s.journal", "s.authors", "s.doi", "s.pmid", "s.source_database"]
-        clause = " OR ".join(f"lower({c}) LIKE ?" for c in cols) + " OR CAST(s.year AS TEXT) LIKE ?"
-        return "(" + clause + ")", [like] * (len(cols) + 1)
-    return "(lower(s.title) LIKE ? OR lower(s.abstract) LIKE ?)", [like, like]  # title_and_abstract
+        joined = " OR ".join(f"lower({c}) LIKE ?" for c in cols) + " OR CAST(s.year AS TEXT) LIKE ?"
+        clause, params = "(" + joined + ")", [like] * (len(cols) + 1)
+    else:
+        clause, params = "(lower(s.title) LIKE ? OR lower(s.abstract) LIKE ?)", [like, like]  # title_and_abstract
+    # Bare '123' keeps the text match too, so a year or a number inside a title still hits.
+    if sid is not None:
+        return f"(s.id = ? OR {clause})", [sid] + params
+    return clause, params
 
 
 def _fetch_source_page(conn, where_sql: str, params: list, sort_by: str, page: int, page_size: int):

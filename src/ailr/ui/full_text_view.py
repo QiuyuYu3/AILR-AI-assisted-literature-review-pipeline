@@ -84,7 +84,7 @@ def layout() -> Any:
                     dbc.Label("Keyword search", className="fw-bold mt-2"),
                     dbc.Input(
                         id="ft-search",
-                        placeholder="Type and press Enter",
+                        placeholder="Text or #123, press Enter",
                         debounce=True,
                         persistence=True,
                         persistence_type="session",

@@ -287,7 +287,7 @@ def layout() -> Any:
                     dbc.Label("Keyword search", className="small"),
                     dbc.Input(
                         id="screen-search",
-                        placeholder="Type and press Enter",
+                        placeholder="Text or #123, press Enter",
                         debounce=True,
                         className="mb-2",
                     ),
