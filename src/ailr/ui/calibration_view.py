@@ -9,11 +9,13 @@ stage="extraction" — test the EXTRACTION prompt:
 
 import json
 import time
+from pathlib import Path
 from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
+from ailr.quote_audit import QuoteAudit, audit_fields
 from ailr.ui import ai_runner
 from ailr.ui._common import flag_check_block
 from ailr.ui._project import get_project
@@ -419,7 +421,7 @@ def _render_quick_extraction(run_value: Any) -> Any:
     if not extractions:
         return dbc.Alert("This run produced no extractions (no papers with markdown available?).", color="warning")
 
-    cards = []
+    cards = [_quote_audit_block(project, extractions)]
     for ex in extractions:
         dec = ex.get("full_text_decision")
         field_rows = [
@@ -448,6 +450,73 @@ def _render_quick_extraction(run_value: Any) -> Any:
             )
         )
     return html.Div(cards)
+
+
+def _quote_audit_block(project: Any, extractions: list[dict]) -> Any:
+    """Run-level quote audit: coverage + verbatim rate, per-field detail folded underneath."""
+    total = QuoteAudit()
+    missing_md = 0
+    for ex in extractions:
+        src = project.db.get_source(ex["source_id"])
+        md = Path(src.markdown_path) if src and src.markdown_path else None
+        if md is not None and not md.is_absolute():
+            md = project.root / md
+        if md is None or not md.exists():
+            missing_md += 1
+            continue
+        total.merge(audit_fields(
+            ((f.get("field"), f.get("value"), f.get("quote")) for f in ex.get("fields", [])),
+            md.read_text(encoding="utf-8"), source_id=ex["source_id"],
+        ))
+    if total.values == 0:
+        return None
+
+    headline = html.Div([
+        html.Strong("Quote audit  ", className="me-1"),
+        html.Span(
+            f"coverage {total.quoted}/{total.values} values quoted ({total.coverage:.0%})"
+            f"  •  verbatim {total.verbatim}/{total.checked} ({total.verbatim_rate:.0%})"
+            if total.checked else
+            f"coverage {total.quoted}/{total.values} values quoted ({total.coverage:.0%})  •  no quotes to check",
+        ),
+        html.Span(f"  •  {missing_md} paper(s) skipped (markdown missing)", className="text-muted") if missing_md else None,
+    ], className="small")
+
+    rows = [
+        html.Tr([
+            html.Td(name, className="fw-bold"),
+            html.Td(f"{s[1]}/{s[0]}"),
+            html.Td(f"{s[3]}/{s[2]}" if s[2] else "—"),
+        ])
+        # worst coverage first, so the problem fields sit on top
+        for name, s in sorted(total.per_field.items(), key=lambda kv: (kv[1][1] / kv[1][0], kv[0]))
+    ]
+    table = dbc.Table(
+        [html.Thead(html.Tr([html.Th("field"), html.Th("quoted/values"), html.Th("verbatim/quotes")])),
+         html.Tbody(rows)],
+        size="sm", className="mt-1 mb-1", style={"fontSize": "0.75rem"},
+    )
+    misses = [
+        html.Div([html.Strong(f"#{m['source_id']} {m['field']}: "), html.Em(f"“{m['quote']}”")],
+                 className="text-muted", style={"fontSize": "0.72rem"})
+        for m in total.not_found[:30]
+    ]
+    if len(total.not_found) > 30:
+        misses.append(html.Div(f"… and {len(total.not_found) - 30} more", className="text-muted small"))
+
+    return dbc.Card(
+        dbc.CardBody([
+            headline,
+            html.Details([
+                html.Summary(html.Small("per-field breakdown / quotes not found", className="text-muted")),
+                table,
+                html.Div([html.Small("Not found in paper text (spot-check by hand — PDF conversion "
+                                     "artifacts cause some misses):", className="text-muted fw-bold")] + misses)
+                if misses else html.Small("Every quote was found verbatim.", className="text-success"),
+            ]),
+        ], className="py-2"),
+        className="mb-2", color="light",
+    )
 
 
 def _scalar_str(v: Any) -> str:

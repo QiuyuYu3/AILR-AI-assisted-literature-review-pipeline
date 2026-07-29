@@ -219,6 +219,12 @@ def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = Fals
             f"(already done {summary.skipped_already_done}, failed {summary.failed}). "
             f"{summary.total_input_tokens + summary.total_output_tokens:,} tokens"
         )
+        if summary.quote_values:
+            text += (
+                f" Quotes: {summary.quote_quoted}/{summary.quote_values} values quoted "
+                f"({summary.quote_quoted / summary.quote_values:.0%}), "
+                f"{summary.quote_verbatim}/{summary.quote_checked} verbatim."
+            )
         if replaced:
             text += f" Replaced {replaced} earlier mock extraction row(s)."
         with _lock:

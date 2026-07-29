@@ -9,6 +9,7 @@ from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.criteria import resolve_criteria
 from ailr.extraction import compose_schema
+from ailr.quote_audit import audit_fields
 from ailr.reviewers import ExtractionResult, Reviewer, ScreeningDecision, SourceExtraction
 from ailr.reviewers import LLMReviewer
 
@@ -26,6 +27,11 @@ class ExtractRunSummary:
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cached_input_tokens: int = 0
+    # Verbatim quote audit over this run's extractions (real runs only; mock quotes are noise).
+    quote_values: int = 0
+    quote_quoted: int = 0
+    quote_checked: int = 0
+    quote_verbatim: int = 0
 
 
 class ExtractionTask:
@@ -115,7 +121,14 @@ class ExtractionTask:
                 criterion_ids=criterion_ids,
             )
             meta = self.reviewer.last_metadata if isinstance(self.reviewer, LLMReviewer) else None
-            return extraction, meta
+            # Audited here because paper_text is in hand; pure string work, thread-safe.
+            audit = None
+            if not batch:
+                audit = audit_fields(
+                    ((r.field_name, r.value, r.source_quote) for r in extraction.results),
+                    paper_text, source_id=source.id,
+                )
+            return extraction, meta, audit
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(_extract_one, s, p): s for s, p in to_extract}
@@ -123,8 +136,13 @@ class ExtractionTask:
                 source = futures[fut]
                 done += 1
                 try:
-                    extraction, meta = fut.result()
+                    extraction, meta, audit = fut.result()
                     extraction.source_id = source.id
+                    if audit is not None:
+                        summary.quote_values += audit.values
+                        summary.quote_quoted += audit.quoted
+                        summary.quote_checked += audit.checked
+                        summary.quote_verbatim += audit.verbatim
 
                     for result in extraction.results:
                         result.source_id = source.id

@@ -13,6 +13,7 @@
 - "Changed from AI" highlighting only appeared on re-render, so edits looked unmarked until the paper was reopened; it now updates as you type.
 
 ### Added
+- Verbatim quote audit: every AI quote is checked word-for-word against the paper's markdown. Coverage + verbatim rates on the extraction run summary, a per-field breakdown on quick-extract calibration results, and a project-wide report with not-found CSV on Reports.
 - Projects → Recent: `×` removes an entry from the list without touching the project folder.
 - Extraction: a locked paper now says who claimed it, and you can release your own unsubmitted claim.
 - Full-text list marks papers someone holds an unsubmitted draft on; they used to read "To extract".

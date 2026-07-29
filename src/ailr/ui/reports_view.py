@@ -345,6 +345,17 @@ def layout() -> Any:
             dbc.Button("Download the votes behind this (CSV)", id="report-dl-pairs", color="link", size="sm", className="p-0 mt-3"),
         ),
         html.Hr(className="my-4"),
+        html.H4("Quote audit (extraction)"),
+        html.P(
+            "Checks every AI-extracted quote verbatim against its paper's markdown: how many values "
+            "carry a quote, and how many quotes are actually in the text. \"Not found\" is a list to "
+            "spot-check, not a hallucination verdict — PDF conversion artifacts cause some misses.",
+            className="text-muted small",
+        ),
+        dbc.Button("Run quote audit", id="report-quoteaudit-run", color="primary", outline=True, size="sm"),
+        dcc.Loading(html.Div(id="report-quoteaudit-body", className="mt-2")),
+        dcc.Store(id="report-quoteaudit-misses"),
+        html.Hr(className="my-4"),
         html.H4("API usage"),
         html.P("Per provider/model tokens + latency. Multiply by your provider's current rates for spend; "
                "ailr does not ship a price table. Mock runs make no real calls.", className="text-muted small"),
@@ -387,6 +398,71 @@ def layout() -> Any:
 def register_callbacks(app: Any) -> None:
     # Both callbacks below live entirely inside the Reports tab (own Inputs, own Outputs), so a
     # global store ticking on another tab can never fire them against a missing component.
+    @app.callback(
+        Output("report-quoteaudit-body", "children"),
+        Output("report-quoteaudit-misses", "data"),
+        Input("report-quoteaudit-run", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _quote_audit(n):
+        if not n:
+            return no_update, no_update
+        from ailr.quote_audit import audit_project_ai
+
+        project = get_project()
+        audit, audited, skipped = audit_project_ai(project)
+        if audit.values == 0:
+            return dbc.Alert("No AI extractions with markdown to audit yet.", color="info", className="py-2"), None
+
+        headline = html.Div([
+            html.Strong(f"{audited} paper(s) audited"),
+            html.Span(f" ({skipped} skipped — markdown file missing)", className="text-muted") if skipped else None,
+            html.Div(
+                f"coverage: {audit.quoted}/{audit.values} values quoted ({audit.coverage:.0%})  •  "
+                f"verbatim: {audit.verbatim}/{audit.checked} ({audit.verbatim_rate:.0%})"
+                if audit.checked else
+                f"coverage: {audit.quoted}/{audit.values} values quoted ({audit.coverage:.0%})",
+            ),
+        ], className="small mb-2")
+
+        rows = [
+            html.Tr([
+                html.Td(name, className="fw-bold"),
+                html.Td(f"{s[1]}/{s[0]}"), html.Td(f"{s[1] / s[0]:.0%}"),
+                html.Td(f"{s[3]}/{s[2]}" if s[2] else "—"),
+            ])
+            for name, s in sorted(audit.per_field.items(), key=lambda kv: (kv[1][1] / kv[1][0], kv[0]))
+        ]
+        table = dbc.Table(
+            [html.Thead(html.Tr([html.Th("field"), html.Th("quoted/values"), html.Th("coverage"), html.Th("verbatim/quotes")])),
+             html.Tbody(rows)],
+            size="sm", striped=True, style={"fontSize": "0.78rem"},
+        )
+        dl_btn = dbc.Button(
+            f"Download quotes not found ({len(audit.not_found)}, CSV)",
+            id="report-quoteaudit-dl", color="link", size="sm", className="p-0",
+        ) if audit.not_found else html.Small("Every quote was found verbatim.", className="text-success")
+        return html.Div([headline, table, dl_btn]), audit.not_found
+
+    @app.callback(
+        Output("report-download", "data", allow_duplicate=True),
+        Input("report-quoteaudit-dl", "n_clicks"),
+        State("report-quoteaudit-misses", "data"),
+        prevent_initial_call=True,
+    )
+    def _quote_audit_download(n, misses):
+        if not n or not misses:
+            return no_update
+        import csv
+        import io
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["source_id", "field", "quote"])
+        for m in misses:
+            w.writerow([m.get("source_id"), m.get("field"), m.get("quote")])
+        return dict(content=buf.getvalue(), filename="quote_audit_not_found.csv")
+
     @app.callback(
         Output("report-irr-pair", "options"),
         Output("report-irr-pair", "value"),
