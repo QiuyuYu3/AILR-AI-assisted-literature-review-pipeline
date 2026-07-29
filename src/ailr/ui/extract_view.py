@@ -2,6 +2,7 @@
 
 import json
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,10 @@ _REQUIRED_EXTRACTORS = 2  # independent extraction: how many humans must extract
 _APP_CHROME_PX = 115  # height of the app header + tab bar above this view; the panes flex-fill the rest
 
 _DIFF_STYLE = {"borderLeft": "3px solid #f0ad4e", "paddingLeft": "8px"}
+
+# Per-row key carried in ag-grid rowData so "delete selected" can tell rows apart even when their
+# visible cells are identical (or all empty). Stripped before the rows are saved.
+_ROW_KEY = "_rid"
 
 
 def extraction_workflow_block() -> list[Any]:
@@ -554,17 +559,29 @@ def register_callbacks(app: Any) -> None:
     @app.callback(
         Output({"type": "ex-grid", "field": ALL}, "rowData"),
         Input({"type": "ex-addrow", "field": ALL}, "n_clicks"),
+        Input({"type": "ex-delrow", "field": ALL}, "n_clicks"),
         State({"type": "ex-grid", "field": ALL}, "rowData"),
+        State({"type": "ex-grid", "field": ALL}, "selectedRows"),
         State({"type": "ex-grid", "field": ALL}, "id"),
         prevent_initial_call=True,
     )
-    def _add_grid_row(add_clicks, all_rows, grid_ids):
+    def _edit_grid_rows(add_clicks, del_clicks, all_rows, all_selected, grid_ids):
         triggered = ctx.triggered_id
+        # A freshly rendered form fires this callback with n_clicks=None; without the value check
+        # that mount would add a phantom row.
+        if not triggered or not ctx.triggered[0].get("value"):
+            return [no_update] * len(grid_ids)
         out = []
-        for rows, gid in zip(all_rows, grid_ids):
-            rows = list(rows or [])
-            if triggered and gid["field"] == triggered["field"]:
-                rows.append({})
+        for rows, selected, gid in zip(all_rows, all_selected, grid_ids):
+            rows = [_with_row_key(r) for r in (rows or [])]
+            if gid["field"] != triggered["field"]:
+                out.append(rows)
+                continue
+            if triggered["type"] == "ex-addrow":
+                rows.append(_with_row_key({}))
+            else:
+                drop = {r.get(_ROW_KEY) for r in (selected or []) if r.get(_ROW_KEY)}
+                rows = [r for r in rows if r.get(_ROW_KEY) not in drop]
             out.append(rows)
         return out
 
@@ -681,7 +698,7 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
         prefill_rows: list[dict] = []
         src_list = prefill_data.get(field.name) if prefill_data else None
         if isinstance(src_list, list):
-            prefill_rows = [_flatten_list_item(item, item_fields) for item in src_list]
+            prefill_rows = [_with_row_key(_flatten_list_item(item, item_fields)) for item in src_list]
         return dbc.Card(
             dbc.CardBody(
                 [
@@ -694,16 +711,31 @@ def _field_block(field: FieldSpec, prefill_data: dict[str, Any] | None, ai_data:
                         # wrapText + autoHeight so long values show in full (rows grow); minWidth keeps
                         # each column readable, so many-column fields scroll sideways instead of cramming.
                         defaultColDef={"editable": True, "resizable": True, "sortable": True, "wrapText": True, "autoHeight": True, "minWidth": 150},
-                        dashGridOptions={"rowSelection": {"mode": "multiRow"}, "domLayout": "autoHeight"},
+                        dashGridOptions={
+                            "rowSelection": {"mode": "multiRow", "checkboxes": True, "headerCheckbox": True, "enableClickSelection": False},
+                            "domLayout": "autoHeight",
+                        },
                         columnSize="sizeToFit",
                         style={"height": None},
                     ),
-                    dbc.Button(
-                        "+ Add row",
-                        id={"type": "ex-addrow", "field": field.name},
-                        size="sm",
-                        color="secondary",
-                        outline=True,
+                    html.Div(
+                        [
+                            dbc.Button(
+                                "+ Add row",
+                                id={"type": "ex-addrow", "field": field.name},
+                                size="sm",
+                                color="secondary",
+                                outline=True,
+                                className="me-2",
+                            ),
+                            dbc.Button(
+                                "Delete selected",
+                                id={"type": "ex-delrow", "field": field.name},
+                                size="sm",
+                                color="danger",
+                                outline=True,
+                            ),
+                        ],
                         className="mt-2",
                     ),
                     _ai_grid_reference(ai_val, item_fields),
@@ -786,6 +818,25 @@ def _strip_nested_quotes(v: Any, quotes: list) -> Any:
     if isinstance(v, list):
         return [_strip_nested_quotes(x, quotes) for x in v]
     return v
+
+
+def _with_row_key(row: Any) -> dict:
+    row = dict(row) if isinstance(row, dict) else {}
+    row.setdefault(_ROW_KEY, uuid.uuid4().hex[:8])
+    return row
+
+
+def _clean_grid_rows(rows: Any) -> list[dict]:
+    """Drop the internal row key and any row the reviewer left completely empty (an added row
+    they never filled in), so blank objects never reach the database."""
+    out: list[dict] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        cleaned = {k: v for k, v in row.items() if k != _ROW_KEY}
+        if any(str(v).strip() for v in cleaned.values() if v is not None):
+            out.append(cleaned)
+    return out
 
 
 def _flatten_list_item(item: Any, item_fields: list[FieldSpec]) -> dict:
@@ -1110,7 +1161,7 @@ def _save_extraction(
             results.append(
                 ExtractionResult(
                     extractor_type="human", extractor_id=rid,
-                    field_name=field.name, value=grids.get(field.name, []),
+                    field_name=field.name, value=_clean_grid_rows(grids.get(field.name)),
                     source_id=src.id, prompt_version="manual",
                 )
             )
