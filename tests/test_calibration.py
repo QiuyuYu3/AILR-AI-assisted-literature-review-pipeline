@@ -9,11 +9,14 @@ import math
 from ailr.core.source import Source
 from ailr.metrics import (
     BINARY_CATEGORIES,
+    THREE_WAY_CATEGORIES,
     binarize,
     cohen_kappa,
+    cohen_kappa_ci,
     confusion_matrix,
     pabak,
     percent_agreement,
+    rater_overlaps,
 )
 from ailr.reviewers import ScreeningDecision
 from ailr.tasks.calibrate import CalibrationSummary, CalibrationTask
@@ -34,9 +37,22 @@ class TestMetrics:
         assert math.isnan(cohen_kappa([]))
 
     def test_kappa_ignores_pairs_outside_categories(self):
-        pairs = [("include", "include"), ("weird", "include")]
+        # Two surviving pairs, not one: a lone include/include pair puts every record in the same
+        # category, which is the degenerate table below rather than a test of the filtering.
+        pairs = [("include", "include"), ("exclude", "exclude"), ("weird", "include")]
         cats = ["include", "exclude", "uncertain"]
-        assert cohen_kappa(pairs, categories=cats) == cohen_kappa([("include", "include")], categories=cats)
+        kept = [("include", "include"), ("exclude", "exclude")]
+        assert cohen_kappa(pairs, categories=cats) == cohen_kappa(kept, categories=cats) == 1.0
+
+    def test_kappa_of_a_single_disagreeing_pair_is_zero(self):
+        # n == 1 with a real answer, which the degenerate case below cannot provide.
+        assert cohen_kappa([("include", "exclude")], categories=BINARY_CATEGORIES) == 0.0
+
+    def test_kappa_is_undefined_when_every_record_is_one_category(self):
+        """p_e = 1 makes κ a 0/0. cohen_kappa_ci reports the interval undefined, so the point
+        estimate says undefined too rather than claiming perfect agreement."""
+        assert math.isnan(cohen_kappa([("include", "include")] * 5, categories=BINARY_CATEGORIES))
+        assert math.isnan(cohen_kappa_ci([("include", "include")] * 5, categories=BINARY_CATEGORIES)[0])
 
     def test_percent_agreement(self):
         assert percent_agreement([("a", "a"), ("a", "b")]) == 0.5
@@ -54,6 +70,28 @@ class TestMetrics:
         pairs = [("exclude", "exclude")] * 19 + [("include", "exclude")]
         assert cohen_kappa(pairs, categories=BINARY_CATEGORIES) == 0.0
         assert round(pabak(pairs, categories=BINARY_CATEGORIES), 10) == 0.9
+
+    def test_pabak_generalises_past_two_categories(self):
+        """(k * p_o - 1) / (k - 1): at k=2 the denominator is 1, so every test that passes
+        BINARY_CATEGORIES leaves the k-category generalisation unverified."""
+        pairs = [("include", "include"), ("exclude", "exclude"), ("uncertain", "include")]
+        assert round(percent_agreement(pairs), 10) == round(2 / 3, 10)
+        assert round(pabak(pairs, categories=THREE_WAY_CATEGORIES), 10) == 0.5
+        assert round(pabak(pairs, categories=BINARY_CATEGORIES), 10) == round(1 / 3, 10)
+
+    def test_pabak_infers_the_categories_from_the_pairs(self):
+        pairs = [("include", "include"), ("exclude", "exclude"), ("uncertain", "include")]
+        assert pabak(pairs) == pabak(pairs, categories=THREE_WAY_CATEGORIES)
+
+    def test_rater_overlaps_breaks_equal_counts_by_name(self):
+        """methods.py reports overlaps[0] as the headline pair, so ties have to resolve the same
+        way every run rather than following dict insertion order."""
+        rows = [
+            {"source_id": s, "rater": r, "decision": "include", "reviewer_type": "human"}
+            for s, pair in ((1, ("amber", "zoe")), (2, ("amber", "bo")), (3, ("bo", "cy")))
+            for r in pair
+        ]
+        assert rater_overlaps(rows) == [("amber", "bo", 1), ("amber", "zoe", 1), ("bo", "cy", 1)]
 
     def test_binarize_folds_uncertain_into_include(self):
         assert binarize([("uncertain", "include"), ("exclude", "uncertain")]) == [

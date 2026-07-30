@@ -63,8 +63,8 @@ def cohen_kappa(
     col_totals = [sum(matrix[i][j] for i in range(len(cats))) for j in range(len(cats))]
     p_e = sum(row_totals[i] * col_totals[i] for i in range(len(cats))) / (n * n)
 
-    if p_e == 1.0:
-        return 1.0 if p_o == 1.0 else math.nan
+    if p_e == 1.0:      # every record in one category: κ is 0/0, which cohen_kappa_ci also refuses
+        return math.nan
     return (p_o - p_e) / (1.0 - p_e)
 
 

@@ -8,7 +8,7 @@ Regressions guarded:
 
 from pathlib import Path
 
-from ailr.core.config import save_stage_workflow
+from ailr.core.config import save_project_type, save_stage_workflow
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.exports.methods import build_methods_skeleton
@@ -228,6 +228,36 @@ class TestReportAndSvgShareCounts:
         assert f"{c['studies_included']} studies included" in svg
 
 
+class TestReportText:
+    """Claims the Markdown report makes about itself, rather than the counts inside it."""
+
+    def test_the_footer_names_the_checklist_the_review_type_implies(self, tmp_project):
+        """A scoping review must not claim PRISMA 2020 conformance, nor the other way round."""
+        _add_source(tmp_project, "S1")
+        scoping = build_prisma_report(tmp_project)      # 'scoping' is the Project.init default
+        assert "PRISMA-ScR" in scoping and "PRISMA 2020" not in scoping
+
+        save_project_type(tmp_project.root, "systematic")
+        systematic = build_prisma_report(Project(tmp_project.root))
+        assert "PRISMA 2020" in systematic and "PRISMA-ScR" not in systematic
+
+    def test_reports_are_named_separately_only_when_they_outnumber_the_studies(self, tmp_project):
+        """PRISMA's included box wants studies and reports both, but the second line is noise
+        until companion reports have actually been grouped."""
+        db = tmp_project.db
+        primary = _add_source(tmp_project, "primary report", with_md=True)
+        companion = _add_source(tmp_project, "companion report", with_md=True)
+        for sid in (primary, companion):
+            _vote(db, sid, "include", "amber")
+            _vote(db, sid, "include", "amber", stage="full_text")
+        assert "**Reports of included studies:**" not in build_prisma_report(tmp_project)
+
+        db.set_study_group(companion, primary)
+        c = prisma_counts(tmp_project)
+        assert (c["studies_included"], c["reports_included"]) == (1, 2)
+        assert "**Reports of included studies:** 2" in build_prisma_report(tmp_project)
+
+
 class TestAgreementReporting:
     def test_kappa_uses_latest_only_pairs(self, tmp_project):
         _pipeline_state(tmp_project)
@@ -354,6 +384,21 @@ class TestIdentificationArms:
         assert c["other_arm"]["identified"] == 1
         assert c["database_arm"]["included"] + c["other_arm"]["included"] == c["studies_included"] == 2
         assert c["by_route"]["other"] == [{"source_database": "Citation searching", "n": 1}]
+
+    def test_each_arm_splits_retrieved_from_not_retrieved(self, tmp_project):
+        """The project-level split is covered above; the per-arm one runs through _arm_counts,
+        which had no test of its own."""
+        db = tmp_project.db
+        self._add(tmp_project, "db-retrieved", "database", "PubMed")
+        db_missing = self._add(tmp_project, "db-missing", "database", "PubMed")
+        other_missing = self._add(tmp_project, "cit-missing", "other", "Citation searching")
+        db.set_full_text_not_retrieved(db_missing, True)
+        db.set_full_text_not_retrieved(other_missing, True)
+
+        c = prisma_counts(tmp_project)
+        db_arm, other_arm = c["database_arm"], c["other_arm"]
+        assert (db_arm["sought"], db_arm["retrieved"], db_arm["not_retrieved"]) == (2, 1, 1)
+        assert (other_arm["sought"], other_arm["retrieved"], other_arm["not_retrieved"]) == (1, 0, 1)
 
     def test_the_diagram_stays_single_column_without_other_sources(self, tmp_project):
         self._add(tmp_project, "db1", "database", "PubMed")
