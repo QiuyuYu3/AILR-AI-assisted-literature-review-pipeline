@@ -51,6 +51,7 @@ For a schema with a number, an enum, and a repeating group, the AI returns each 
 {
   "sample_size": { "value": 42, "quote": "Forty-two dyads participated..." },
   "country":     { "value": "USA", "quote": "...United States" },
+  "measures":    { "value": ["fNIRS", "eye tracking"], "quote": "...recorded with fNIRS and eye tracking" },
   "tasks": [
     { "task_name": {"value": "free conversation", "quote": "..."},
       "duration_min": {"value": 5, "quote": "..."} }
@@ -60,7 +61,9 @@ For a schema with a number, an enum, and a repeating group, the AI returns each 
 
 - leaf fields are wrapped as `{value, quote}`
 - a **repeating group** is an array of objects; each leaf inside still carries its own `{value, quote}`
-- a **simple list** (of text/number) is a plain array like `["a", "b"]`, with no per-item quote
+- a **simple list** (of text/number) is also wrapped as `{value, quote}`, where `value` is the array and one quote covers the whole list; a quote cannot live inside a bare array item
+
+A value without a quote is treated as a defect, not a shortcut. The scaffold and the schema both require a quote whenever a field has a value, **including categorical answers**: quote the passage you read the category off, rather than skipping it because the category label is not the paper's own wording. `null` is only correct when the paper says nothing. Every stored quote is later checked word-for-word against the paper; see [the quote audit](workflow/reports.md#quote-audit).
 
 The app stores one row per top-level field, then the verify queue renders them back into the form.
 

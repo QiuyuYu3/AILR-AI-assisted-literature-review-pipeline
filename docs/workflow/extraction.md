@@ -37,7 +37,7 @@ See [workflow modes](../concepts.md#workflow-modes).
 
 Like screening, extraction has a **Calibration** tab with the same two modes.
 
-- **Quick test.** Run the AI on a few papers and eyeball the extracted values before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them. Nothing is written to the review. Choose **Random sample** (N papers) or **Pick specific papers** (a searchable multi-select by author / title / DOI / id) to test on cases you care about.
+- **Quick test.** Run the AI on a few papers and eyeball the extracted values before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them. Nothing is written to the review. Choose **Random sample** (N papers) or **Pick specific papers** (a searchable multi-select by author / title / DOI / id) to test on cases you care about. The test composes the *same* prompt the real run sends, additional instructions included, so what you are reading is what you will get. Results carry a **quote audit** (coverage and verbatim rate, with a per-field breakdown and the quotes that were not found in the paper), which is often the fastest way to spot a field the model is answering from memory rather than from the text.
 - **Full calibration.** Measures whether you can trust the AI's **full-text include/exclude verdict**, which it produces while extracting by re-checking each criterion against the full text. A round samples from the full-text queue and runs the real extraction on it, then waits for you: read those papers under **Full-text review → status "Calibration sample"**, decide them yourself, and κ appears against `extraction.target_kappa`. The next round samples papers you have not calibrated on before.
 
 Full calibration needs `extraction.flag_check` on, since the criterion check is where the AI's verdict comes from. Keep N small: unlike screening, each paper is a whole-paper call. The extractions it produces are real and count towards the review, so nothing is wasted. Like screening, it is off under `independent` workflow.
@@ -54,19 +54,46 @@ ailr extract <project-folder> --mock    # no API call
 ailr extract <project-folder> --force   # re-extract existing
 ```
 
+The run summary reports what happened rather than just a count: the **quote audit** rates for the run (how many values came back with a quote, and how many of those quotes are in the paper word for word), and for any paper that failed, the recorded error and its type, so you can tell a truncated response from a schema mismatch without opening the log.
+
 ![AI extraction](../figures/ft_ai.png)
 
 ## 4. Verify and edit
 
-The **Extraction** page is the verify queue: it shows each paper whose final full-text decision is **include**, with the extracted fields, the verbatim **quote** the AI attached to each value, and the AI's **confidence** (1 to 10) per field (so you can check the value against the source, and skim to the low-confidence fields first). Verify or edit the values per paper.
+The **Extraction** page is the verify queue: it shows each paper whose final full-text decision is **include**, with the extracted fields, the verbatim **quote** the AI attached to each value, and the AI's **confidence** (1 to 10) per field (so you can check the value against the source, and skim to the low-confidence fields first). Verify or edit the values per paper. The AI panel also carries the **flag_check** block, the model's PASS / FAIL / UNCERTAIN verdict per criterion, each with the quote it read that verdict off.
 
-Where your value differs from the AI's, the field is **highlighted** and shows what the *AI proposed* with a **"changed from AI"** badge, so your edits are easy to spot at a glance, and a reviewer can see exactly where human judgement overrode the model.
+Where your value differs from the AI's, the field is **highlighted** and shows what the *AI proposed* with a **"changed from AI"** badge, so your edits are easy to spot at a glance, and a reviewer can see exactly where human judgement overrode the model. The badge tracks what you type, so a field is marked the moment it diverges.
 
 While you verify, a **reader pane** beside the form shows the source; toggle it between the original **PDF** and the converted **Markdown**. Use **Save draft** to keep your edits without finalizing (if you leave the page without saving, your edits are not kept), and **Submit** to mark the paper done and return to the list.
+
+For a **repeating group**, the field is a small table: rows can be added *and* removed (select a row, then delete it), and rows left entirely blank are dropped when you save, so a mis-added row does not become an empty object in the data.
 
 :::{note}
 After you submit, the form prefills **your saved values**, not the AI's, so re-opening a paper shows what you decided, not what the AI guessed. In `verify` mode a second human submission for the same paper is rejected (one verifier per paper).
 :::
+
+### Take the AI's value back
+
+Because the form pins to what you saved, an edit you later think better of used to be yours to retype. Two controls put the AI's answer back:
+
+- **Use**, beside each field, drops the AI's value for that one field into the widget (**Use AI rows** for a repeating group, which replaces the table).
+- **Fill all fields from AI**, at the foot of the form, does the whole form at once, behind a confirmation. The picker next to it chooses *which* run to draw from: the current one, or any earlier run a re-run retired.
+
+Neither writes anything: the values land in the form and are yours to adjust, and nothing is stored until **Save draft** or **Submit**. Fields the chosen run left empty are left alone rather than blanked. Both appear only under `verify`, since `independent` extraction hides the AI's values until you submit.
+
+### Re-run the AI on one paper
+
+**↻ Re-run AI extraction**, in the paper's action row, runs the current prompt and schema against this paper again. Use it after you revise the variables or the prompt and want to see what changes on a paper you already know, without a project-wide `--force`.
+
+The run it replaces is not discarded: it is kept as an **earlier version**, listed under the AI extraction panel and available in the fill-all picker. Your saved values are untouched, but the form reloads when the run finishes, so save any unsaved edits first.
+
+### Who holds a paper
+
+Saving a draft **claims** a paper: under `verify` only one reviewer extracts each paper, and a draft counts as a claim just as a submission does. So:
+
+- The **To extract** queue hides papers another reviewer already holds, and the [full-text list](full-text.md#2-full-text-review) marks them **In progress by \<reviewer\>** instead of "To extract".
+- Open a paper someone else holds and the page says **who** claimed it, rather than only refusing to edit.
+- **Release this paper** appears while *you* hold an unsubmitted claim. It discards your draft and hands the paper back to the queue. Once you submit, the extraction is final and the release option is gone.
 
 ![verify queue](../figures/ft_extraction1.png)
 

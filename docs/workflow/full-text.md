@@ -67,11 +67,12 @@ The **Full-text review** page lists each candidate with **include / exclude** co
 Handy controls on this page:
 
 - **Expand all abstracts.** Read the abstract inline without leaving the list, to re-orient before opening the full text.
-- Status filters including **To extract** (papers not yet extracted) and **Extracted by me**, and a per-paper button to **jump straight into extraction** once a paper is included, so you can read and extract a paper in one pass.
+- Status filters including **To extract** (papers not yet extracted) and **Extracted by me**, and a per-paper button to **jump straight into extraction** once a paper is included, so you can read and extract a paper in one pass. A paper someone has an unsubmitted extraction draft on reads **In progress by \<reviewer\>** rather than "To extract", and drops out of the To-extract filter under `verify`; see [who holds a paper](extraction.md#who-holds-a-paper).
+- **Search** by text, or by the **`#123`** number printed on the card. `#123` opens that one paper; a bare `123` matches it *and* runs the usual text search, in case the number is what you meant to search for.
 - **Sort by AI confidence (lowest first)** to surface uncertain papers, and an **AI outdated** badge flags papers extracted under criteria or a prompt that have since changed.
 - A **Read full text** button opens the PDF or markdown in a reader without leaving the page (also on the FT Conflicts cards).
 - **Mark full text as not retrieved**, on papers with no markdown, for a full text you tried to obtain and could not. This is what fills PRISMA's *reports not retrieved* box. A paper you simply have not fetched yet is not the same thing, so leave it unmarked until you have given up on it.
-- **Same study as…**, for a paper that reports the same study as another included paper (a main paper and its protocol or secondary analysis). PRISMA counts those as one study across several reports; see [Reports](reports.md).
+- **Same study as…**, for a paper that reports the same study as another included paper (a main paper and its protocol or secondary analysis). PRISMA counts those as one study across several reports; see [Reports](reports.md). It sits in the card's action row next to **Duplicate**, because those two are the record-to-record actions and the pair most easily confused. Each action there carries a **hover tooltip**, and Duplicate's and Same study's spell out the difference: a duplicate *leaves* the review and is counted under "duplicates removed"; companion reports all *stay*, and only the study count changes.
 
 ![full-text review](../figures/ft_screening.png)
 

@@ -54,7 +54,7 @@ The **AI's decision stays blinded** until you commit yours. This keeps your judg
 
 In `assisted` mode the queue **divides the work** between humans (one human per paper), so two people screening at once never double up. In `independent` mode every human screens every paper, and the two passes are reconciled afterwards.
 
-Two aids for working through the list: **sort by AI confidence (lowest first)** to surface the papers the AI was least sure about, and an **AI outdated** badge flags any paper the AI screened under criteria or a prompt that have since changed, so you know which to re-run.
+Three aids for working through the list: **sort by AI confidence (lowest first)** to surface the papers the AI was least sure about, an **AI outdated** badge that flags any paper the AI screened under criteria or a prompt that have since changed (so you know which to re-run), and a **search** box that takes text or the **`#123`** number printed on the card. `#123` opens that one paper; a bare `123` matches it *and* runs the usual text search.
 
 :::{note}
 When the AI's verdict is revealed, it comes with a **per-criterion breakdown**: for each of your criteria, the AI gives a **PASS / FAIL / UNCERTAIN** verdict with its reason and a supporting quote. So an include/exclude is auditable criterion by criterion, not just a single label. It is the same structured check the full-text stage uses.

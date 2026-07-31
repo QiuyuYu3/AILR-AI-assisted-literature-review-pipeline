@@ -99,7 +99,7 @@ This opens ailr in your browser at <http://localhost:8050>.
 The **project manager** is your home base. It appears whenever you launch `ailr ui` without naming a folder, and from here you set up or reopen a review:
 
 - **Create a new project.** Give it a name, then choose where its data lives: a **local SQLite file** (just you, the simplest choice and the right one to start) or a **PostgreSQL** database URL (a shared project for a team; see [Working as a team](team.md)). ailr builds the project **folder** for you, pre-filled with starter config, a `prompts/` folder, and the `data/` subfolders for PDFs and converted text.
-- **Open a recent project.** Pick any project you've opened before from the list, so you don't have to remember where on disk it lives.
+- **Open a recent project.** Pick any project you've opened before from the list, so you don't have to remember where on disk it lives. The **×** beside an entry drops it from the list only; the project folder and its data are left alone, so use it to tidy away a test project without deleting anything.
 
 Once a project exists, you can also reopen it directly by pointing the app at its folder:
 

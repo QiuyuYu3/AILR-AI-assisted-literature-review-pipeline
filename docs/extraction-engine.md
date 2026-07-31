@@ -9,7 +9,7 @@
 3. **The app assembles one request:** the system prompt (with `{{criteria}}` and `{{schema_md}}` substituted), the tool definition, and the paper markdown as the user message. It sets `tool_choice` so the model *must* call the tool.
 4. **The model returns the tool call**: a JSON object keyed by your field names.
 5. **The app unwraps and stores it:** one row per top-level field in the `extractions` table. Leaf values are unwrapped to `(value, quote)`; objects and groups are stored whole, with their inner quotes preserved. The `_flag_check` is stored separately and also derives a full-text screening verdict.
-6. **The verify queue renders the rows back into the form** so a human can confirm or edit each value.
+6. **The verify queue renders the rows back into the form** so a human can confirm or edit each value. Re-running a paper repeats steps 3 to 5 and re-types the previous run's rows as superseded rather than deleting them, so an earlier version stays readable.
 7. **Exports join the result** with bibliographic metadata by `source_id`; the AI only ever extracted what the full text added.
 
 The key property: steps 2–4 fix the *structure* independently of the prompt's wording in step 3. The relevant code lives in `extraction.py` (schema → tool), `reviewers.py` (request + unwrap), `tasks/extract.py` (the loop), and `core/database.py` (storage).
@@ -25,10 +25,13 @@ The key property: steps 2–4 fix the *structure* independently of the prompt's 
 
 A weak prompt lowers *quality*, never *validity*. Improve recall and accuracy through the prompt; fix structure and option-sets in the schema.
 
-## Three common problems
+## Common problems
 
 | Symptom | Usual cause | Fix |
 |---|---|---|
 | A field is null even though the paper states it | the model didn't connect the paper text to the field | sharpen the **field description** (the model reads it as the slot's label); hint in the prompt where it appears |
 | Values land in the wrong field | two fields are easy to confuse | make each **description** draw the boundary explicitly; consider an enum |
 | Imported (external) results don't show up | key names don't match the schema | the importer matches by exact field name; align the JSON keys, or re-run inside the app where the structure is enforced |
+| A paper comes back **failed**, with nothing stored | the tool-use JSON did not survive intact: usually truncated output on a long paper with many fields, or a structured field the model serialized as a JSON *string* that does not parse | the run summary now names the error and its type. The output cap is 16000 tokens, comfortably above a measured run, so repeated truncation means the schema is too large for one call; a failed paper is safe to re-run on its own from the Extraction page |
+
+A failure is deliberately all-or-nothing per paper: a half-parsed tool call would store some fields and silently drop others, which is worse than an obvious failure. What the model returned for each field is kept in `raw_output` alongside the unwrapped value, which is what makes a bare value distinguishable from a `{value, quote}` object after the fact.

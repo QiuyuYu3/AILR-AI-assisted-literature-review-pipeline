@@ -8,25 +8,30 @@ For maintainers and the curious. How the package is laid out, how config is asse
 ailr/
   cli.py            Typer entry point (all commands)
   exceptions.py     custom exceptions caught at the CLI/UI boundary
-  core/             config, project, database, source, audit
+  core/             config, project, source, audit, and the database (see below)
   ingest/           RIS / BibTeX / CSV readers, dedup, PDF linking, results import
   preprocess.py     PDF → markdown
   criteria.py       structured inclusion/exclusion criteria (criteria.yaml → {{criteria}})
   extraction.py     schema → tool definition; unwrap tool call → rows
+  quote_audit.py    matches stored quotes against the paper markdown (coverage / verbatim)
   tasks/            screen / extract / calibrate / preprocess: the pipeline steps
   llm/              provider-agnostic client: base, factory, retry, mock, providers/
   modes/            built-in config presets (strict.yaml, assisted.yaml)
-  exports/          prisma, methods, tables, ris
+  exports/          prisma, methods, tables, ris, reliability (raw votes CSV)
   metrics.py        Cohen's κ, confusion matrix
   reviewers.py      reviewer identity helpers
-  ui/               Dash app: one *_view.py per sidebar page (incl. protocol/criteria), plus ai_runner
+  ui/               Dash app: one *_view.py per sidebar page, plus shared parts (see below)
 ```
+
+`core/database.py` is a **facade**: the `Database` class is assembled from per-domain mixins that each hold their own SQL, `_db_sources.py`, `_db_screening.py` (+ `_db_screening_aux.py`), `_db_extraction.py`, `_db_calibration.py`, `_db_admin.py`, with the table definitions in `_db_schema.py`. Call sites only ever see `project.db`.
+
+The `ui/` package is the same idea. Each sidebar page is a `*_view.py`, and the parts more than one page needs live beside them: `modals.py` (shared dialogs), `_cards.py` (the record card), `_actions.py`, `_common.py`, `_project.py` (project loading), `version_ui.py` (the version/diff widgets), and `ai_runner.py`.
 
 Rough data flow:
 
 > **ingest → (preprocess) → tasks → core/database → exports**, with `llm/` called by the tasks and `ui/` driving everything.
 
-The UI is a thin layer: each sidebar page is a `*_view.py`, and AI runs are dispatched through `ui/ai_runner.py` so the same task code backs both the UI and the CLI.
+The UI is a thin layer: AI runs are dispatched through `ui/ai_runner.py`, so the same task code backs both the UI and the CLI.
 
 ## Config assembly
 
@@ -50,7 +55,7 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 | `projects` | one row per project (name, config hash); namespaces everything else |
 | `sources` | imported references + metadata, `pdf_path`, `markdown_path`, duplicate flag |
 | `screening_decisions` | every abstract/full-text verdict (AI and human), with reasoning, evidence, confidence, `prompt_version` |
-| `extractions` | one row per extracted field, with `source_quote`, page/section, `prompt_version` |
+| `extractions` | one row per extracted field, with `source_quote`, page/section, `prompt_version`, and `raw_output` (what the model returned for that field before unwrapping) |
 | `reconciliations` | conflict resolutions; links the AI and human decisions and records the final value + rationale |
 | `prompt_versions` / `codebook_versions` | snapshots of prompts/codebook so each decision traces to the exact wording |
 | `artifact_versions` | snapshots of criteria, variables, and prompts per save; drives the version diff and the amendment log |
@@ -67,6 +72,8 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 The primary audit trail is the **database itself**:
 
 - `screening_decisions` and `extractions` are **append-only** and stamped with `reviewer_type` / `reviewer_id` (or `extractor_*`), `timestamp`, `llm_params`, and `prompt_version`. Nothing is overwritten in place; a changed verdict is a new row.
+- `llm_params` records the **decoding settings the decision was actually made under**, model and temperature (and the seed where the provider accepts one), which is what lets the methods export describe the run rather than the current config.
+- Re-running the AI on a paper does not delete its previous extraction: those rows are re-typed as **superseded** and kept, which is what the "earlier version" view and the fill-all picker read. A run is reconstructed from the timestamp gaps between rows, since one run writes its fields one at a time.
 - `reconciliations` records *who* adjudicated a conflict and *why*.
 - `prompt_versions` / `codebook_versions` make every decision reproducible against the exact prompt that produced it.
 - `api_calls` accounts for every token spent.
@@ -77,7 +84,7 @@ Together these let the **exports** module derive a PRISMA flow, a methods skelet
 
 ## Exports & metrics
 
-`exports/` turns stored rows into reporting artifacts: `prisma.py` (flow counts), `methods.py` (methods prose), `tables.py` (CSV/JSON extraction table), `ris.py` (included set back to RIS). `metrics.py` computes Cohen's κ and the confusion matrix from paired decisions, used both in calibration and on the Reports page.
+`exports/` turns stored rows into reporting artifacts: `prisma.py` (flow counts), `methods.py` (methods prose), `tables.py` (CSV/JSON extraction table), `ris.py` (included set back to RIS), `reliability.py` (the raw votes as a wide CSV, so agreement can be recomputed under another convention). `metrics.py` computes Cohen's κ and the confusion matrix from paired decisions, used both in calibration and on the Reports page. `quote_audit.py` sits alongside them: it substring-matches each stored quote against the paper's markdown, and feeds the run summary, the calibration results, and the Reports quote audit.
 
 ## CLI reference
 

@@ -17,9 +17,10 @@ The **Reports** page (split into **PRISMA & methods**, **Reliability & API**, an
 | **PRISMA flow** | records identified → deduplicated → screened → excluded (with reasons) → included; the identification box breaks down **records per source**, records found by [citation searching or hand searching](import.md#records-found-outside-a-database-search) get their own arm, and the diagram **exports as SVG** (vector) for your manuscript |
 | **Methods skeleton** | a prose outline of how the review was run (workflow, models, criteria), including the **search strategies** you recorded at import |
 | **Inter-rater reliability** | Cohen's κ, PABAK, percent agreement, and a **confusion matrix** for any pair of reviewers at either stage |
+| **Quote audit** | every AI-extracted quote checked word for word against the paper it came from (see [below](#quote-audit)) |
 | **API usage** | token counts and calls per stage; tokens only, so multiply by your provider's current rates |
 
-Every number here traces back to stored rows: the PRISMA counts come from the actual decisions and recorded exclusion reasons, and the agreement figures from the reviewers' own verdicts, so the figures you report are the figures the app can defend. PRISMA counts are **per paper**, not per vote: in `independent` mode two reviewers including the same paper count it once, and a reconciliation overrides the individual votes.
+Every number here traces back to stored rows: the PRISMA counts come from the actual decisions and recorded exclusion reasons, and the agreement figures from the reviewers' own verdicts, so the figures you report are the figures the app can defend. The methods skeleton follows the same rule for the AI: it reports the models and decoding settings the decisions were **actually made with**, read off the stored decisions, not the ones currently in `lit_review.yaml`. Change a model halfway through and the methods text says so, and a seed is only named when the provider actually accepts one. PRISMA counts are **per paper**, not per vote: in `independent` mode two reviewers including the same paper count it once, and a reconciliation overrides the individual votes.
 
 A paper counts at a stage only once that stage is **settled** for it: everyone the [workflow](../protocol.md#workflow) calls for has voted, and any disagreement has been adjudicated. One still waiting on a second reviewer counts as neither included nor excluded, so the boxes may not add up while the review is in progress.
 
@@ -41,6 +42,19 @@ Two conventions to know, because they are the ones journals ask about:
 
 If you want to compute agreement some other way, **Download the votes behind this (CSV)** gives one row per record and one column per reviewer.
 
+### Quote audit
+
+Every AI-extracted value is supposed to come with a verbatim quote from the paper. **Run quote audit** (on the same sub-tab) checks that claim across the whole project, matching each stored quote word for word against the paper's markdown. It reports two numbers:
+
+- **Coverage**: how many extracted values carry a quote at all. A field sitting near zero is usually a field the model does not know where to read from, which is a description problem, not a prompt problem.
+- **Verbatim rate**: of the quotes that exist, how many are actually in the text. The per-field breakdown sorts the worst coverage to the top, and the quotes that were not found can be downloaded as CSV.
+
+:::{important}
+A "not found" quote is a **list to spot-check, not a hallucination verdict**. PDF-to-markdown conversion drops ligatures, hyphenation, and column breaks, so a perfectly honest quote can fail an exact match. Read a few before concluding anything; what matters is the pattern, not the individual miss.
+:::
+
+The same audit runs at two smaller scales, which is where it is most useful: on the summary of each [AI extraction run](extraction.md#3-run-ai-extraction), and on [quick-test calibration](extraction.md#calibrate-extraction) results, where a bad field shows up while it still costs a handful of papers.
+
 ![reports: PRISMA and reliability](../figures/reports1.png)
 
 ![reports: confusion matrix and usage](../figures/reports2.png)
@@ -51,7 +65,7 @@ Export the dataset in the format your analysis needs:
 
 | Format | Use |
 |--------|-----|
-| **CSV** | the extraction table for stats software (wide, with a `<field>_quote` column per field) |
+| **CSV** | the extraction table for stats software (wide, with a `<field>_quote` column for every field, list fields included) |
 | **JSON** | structured records (values + evidence quotes), combined for all papers |
 | **Per-paper JSON (ZIP)** | one `<source_id>.json` per paper, zipped; handy for spot-checking or per-paper archiving |
 | **RIS** | the included set back into a reference manager |

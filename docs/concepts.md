@@ -95,6 +95,8 @@ extraction:
 
 AI runs make several calls **in parallel** (`workers` above), which shortens large runs considerably. If your API plan has tight rate limits, lower it. A rate-limited call is retried automatically with backoff, so nothing is lost either way.
 
+**Reproducibility.** Every decision records the model and temperature it was produced under (and a seed, on the one provider that accepts one), so the methods export can describe how the review was *actually* run rather than how the config currently reads. `llm.seed` is unset by default and only the OpenAI API takes it; the Anthropic and Gemini clients reject it, so setting one there is a false promise of determinism rather than a stricter setting.
+
 ![settings, per-stage models](figures/setting2.png)
 
 ## Your domain content

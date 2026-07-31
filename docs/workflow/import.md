@@ -67,7 +67,7 @@ Create tags on the **Tags** page, for example one per sub-question, per reviewer
 
 - **Choose which columns to show.** Presets (*Screening*, *Full-text & extraction*, *Bibliographic*, *All*) or a custom column picker, plus a **quick filter** box that searches every column.
 - **Filter** by stage (abstract-human / full-text-human / AI) and by decision (include / exclude / uncertain / not yet decided), for example to find everything the AI marked *uncertain* but no human has touched.
-- **Bulk-set a decision** on the selected rows: choose the **stage** (abstract or full-text), the decision (include / exclude / uncertain), and an optional reasoning. Useful for clearing an obvious batch without clicking through cards one by one.
+- **Bulk-set a decision** on the selected rows: choose the **stage** (abstract or full-text), the decision (include / exclude / uncertain), and an optional reasoning. Useful for clearing an obvious batch without clicking through cards one by one. It goes through the **same vote lock** as the buttons on the cards, so under `assisted` a paper another reviewer has already screened is skipped rather than double-voted, and the result says how many were skipped and why.
 - **Bulk-tag.** Add or remove a tag on the selected rows.
 - **More bulk actions.** *Mark as duplicate*, *Move to abstract screening*, or *Move back to full-text* for the selected rows.
 - **Edit a paper's metadata.** Select a row and click **Edit metadata** to fix its DOI, title, authors, year, journal, source database, or abstract (a confirm dialog). A **missing-DOI reminder** flags records without a DOI, since DOI is what keeps deduplication and PDF linking reliable.
