@@ -6,16 +6,28 @@ from typing import Optional
 
 from ailr.exceptions import DatabaseError
 
-# A report counts as excluded at full text when adjudication says so, or — with no adjudication —
-# when a human vote says so. Mirrors the final-include rule, so PRISMA's excluded and included
-# boxes are read the same way and a reconciled disagreement is not counted on both sides.
-_FT_FINAL_EXCLUDE_SQL = """(
-    EXISTS (SELECT 1 FROM reconciliations r
-            WHERE r.source_id = d.source_id AND r.stage = 'full_text_screening'
-              AND r.final_value = 'exclude')
-    OR NOT EXISTS (SELECT 1 FROM reconciliations r
-                   WHERE r.source_id = d.source_id AND r.stage = 'full_text_screening')
-)"""
+# A report counts as excluded at full text when adjudication says so, or, with no adjudication,
+# when a human vote says so. Anchored on sources like the final-include rule, so PRISMA's excluded
+# and included boxes are read the same way and a reconciled disagreement is not counted on both
+# sides. Anchoring on screening_decisions instead used to drop every report whose exclusion came
+# only from adjudication (assisted AI-exclude vs human-include, or two 'uncertain' votes): there is
+# no human exclude row to hang the count on, so the report vanished from the flow diagram.
+_FT_FINAL_EXCLUDED_SOURCES_SQL = """
+    SELECT s.id AS source_id FROM sources s
+    WHERE s.project_id = ?
+      AND (
+        EXISTS (SELECT 1 FROM reconciliations r
+                WHERE r.source_id = s.id AND r.stage = 'full_text_screening'
+                  AND r.final_value = 'exclude')
+        OR (
+          NOT EXISTS (SELECT 1 FROM reconciliations r
+                      WHERE r.source_id = s.id AND r.stage = 'full_text_screening')
+          AND EXISTS (SELECT 1 FROM screening_decisions d
+                      WHERE d.source_id = s.id AND d.stage = 'full_text'
+                        AND d.decision = 'exclude' AND d.reviewer_type = 'human')
+        )
+      )
+"""
 
 
 class ScreeningAuxMixin:
@@ -281,26 +293,55 @@ class ScreeningAuxMixin:
 
         A report counted under two reasons appears in two rows: the counts can sum to more than
         the number of excluded reports (see count_full_text_excluded_reports).
+
+        An adjudicated exclusion takes its reason from the adjudicator's rationale, which overrides
+        the individual votes: the adjudication is the final call, and in assisted mode it is often
+        the only place a reason exists at all.
         """
-        sql = f"""
-            SELECT DISTINCT d.source_id AS source_id,
-                   COALESCE(NULLIF(TRIM(d.reasoning), ''), '(no reason given)') AS reason
-            FROM screening_decisions d
-            JOIN sources s ON s.id = d.source_id
-            WHERE s.project_id = ?
-              AND d.stage = 'full_text'
-              AND d.decision = 'exclude'
-              AND d.reviewer_type = 'human'
-              AND {_FT_FINAL_EXCLUDE_SQL}
-        """
+        excluded = {r["source_id"] for r in self._conn.execute(
+            _FT_FINAL_EXCLUDED_SOURCES_SQL, (project_id,)
+        ).fetchall()}
+        if not excluded:
+            return []
+
+        adjudicated: dict[int, str] = {}
+        for row in self._conn.execute(
+            """
+            SELECT r.source_id AS source_id, TRIM(COALESCE(r.rationale, '')) AS rationale
+            FROM reconciliations r JOIN sources s ON s.id = r.source_id
+            WHERE s.project_id = ? AND r.stage = 'full_text_screening'
+              AND r.final_value = 'exclude' AND TRIM(COALESCE(r.rationale, '')) <> ''
+            """,
+            (project_id,),
+        ).fetchall():
+            adjudicated[row["source_id"]] = row["rationale"]
+
+        voted: dict[int, set] = {}
+        for row in self._conn.execute(
+            """
+            SELECT DISTINCT d.source_id AS source_id, TRIM(COALESCE(d.reasoning, '')) AS reason
+            FROM screening_decisions d JOIN sources s ON s.id = d.source_id
+            WHERE s.project_id = ? AND d.stage = 'full_text'
+              AND d.decision = 'exclude' AND d.reviewer_type = 'human'
+              AND TRIM(COALESCE(d.reasoning, '')) <> ''
+            """,
+            (project_id,),
+        ).fetchall():
+            voted.setdefault(row["source_id"], set()).add(row["reason"])
+
         known = {r["name"] for r in self.list_exclusion_reasons(project_id)}
         per_reason: dict[str, set] = {}
-        for row in self._conn.execute(sql, (project_id,)).fetchall():
-            parts = [p.strip() for p in str(row["reason"]).split(";") if p.strip()]
-            if len(parts) < 2 or not all(p in known for p in parts):
-                parts = [row["reason"]]
-            for part in parts:
-                per_reason.setdefault(part, set()).add(row["source_id"])
+        for sid in excluded:
+            if sid in adjudicated:
+                raw_reasons = {adjudicated[sid]}
+            else:
+                raw_reasons = voted.get(sid) or {"(no reason given)"}
+            for raw in raw_reasons:
+                parts = [p.strip() for p in raw.split(";") if p.strip()]
+                if len(parts) < 2 or not all(p in known for p in parts):
+                    parts = [raw]
+                for part in parts:
+                    per_reason.setdefault(part, set()).add(sid)
         return [
             {"reason": reason, "n": len(sources)}
             for reason, sources in sorted(per_reason.items(), key=lambda kv: (-len(kv[1]), kv[0]))
@@ -310,16 +351,7 @@ class ScreeningAuxMixin:
         """Distinct reports excluded at full text. The PRISMA box needs this, not the sum of the
         per-reason counts, which double-counts a report excluded for more than one reason."""
         row = self._conn.execute(
-            f"""
-            SELECT COUNT(DISTINCT d.source_id) AS n
-            FROM screening_decisions d
-            JOIN sources s ON s.id = d.source_id
-            WHERE s.project_id = ?
-              AND d.stage = 'full_text'
-              AND d.decision = 'exclude'
-              AND d.reviewer_type = 'human'
-              AND {_FT_FINAL_EXCLUDE_SQL}
-            """,
+            f"SELECT COUNT(*) AS n FROM ({_FT_FINAL_EXCLUDED_SOURCES_SQL})",
             (project_id,),
         ).fetchone()
         return row["n"] if row else 0

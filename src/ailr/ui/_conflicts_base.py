@@ -37,7 +37,10 @@ class ConflictConfig:
     show_flag_check: bool       # full-text: show AI flag_check verdicts
     show_abstract_extras: bool  # DOI link + collapsible abstract (both stages)
     show_read_fulltext: bool = False  # full-text: "Read full text" button (opens the global reader modal)
-    show_history: bool = False  # abstract only: the History button (its modal callback is keyed on 'conflict-history-btn')
+    show_history: bool = False  # History button; the modal shows the all-reviewer timeline for both prefixes
+    show_stale_badge: bool = False   # abstract: warn when the AI verdict predates the current criteria/prompt
+    show_companions: bool = False    # full-text: the 'Same study as #n' grouping badge
+    exclude_needs_reason: bool = False  # full-text: Exclude routes through the PRISMA reason dialog
 
 
 def ai_detail_block(ai: dict, flag_check: Any = None) -> Any:
@@ -90,11 +93,21 @@ def initial_payload(cfg: ConflictConfig) -> tuple[Any, str, Any]:
             flags = db.get_flag_checks(sids)  # full-text: from extraction _flag_check field
         tags_per_source = db.get_tags_for_sources(sids)
         note_counts = db.count_notes(sids)
+        companions = db.list_study_companions(sids) if cfg.show_companions else {}
+        if cfg.show_stale_badge:
+            from ailr.ui.ai_runner import current_screening_composed
+            stale_ids = db.stale_ai_screening_source_ids(
+                project.project_id, current_screening_composed(project), stage=cfg.stage
+            )
+        else:
+            stale_ids = set()
         cards = [
             _conflict_card(
                 cfg, s, human.get(s.id, []), ai_rows.get(s.id), flags.get(s.id),
                 tags=tags_per_source.get(s.id, []),
                 note_count=note_counts.get(s.id, 0),
+                stale=s.id in stale_ids,
+                companions=companions.get(s.id, []),
             )
             for s in conflicts
         ]
@@ -218,6 +231,8 @@ def _conflict_card(
     flag_check: Any,
     tags: list[dict] | None = None,
     note_count: int = 0,
+    stale: bool = False,
+    companions: list[dict] | None = None,
 ) -> Any:
     sid = src.id
 
@@ -241,15 +256,31 @@ def _conflict_card(
             )
         )
 
+    # PRISMA wants a reason for every full-text exclusion, so there Exclude opens the same reason
+    # dialog the full-text queue uses instead of resolving straight away.
+    exclude_btn = (
+        dbc.Button("Exclude", id={"type": "ft-conflict-exclude-open", "source": sid}, color="danger", size="sm")
+        if cfg.exclude_needs_reason
+        else dbc.Button("Exclude", id={"type": f"{cfg.prefix}-decide", "source": sid, "decision": "exclude"}, color="danger", size="sm")
+    )
     final_btns = dbc.ButtonGroup(
         [
             dbc.Button("Include", id={"type": f"{cfg.prefix}-decide", "source": sid, "decision": "include"}, color="success", size="sm"),
-            dbc.Button("Exclude", id={"type": f"{cfg.prefix}-decide", "source": sid, "decision": "exclude"}, color="danger", size="sm"),
+            exclude_btn,
         ]
     )
 
+    stale_badge = dbc.Badge(
+        "AI screening outdated", color="warning", className="ms-1",
+        title="Criteria or the screening prompt changed since this paper was AI-screened — consider re-running before adjudicating.",
+    ) if stale else None
+    study_badge = dbc.Badge(
+        f"Same study as {', '.join('#' + str(c['id']) for c in companions)}",
+        color="info", className="ms-1",
+    ) if companions else None
+
     body: list[Any] = [
-        header_line(src),
+        header_line(src, badges=[stale_badge, study_badge]),
         html.H6(src.title, className="mb-1"),
         meta_line(src),
         tag_chips(tags),
@@ -279,7 +310,11 @@ def _conflict_card(
             html.Div("Final decision (you as adjudicator)", className="small fw-bold mb-1"),
             dbc.Input(
                 id={"type": f"{cfg.prefix}-rationale", "source": sid},
-                placeholder="Adjudicator rationale (optional)",
+                placeholder=(
+                    "Rationale for Include (optional). Exclude asks for PRISMA reasons."
+                    if cfg.exclude_needs_reason
+                    else "Adjudicator rationale (optional)"
+                ),
                 size="sm",
                 className="mb-2",
             ),

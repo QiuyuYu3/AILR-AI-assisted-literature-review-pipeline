@@ -21,6 +21,7 @@ _CFG = ConflictConfig(
     show_flag_check=True,
     show_abstract_extras=True,
     show_history=True,
+    show_stale_badge=True,
 )
 
 

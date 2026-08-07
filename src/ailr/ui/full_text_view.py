@@ -15,7 +15,7 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.core.config import extractors_for, team_size_for
 from ailr.core.source import Source
 from ailr.ui import ai_runner
-from ailr.ui._actions import _apply_reset, _apply_vote
+from ailr.ui._actions import _apply_reset, _apply_resolve, _apply_vote
 from ailr.ui._cards import (
     DECISION_COLORS,
     action_banner,
@@ -324,19 +324,24 @@ def register_callbacks(app: Any) -> None:
         Output("ft-exclude-source", "data"),
         Output("ft-exclude-feedback", "children"),
         Input({"type": "ft-exclude-open", "source": ALL}, "n_clicks"),
+        Input({"type": "ft-conflict-exclude-open", "source": ALL}, "n_clicks"),
         Input("ft-exclude-cancel", "n_clicks"),
         prevent_initial_call=True,
     )
-    def _open_exclude(_open, _cancel):
+    def _open_exclude(_open, _conflict_open, _cancel):
         if ctx.triggered_id == "ft-exclude-cancel":
             return False, no_update, no_update, no_update, no_update, no_update
         triggered = triggered_click_id()
         if triggered is None:
             return (no_update,) * 6
         sid = int(triggered["source"])
+        # Same dialog, two outcomes: a vote from the review queue, a final adjudication from the
+        # conflicts tab. The mode rides along so confirm knows which one to record.
+        mode = "resolve" if triggered.get("type") == "ft-conflict-exclude-open" else "vote"
         proj = get_project()
         opts = [{"label": r["name"], "value": r["name"]} for r in proj.db.list_exclusion_reasons(proj.project_id)]
-        return True, f"Exclude #{sid}", opts, [], {"sid": sid}, ""
+        title = f"Exclude #{sid} (final decision)" if mode == "resolve" else f"Exclude #{sid}"
+        return True, title, opts, [], {"sid": sid, "mode": mode}, ""
 
     @app.callback(
         Output("ft-exclude-choices", "options", allow_duplicate=True),
@@ -364,6 +369,7 @@ def register_callbacks(app: Any) -> None:
         Output("ft-last-action", "data", allow_duplicate=True),
         Output("ft-exclude-modal", "is_open", allow_duplicate=True),
         Output("ft-exclude-feedback", "children", allow_duplicate=True),
+        Output("ft-conflicts-refresh", "data", allow_duplicate=True),
         Input("ft-exclude-confirm", "n_clicks"),
         State("ft-exclude-choices", "value"),
         State("ft-exclude-source", "data"),
@@ -372,19 +378,24 @@ def register_callbacks(app: Any) -> None:
     )
     def _confirm_exclude(_n, reasons, data, reviewer):
         if not _n or not data:
-            return no_update, no_update, no_update, no_update
+            return (no_update,) * 5
         rid = (reviewer or "").strip()
         if not rid:
-            return no_update, no_update, no_update, dbc.Alert("Enter your reviewer ID first.", color="warning", className="mb-0 py-1")
+            return no_update, no_update, no_update, dbc.Alert("Enter your reviewer ID first.", color="warning", className="mb-0 py-1"), no_update
         if not reasons:
-            return no_update, no_update, no_update, dbc.Alert("Pick or add at least one reason.", color="warning", className="mb-0 py-1")
+            return no_update, no_update, no_update, dbc.Alert("Pick or add at least one reason.", color="warning", className="mb-0 py-1"), no_update
         reason = "; ".join(reasons) if isinstance(reasons, list) else str(reasons)
         sid = int(data["sid"])
+        if data.get("mode") == "resolve":
+            # The reason becomes the adjudication rationale, which is where PRISMA reads it from
+            # for an adjudicated exclusion (see full_text_exclusion_counts).
+            refresh = _apply_resolve(get_project().db, sid, "exclude", rid, reason, "full_text")
+            return no_update, no_update, False, "", refresh
         # Same vote lock as the inline buttons (idempotent self-vote + team cap) — this modal
         # must not be a second, weaker path to a duplicate vote.
         workflow = get_project().config.screening_workflow("full_text")
         refresh, last = _apply_vote(get_project().db, sid, "exclude", rid, workflow, stage="full_text", reasoning=reason)
-        return refresh, last, False, ""
+        return refresh, last, False, "", no_update
 
     @app.callback(
         Output("ft-tags-filter", "options"),

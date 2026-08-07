@@ -19,6 +19,9 @@ _CFG = ConflictConfig(
     show_flag_check=True,
     show_abstract_extras=True,
     show_read_fulltext=True,
+    show_history=True,
+    show_companions=True,
+    exclude_needs_reason=True,
 )
 
 

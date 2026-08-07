@@ -196,13 +196,14 @@ def register_callbacks(app: Any) -> None:
         Output("history-modal-body", "children"),
         Input({"type": "screen-history-btn", "source": ALL}, "n_clicks"),
         Input({"type": "conflict-history-btn", "source": ALL}, "n_clicks"),
+        Input({"type": "ft-conflict-history-btn", "source": ALL}, "n_clicks"),
         Input({"type": "ft-history-btn", "source": ALL}, "n_clicks"),
         Input({"type": "extract-history-btn", "source": ALL}, "n_clicks"),
         State("shared-reviewer", "value"),
         State("history-modal", "is_open"),
         prevent_initial_call=True,
     )
-    def _open_history(_s, _c, _ft, _ex, reviewer, was_open):
+    def _open_history(_s, _c, _ftc, _ft, _ex, reviewer, was_open):
         triggered = triggered_click_id()
         if triggered is None:
             return no_update, no_update, no_update
@@ -215,6 +216,8 @@ def register_callbacks(app: Any) -> None:
         if src is None:
             return False, no_update, no_update
 
+        # The review queues show only your own timeline (blinding); the conflict tabs show everyone's,
+        # since that is what the adjudicator has to weigh.
         if btn_type in ("screen-history-btn", "ft-history-btn", "extract-history-btn"):
             rid = (reviewer or "").strip() or None
             actions = db.get_screening_actions(sid, reviewer_id=rid)

@@ -7,8 +7,11 @@
 - Extraction form: per-field "Use" buttons and a confirmed "Fill all fields from AI" button that take AI's values back into the form, which previously stayed pinned to your first saved edit. Fill-all can draw from the current run or any earlier run a re-run retired. Fields the chosen run left empty are untouched, and nothing is written until Save/Submit.
 
 - Conflicts and full-text conflicts cards now show tag chips plus Tags and Note buttons, matching the screening and full-text queues.
+- Full-text conflicts cards gained the History button (all-reviewer timeline) and the "Same study as #n" badge; abstract conflicts cards now carry the "AI screening outdated" badge, so a conflict produced by a superseded prompt is visible before adjudicating.
+- Adjudicating a full-text conflict as Exclude now opens the same PRISMA exclusion-reason dialog the full-text queue uses, instead of taking a free-text rationale.
 
 ### Fixed
+- PRISMA dropped every full-text report whose exclusion came only from adjudication: the counts were read from human exclude votes, so an assisted AI-exclude vs human-include conflict, or two 'uncertain' votes, resolved as exclude appeared in neither the included nor the excluded box. Both the report count and the per-reason breakdown now read the adjudication, whose rationale supplies the reason.
 - `ailr ui` gave up when all 25 ports it scanned fell inside one Hyper-V reservation; it now restarts the scan at each following hundred, matches werkzeug's `SO_REUSEADDR` so a port in `TIME_WAIT` from the previous run is not skipped, and gives non-Windows users an `lsof` hint instead of `netsh`.
 - Abstract and full-text screening search could not find a paper by the `#123` number shown on its card; `#123` now matches that paper exactly, and a bare `123` matches it alongside the usual text search.
 - When the model serialized a structured field into a JSON string that does not parse, it was stored as that raw string instead of failing; the paper is now reported as failed so it can be re-run.
