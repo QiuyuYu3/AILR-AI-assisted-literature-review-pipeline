@@ -50,6 +50,7 @@ class ScreeningTask:
         batch: bool = False,
         workers: Optional[int] = None,
         flag_check: Optional[bool] = None,
+        force: bool = False,
     ) -> ScreenRunSummary:
         config = self.project.config
         if flag_check is None:
@@ -61,10 +62,17 @@ class ScreeningTask:
             workers = config.screening.workers
         workers = max(1, workers)
 
-        un_screened = self.project.db.list_unscreened(
-            project_id=self.project.project_id,
-            reviewer_type=self.reviewer.reviewer_type,
-        )
+        # force re-judges sources this reviewer already decided — the only way to bring decisions made
+        # under an older prompt/criteria up to date, since the normal pass skips anything already done.
+        # Decisions are appended, not replaced: the previous row stays as an audit trail and every
+        # downstream query takes the latest.
+        if force:
+            un_screened = self.project.db.list_sources(self.project.project_id)
+        else:
+            un_screened = self.project.db.list_unscreened(
+                project_id=self.project.project_id,
+                reviewer_type=self.reviewer.reviewer_type,
+            )
         if limit is not None:
             un_screened = un_screened[:limit]
 
@@ -88,6 +96,13 @@ class ScreeningTask:
         for source in un_screened:
             if not source.abstract:
                 summary.skipped_no_abstract += 1
+                # The placeholder does not depend on the prompt, so a forced pass has nothing to
+                # update here and must not stack another copy on every run.
+                if force:
+                    done += 1
+                    if on_progress:
+                        on_progress(done, summary.total, None, None)
+                    continue
                 # Insert an uncertain decision so the source is not screened repeatedly
                 placeholder = ScreeningDecision(
                     decision="uncertain",

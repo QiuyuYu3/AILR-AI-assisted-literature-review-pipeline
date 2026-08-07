@@ -299,7 +299,7 @@ class ExtractionQuickTestTask:
 _DECISION_STAGE = {"screening": "abstract", "extraction": "full_text"}
 
 
-def test_run_agreement(project: Project, run_id: int, test_stage: str = "abstract") -> dict:
+def quick_test_agreement(project: Project, run_id: int, test_stage: str = "abstract") -> dict:
     """AI-vs-human agreement for one quick-test run. The AI side comes from the isolated test
     tables, so it reflects the prompt THAT RUN used; the human side is the reviewer's real
     decision, whenever they got around to making it. Recompute on every render: the human may

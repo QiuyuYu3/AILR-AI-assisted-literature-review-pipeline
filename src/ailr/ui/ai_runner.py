@@ -78,8 +78,8 @@ def _start(key: str, runner: Callable, *args: Any) -> bool:
     return True
 
 
-def start_screening(project: Any, mock: bool, flag_check: Any = None) -> bool:
-    return _start("screening", _run_screening, project, mock, flag_check)
+def start_screening(project: Any, mock: bool, flag_check: Any = None, force: bool = False) -> bool:
+    return _start("screening", _run_screening, project, mock, flag_check, force)
 
 
 def start_quick_test(project: Any, n: int, mock: bool, stage: str = "abstract", source_ids=None) -> bool:
@@ -132,13 +132,15 @@ current_screening_composed = screening_composed
 current_extraction_composed = extraction_composed
 
 
-def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None) -> None:
+def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None, force: bool = False) -> None:
     try:
         # A real run supersedes earlier mock results: clear them first so they don't block re-screening.
         replaced = project.db.clear_mock_ai_decisions(project.project_id) if not mock else 0
         client = _make_client(project, "screen", mock)
         reviewer = LLMReviewer(client, prompt_version=screening_prompt_version(project))
-        summary = ScreeningTask(project, reviewer).run(on_progress=_progress_cb(key), batch=mock, flag_check=flag_check)
+        summary = ScreeningTask(project, reviewer).run(
+            on_progress=_progress_cb(key), batch=mock, flag_check=flag_check, force=force
+        )
         text = (
             f"Screened {summary.screened}/{summary.total} — "
             f"include {summary.include}, exclude {summary.exclude}, uncertain {summary.uncertain}."

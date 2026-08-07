@@ -21,6 +21,8 @@ _INCLUDE_RESPONSE = {
     "confidence": 8,
 }
 
+_EXCLUDE_RESPONSE = {**_INCLUDE_RESPONSE, "decision": "exclude", "reasoning": "mock says no"}
+
 
 def _add_source(project, title="Paper", abstract="An abstract."):
     return project.db.insert_source(Source(
@@ -93,6 +95,43 @@ class TestScreeningRun:
             "SELECT raw_output FROM screening_decisions WHERE source_id = ?", (sid,)
         ).fetchone()
         assert json.loads(row["raw_output"])["decision"] == "include"
+
+
+class TestForcedRescreen:
+    """force=True is the only way to re-judge papers under an edited prompt/criteria: the normal
+    pass skips anything this reviewer type already decided."""
+
+    def test_force_rejudges_already_screened_sources(self, tmp_project):
+        sid = _add_source(tmp_project)
+        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        summary = ScreeningTask(tmp_project, _mock_reviewer(_EXCLUDE_RESPONSE)).run(force=True)
+        assert summary.total == 1 and summary.screened == 1
+        assert tmp_project.db.get_latest_ai_decision(sid, "abstract")["decision"] == "exclude"
+
+    def test_force_appends_and_keeps_the_earlier_decision(self, tmp_project):
+        _add_source(tmp_project)
+        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        ScreeningTask(tmp_project, _mock_reviewer(_EXCLUDE_RESPONSE)).run(force=True)
+        assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 2
+
+    def test_without_force_the_second_run_still_skips(self, tmp_project):
+        _add_source(tmp_project)
+        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        assert ScreeningTask(tmp_project, _mock_reviewer()).run(force=False).total == 0
+
+    def test_force_does_not_stack_placeholders_for_missing_abstracts(self, tmp_project):
+        """The placeholder does not depend on the prompt, so re-running must not add a copy."""
+        _add_source(tmp_project, "no abstract", abstract=None)
+        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        summary = ScreeningTask(tmp_project, _mock_reviewer()).run(force=True)
+        assert summary.skipped_no_abstract == 1 and summary.screened == 0
+        assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
+
+    def test_force_reaches_sources_that_were_never_screened(self, tmp_project):
+        _add_source(tmp_project, "first")
+        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        _add_source(tmp_project, "added later")
+        assert ScreeningTask(tmp_project, _mock_reviewer()).run(force=True).screened == 2
 
 
 class TestApiTelemetry:

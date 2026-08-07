@@ -64,6 +64,12 @@ def ai_extraction_panel() -> list[Any]:
         dbc.Switch(id="extract-ai-force", label="Force re-extract (overwrite existing AI data)", value=False, className="small"),
         html.P("Runs on papers that passed abstract screening (include) and have full-text markdown. Already-extracted papers are skipped unless 'Force re-extract' is on.", className="text-muted small mb-1"),
         dbc.Button("Run AI extraction", id="extract-ai-run", color="primary", outline=True, size="sm"),
+        dcc.ConfirmDialog(
+            id="extract-ai-force-confirm",
+            message="Re-extract every paper, including ones already extracted?\n\n"
+                    "Each paper is one full-text API call, so this is the expensive one. "
+                    "The previous AI rows are archived, not deleted.",
+        ),
         html.Div(id="extract-ai-status", className="small mt-2"),
         dcc.Interval(id="extract-ai-poll", interval=1200, disabled=True),
         dcc.ConfirmDialogProvider(
@@ -376,7 +382,13 @@ def register_callbacks(app: Any) -> None:
             return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}
         return no_update, True, no_update
 
+    def _extraction_started_alert(mock: Any, force: bool) -> Any:
+        started = ai_runner.start_extraction(get_project(), bool(mock), force=force)
+        msg = "AI extraction started…" if started else "Already running…"
+        return dbc.Alert(msg, color="info", className="py-1 mb-0")
+
     @app.callback(
+        Output("extract-ai-force-confirm", "displayed"),
         Output("extract-ai-poll", "disabled"),
         Output("extract-ai-status", "children"),
         Input("extract-ai-run", "n_clicks"),
@@ -386,10 +398,22 @@ def register_callbacks(app: Any) -> None:
     )
     def _ai_run(n, mock, force):
         if not n:
+            return no_update, no_update, no_update
+        if force:  # hand off to the confirm dialog; the run starts in _ai_run_forced
+            return True, no_update, no_update
+        return False, False, _extraction_started_alert(mock, False)
+
+    @app.callback(
+        Output("extract-ai-poll", "disabled", allow_duplicate=True),
+        Output("extract-ai-status", "children", allow_duplicate=True),
+        Input("extract-ai-force-confirm", "submit_n_clicks"),
+        State("extract-ai-mock", "value"),
+        prevent_initial_call=True,
+    )
+    def _ai_run_forced(n, mock):
+        if not n:
             return no_update, no_update
-        started = ai_runner.start_extraction(get_project(), bool(mock), force=bool(force))
-        msg = "AI extraction started…" if started else "Already running…"
-        return False, dbc.Alert(msg, color="info", className="py-1 mb-0")
+        return False, _extraction_started_alert(mock, True)
 
     @app.callback(
         Output("extract-clear-mock-status", "children"),

@@ -186,9 +186,18 @@ def ai_screening_panel() -> list[Any]:
         dbc.Label("Run AI screening", className="fw-bold"),
         html.P("Runs AI on the abstracts and records its decisions (the prompt is snapshotted as a version).", className="text-muted small mb-1"),
         dbc.Switch(id="screen-ai-mock", label="Mock (no API calls)", value=True, className="small"),
+        dbc.Switch(id="screen-ai-force", label="Re-screen everything (including already-decided papers)", value=False, className="small"),
+        html.P("Turn this on after editing the criteria or the prompt: the normal run skips any paper the AI has already decided, so those keep their old verdict. Re-screening appends a new decision and leaves the old one as history.",
+               className="text-muted small mb-1"),
         html.P("For every decision the AI also records a PASS / FAIL / UNCERTAIN verdict, reason, and confidence for each criterion (shown in the review). This keeps each include/exclude auditable.",
                className="text-muted small mb-1"),
         dbc.Button("Run AI screening", id="screen-ai-run", color="primary", outline=True, size="sm"),
+        dcc.ConfirmDialog(
+            id="screen-ai-force-confirm",
+            message="Re-screen EVERY paper, including ones the AI has already decided?\n\n"
+                    "This makes a fresh API call for each paper, so a full corpus costs real money. "
+                    "Each new decision is appended; the earlier ones are kept as history.",
+        ),
         html.Div(id="screen-ai-status", className="small mt-2"),
         dcc.Interval(id="screen-ai-poll", interval=1200, disabled=True),
         dcc.ConfirmDialogProvider(
@@ -352,19 +361,38 @@ def layout() -> Any:
 
 
 def register_callbacks(app: Any) -> None:
+    def _screening_started_alert(mock: Any, force: bool) -> Any:
+        started = ai_runner.start_screening(get_project(), bool(mock), force=force)
+        msg = "AI screening started…" if started else "Already running…"
+        return dbc.Alert(msg, color="info", className="py-1 mb-0")
+
     @app.callback(
+        Output("screen-ai-force-confirm", "displayed"),
         Output("screen-ai-poll", "disabled"),
         Output("screen-ai-status", "children"),
         Input("screen-ai-run", "n_clicks"),
         State("screen-ai-mock", "value"),
+        State("screen-ai-force", "value"),
         prevent_initial_call=True,
     )
-    def _ai_run(n, mock):
+    def _ai_run(n, mock, force):
+        if not n:
+            return no_update, no_update, no_update
+        if force:  # hand off to the confirm dialog; the run starts in _ai_run_forced
+            return True, no_update, no_update
+        return False, False, _screening_started_alert(mock, False)
+
+    @app.callback(
+        Output("screen-ai-poll", "disabled", allow_duplicate=True),
+        Output("screen-ai-status", "children", allow_duplicate=True),
+        Input("screen-ai-force-confirm", "submit_n_clicks"),
+        State("screen-ai-mock", "value"),
+        prevent_initial_call=True,
+    )
+    def _ai_run_forced(n, mock):
         if not n:
             return no_update, no_update
-        started = ai_runner.start_screening(get_project(), bool(mock))
-        msg = "AI screening started…" if started else "Already running…"
-        return False, dbc.Alert(msg, color="info", className="py-1 mb-0")
+        return False, _screening_started_alert(mock, True)
 
     @app.callback(
         Output("screen-clear-mock-status", "children"),
@@ -779,7 +807,7 @@ def register_callbacks(app: Any) -> None:
         n_reviewed, total_sources = db.screen_counts(pid, rid)
         counts_text = f"{n_reviewed} / {total_sources} reviewed by you • {total} match current filter"
         if stale_ids:
-            counts_text += f" • {len(stale_ids)} AI screening(s) outdated — re-run screening"
+            counts_text += f" • {len(stale_ids)} AI screening(s) outdated — re-run with ‘Re-screen everything’"
         return cards, prev_disabled, next_disabled, page_info, counts_text
 
 

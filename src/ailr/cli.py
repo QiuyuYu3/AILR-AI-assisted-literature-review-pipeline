@@ -138,6 +138,7 @@ def screen(
     mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call, no tokens spent).")] = False,
     workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save the abstract screening workflow: assisted | independent.")] = None,
     include_ai: Annotated[bool, typer.Option("--include-ai", help="In independent workflow, run AI as a reference reviewer.")] = False,
+    force: Annotated[bool, typer.Option("--force", help="Re-screen sources the AI already decided, e.g. after editing the criteria or prompt.")] = False,
 ) -> None:
     """Run AI screening on un-screened sources."""
     try:
@@ -182,7 +183,7 @@ def screen(
                 tag = decision.decision.upper().ljust(9)
                 typer.echo(f"  [{idx}/{total}] {tag} (conf {decision.confidence}): {decision.reasoning[:80]}")
 
-        summary = task.run(limit=limit, on_progress=on_progress)
+        summary = task.run(limit=limit, force=force, on_progress=on_progress)
 
         typer.echo("")
         typer.echo(f"Screened:        {summary.screened} / {summary.total}")

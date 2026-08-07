@@ -19,7 +19,13 @@ from ailr.metrics import (
     rater_overlaps,
 )
 from ailr.reviewers import ScreeningDecision
-from ailr.tasks.calibrate import CalibrationSummary, CalibrationTask
+from ailr.tasks.calibrate import (
+    CalibrationSummary,
+    CalibrationTask,
+    _agreement_stats,
+    _latest_by_reviewer_type,
+    quick_test_agreement,
+)
 
 
 class TestMetrics:
@@ -174,6 +180,113 @@ class TestCalibrationPairing:
     def test_empty_sample_is_a_noop(self, tmp_project):
         summary = _agreement(tmp_project, [])
         assert summary.paired_count == 0 and math.isnan(summary.kappa)
+
+
+class TestQuickTestAgreement:
+    """κ for a quick-test run: the AI side is the run's own verdict from the isolated test tables,
+    the human side is the reviewer's real decision whenever they made it."""
+
+    def _abstract_run(self, project, verdicts):
+        run_id = project.db.create_test_run(
+            project_id=project.project_id, stage="abstract", sample_size=len(verdicts),
+            prompt_snapshot="p", criteria_snapshot="c",
+        )
+        for sid, verdict in verdicts.items():
+            project.db.insert_test_decision(
+                run_id=run_id, source_id=sid, decision=verdict, reasoning="t",
+                confidence=8, matched_criteria=[], evidence_quotes=[],
+            )
+        return run_id
+
+    def _extraction_run(self, project, verdicts):
+        run_id = project.db.create_test_run(
+            project_id=project.project_id, stage="extraction", sample_size=len(verdicts),
+            prompt_snapshot="p", criteria_snapshot="c",
+        )
+        for sid, verdict in verdicts.items():
+            project.db.insert_test_extraction(
+                run_id=run_id, source_id=sid, full_text_decision=verdict, fields=[], flag_check=None,
+            )
+        return run_id
+
+    def test_pairs_run_verdicts_with_human_decisions(self, tmp_project):
+        s1, s2 = _add_source(tmp_project, "A"), _add_source(tmp_project, "B")
+        run_id = self._abstract_run(tmp_project, {s1: "include", s2: "exclude"})
+        _vote(tmp_project.db, s1, "include", "amber", "human")
+        _vote(tmp_project.db, s2, "include", "amber", "human")
+        stats = quick_test_agreement(tmp_project, run_id, "abstract")
+        assert stats["paired_count"] == 2
+        assert stats["agreement"] == 0.5
+        assert [d["source_id"] for d in stats["disagreements"]] == [s2]
+
+    def test_real_ai_decisions_do_not_leak_in(self, tmp_project):
+        """The reason the test tables exist: a corpus run made under a different prompt must not
+        be what this run's κ reports."""
+        sid = _add_source(tmp_project)
+        run_id = self._abstract_run(tmp_project, {sid: "include"})
+        _vote(tmp_project.db, sid, "exclude", "gpt", "ai")  # real run, opposite verdict
+        _vote(tmp_project.db, sid, "include", "amber", "human")
+        stats = quick_test_agreement(tmp_project, run_id, "abstract")
+        assert stats["paired_count"] == 1
+        assert stats["agreement"] == 1.0  # paired with the test-table include, not the real exclude
+
+    def test_papers_the_human_has_not_decided_are_unpaired(self, tmp_project):
+        s1, s2 = _add_source(tmp_project, "A"), _add_source(tmp_project, "B")
+        run_id = self._abstract_run(tmp_project, {s1: "include", s2: "include"})
+        _vote(tmp_project.db, s1, "include", "amber", "human")
+        stats = quick_test_agreement(tmp_project, run_id, "abstract")
+        assert stats["paired_count"] == 1
+        assert stats["ai_counts"]["include"] == 2  # both still counted on the AI side
+
+    def test_latest_human_vote_wins(self, tmp_project):
+        sid = _add_source(tmp_project)
+        run_id = self._abstract_run(tmp_project, {sid: "exclude"})
+        _vote(tmp_project.db, sid, "include", "amber", "human")
+        _vote(tmp_project.db, sid, "exclude", "amber", "human")  # changed their mind
+        assert quick_test_agreement(tmp_project, run_id, "abstract")["agreement"] == 1.0
+
+    def test_extraction_run_pairs_against_the_full_text_stage(self, tmp_project):
+        sid = _add_source(tmp_project)
+        run_id = self._extraction_run(tmp_project, {sid: "include"})
+        _vote(tmp_project.db, sid, "exclude", "amber", "human", stage="abstract")
+        assert quick_test_agreement(tmp_project, run_id, "extraction")["paired_count"] == 0
+        _vote(tmp_project.db, sid, "include", "amber", "human", stage="full_text")
+        stats = quick_test_agreement(tmp_project, run_id, "extraction")
+        assert stats["paired_count"] == 1 and stats["agreement"] == 1.0
+
+    def test_extraction_without_a_verdict_is_skipped(self, tmp_project):
+        """flag_check off leaves full_text_decision null — nothing to compare."""
+        sid = _add_source(tmp_project)
+        run_id = self._extraction_run(tmp_project, {sid: None})
+        _vote(tmp_project.db, sid, "include", "amber", "human", stage="full_text")
+        assert quick_test_agreement(tmp_project, run_id, "extraction")["paired_count"] == 0
+
+    def test_empty_run_reports_no_pairs(self, tmp_project):
+        run_id = self._abstract_run(tmp_project, {})
+        stats = quick_test_agreement(tmp_project, run_id, "abstract")
+        assert stats["paired_count"] == 0 and math.isnan(stats["kappa"])
+
+
+class TestAgreementStatsCI:
+    def test_stats_carry_a_kappa_ci_bracketing_the_estimate(self, tmp_project):
+        db = tmp_project.db
+        votes = [("include", "include"), ("include", "include"),
+                 ("exclude", "exclude"), ("exclude", "include")]
+        sids = []
+        for i, (ai, human) in enumerate(votes):
+            sid = _add_source(tmp_project, f"P{i}")
+            _vote(db, sid, ai, "gpt", "ai")
+            _vote(db, sid, human, "amber", "human")
+            sids.append(sid)
+        stats = _agreement_stats(_latest_by_reviewer_type(tmp_project, sids, "abstract"))
+        lo, hi = stats["kappa_ci"]
+        assert lo <= stats["kappa"] <= hi
+
+    def test_kappa_ci_is_undefined_without_pairs(self, tmp_project):
+        sid = _add_source(tmp_project)
+        _vote(tmp_project.db, sid, "include", "gpt", "ai")  # no human vote
+        stats = _agreement_stats(_latest_by_reviewer_type(tmp_project, [sid], "abstract"))
+        assert all(math.isnan(x) for x in stats["kappa_ci"])
 
 
 class TestPairedScreeningDecisions:

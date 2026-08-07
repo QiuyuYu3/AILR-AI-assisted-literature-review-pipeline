@@ -19,7 +19,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
 from ailr.quote_audit import QuoteAudit, audit_fields
-from ailr.tasks.calibrate import test_run_agreement
+from ailr.tasks.calibrate import quick_test_agreement
 from ailr.ui import ai_runner
 from ailr.ui._common import flag_check_block
 from ailr.ui._project import get_project
@@ -368,7 +368,7 @@ def _agreement_block(project: Any, run_id: int, stage: str) -> Any:
     if _is_independent(project, stage):
         return None
     try:
-        stats = test_run_agreement(project, run_id, stage)
+        stats = quick_test_agreement(project, run_id, stage)
     except Exception as e:
         return dbc.Alert(f"Could not compute agreement: {e}", color="warning", className="py-1 small mb-2")
 
