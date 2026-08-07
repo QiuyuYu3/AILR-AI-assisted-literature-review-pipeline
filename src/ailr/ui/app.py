@@ -1,6 +1,7 @@
 """Dash app: review UI with a left-side nav. Launched by `ailr ui`."""
 
 import os
+import socket
 import time
 from pathlib import Path
 
@@ -311,10 +312,39 @@ def build_app() -> Dash:
     return app
 
 
+_UI_HOST = "127.0.0.1"
+
+
+def _bindable_port(start: int, tries: int = 25) -> int:
+    """First port from `start` upward the OS will actually hand us.
+
+    Not just an in-use check: on Windows, Hyper-V reserves a block of ports that shifts on every
+    boot, and binding inside it fails with WSAEACCES even though nothing is listening. The OS
+    error text names no port and no cause, so a first-time user has nothing to go on.
+    """
+    for port in range(start, start + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((_UI_HOST, port))
+                return port
+            except OSError:
+                continue
+    raise SystemExit(
+        f"No port between {start} and {start + tries - 1} could be opened.\n"
+        "On Windows this is usually Hyper-V holding that range. To see the reserved blocks:\n"
+        "    netsh interface ipv4 show excludedportrange protocol=tcp\n"
+        "Then re-run with --port set to something outside them."
+    )
+
+
 def main() -> None:
     app = build_app()
-    port = int(os.environ.get("AILR_UI_PORT", "8050"))
-    app.run(port=port, debug=False)
+    requested = int(os.environ.get("AILR_UI_PORT", "8050"))
+    port = _bindable_port(requested)
+    if port != requested:
+        print(f"Port {requested} is unavailable; using {port} instead.")
+        print(f"Open http://localhost:{port}")
+    app.run(host=_UI_HOST, port=port, debug=False)
 
 
 if __name__ == "__main__":

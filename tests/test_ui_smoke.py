@@ -5,6 +5,8 @@ layout test renders each tab against a seeded project. No browser, no interactio
 this catches import breakage, layout-build errors, and callback-registration conflicts.
 """
 
+import socket
+
 import pytest
 
 from ailr.ui import (
@@ -73,3 +75,37 @@ def _node_count(x) -> int:
 @pytest.mark.parametrize("build", [b for _, b in _LAYOUTS], ids=[n for n, _ in _LAYOUTS])
 def test_layout_renders(seeded_project, build):
     assert _node_count(build()) > 1   # a real component tree, not an empty shell
+
+
+class TestPortSelection:
+    """`ailr ui` must not die on a port it cannot have — on Windows, Hyper-V reserves a block
+    that moves on every boot, so the default port works one day and not the next."""
+
+    def test_returns_the_requested_port_when_it_is_free(self):
+        from ailr.ui.app import _bindable_port
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            free = s.getsockname()[1]
+        assert _bindable_port(free) == free
+
+    def test_skips_a_port_already_listening(self):
+        from ailr.ui.app import _bindable_port
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as taken:
+            taken.bind(("127.0.0.1", 0))
+            taken.listen(1)
+            port = taken.getsockname()[1]
+            assert _bindable_port(port) > port
+
+    def test_exhausting_the_range_explains_where_to_look(self):
+        """The OS error names no port and no cause; the message has to carry the diagnosis."""
+        from ailr.ui.app import _bindable_port
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as taken:
+            taken.bind(("127.0.0.1", 0))
+            taken.listen(1)
+            port = taken.getsockname()[1]
+            with pytest.raises(SystemExit) as exc:
+                _bindable_port(port, tries=1)
+        assert "excludedportrange" in str(exc.value)
