@@ -2,8 +2,8 @@
 full-text exclusion reason.
 
 They live outside the tab content so any page can open one by emitting a button with the agreed
-pattern id (e.g. {"type": "screen-note-btn", "source": sid}) — screening, full text, and extraction
-all reuse the same six. The exclusion modal is the odd one out: its layout belongs here so it is
+pattern id (e.g. {"type": "screen-note-btn", "source": sid}) — screening, full text, extraction, and
+both conflict tabs all reuse the same six. The exclusion modal is the odd one out: its layout belongs here so it is
 always mounted, but its callbacks sit with the full-text review that owns the workflow.
 """
 
@@ -238,11 +238,13 @@ def register_callbacks(app: Any) -> None:
         Input({"type": "screen-tag-btn", "source": ALL}, "n_clicks"),
         Input({"type": "ft-tag-btn", "source": ALL}, "n_clicks"),
         Input({"type": "extract-tag-btn", "source": ALL}, "n_clicks"),
+        Input({"type": "conflict-tag-btn", "source": ALL}, "n_clicks"),
+        Input({"type": "ft-conflict-tag-btn", "source": ALL}, "n_clicks"),
         Input("tag-modal-done", "n_clicks"),
         State("tag-modal", "is_open"),
         prevent_initial_call=True,
     )
-    def _open_tag_modal(_clicks, _ft_clicks, _ex_clicks, _done, was_open):
+    def _open_tag_modal(_clicks, _ft_clicks, _ex_clicks, _c_clicks, _ftc_clicks, _done, was_open):
         if ctx.triggered_id == "tag-modal-done":
             return False, no_update, no_update, no_update, no_update, no_update
         triggered = triggered_click_id()
@@ -465,9 +467,11 @@ def register_callbacks(app: Any) -> None:
         Input({"type": "screen-note-btn", "source": ALL}, "n_clicks"),
         Input({"type": "ft-note-btn", "source": ALL}, "n_clicks"),
         Input({"type": "extract-note-btn", "source": ALL}, "n_clicks"),
+        Input({"type": "conflict-note-btn", "source": ALL}, "n_clicks"),
+        Input({"type": "ft-conflict-note-btn", "source": ALL}, "n_clicks"),
         prevent_initial_call=True,
     )
-    def _open_note_modal(_s, _ft, _ex):
+    def _open_note_modal(_s, _ft, _ex, _c, _ftc):
         triggered = triggered_click_id()
         if triggered is None:
             return no_update, no_update, no_update

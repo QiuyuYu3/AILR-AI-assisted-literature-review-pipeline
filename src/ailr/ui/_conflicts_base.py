@@ -15,7 +15,7 @@ from dash import ALL, Input, Output, State, ctx, html, no_update
 from ailr.core.source import Source
 from ailr.ui._actions import _apply_resolve, _apply_undo_resolve
 from ailr.ui._cards import DECISION_COLORS as _DECISION_COLORS
-from ailr.ui._cards import doi_link, header_line, meta_line
+from ailr.ui._cards import doi_link, header_line, meta_line, tag_chips
 from ailr.ui._common import flag_check_block, triggered_click_id
 from ailr.ui._project import get_project
 
@@ -88,8 +88,14 @@ def initial_payload(cfg: ConflictConfig) -> tuple[Any, str, Any]:
             flags = db.get_screening_flag_checks(sids, stage=cfg.stage)  # abstract: parsed from screening raw_output
         else:
             flags = db.get_flag_checks(sids)  # full-text: from extraction _flag_check field
+        tags_per_source = db.get_tags_for_sources(sids)
+        note_counts = db.count_notes(sids)
         cards = [
-            _conflict_card(cfg, s, human.get(s.id, []), ai_rows.get(s.id), flags.get(s.id))
+            _conflict_card(
+                cfg, s, human.get(s.id, []), ai_rows.get(s.id), flags.get(s.id),
+                tags=tags_per_source.get(s.id, []),
+                note_count=note_counts.get(s.id, 0),
+            )
             for s in conflicts
         ]
         count_text = f"{len(conflicts)} unresolved conflict(s)"
@@ -189,9 +195,11 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         Output(f"{cfg.store_prefix}-resolved", "children"),
         Input(refresh_id, "data"),
         Input("shared-reviewer", "value"),
+        Input("tags-refresh", "data"),
+        Input("notes-refresh", "data"),
         prevent_initial_call=True,
     )
-    def _render(_refresh, reviewer):
+    def _render(_refresh, reviewer, _tr, _nr):
         rid = (reviewer or "").strip()
         if not rid:
             return (
@@ -202,7 +210,15 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         return initial_payload(cfg)
 
 
-def _conflict_card(cfg: ConflictConfig, src: Source, decisions: list[dict], ai: Any, flag_check: Any) -> Any:
+def _conflict_card(
+    cfg: ConflictConfig,
+    src: Source,
+    decisions: list[dict],
+    ai: Any,
+    flag_check: Any,
+    tags: list[dict] | None = None,
+    note_count: int = 0,
+) -> Any:
     sid = src.id
 
     vote_rows: list[Any] = []
@@ -232,7 +248,12 @@ def _conflict_card(cfg: ConflictConfig, src: Source, decisions: list[dict], ai: 
         ]
     )
 
-    body: list[Any] = [header_line(src), html.H6(src.title, className="mb-1"), meta_line(src)]
+    body: list[Any] = [
+        header_line(src),
+        html.H6(src.title, className="mb-1"),
+        meta_line(src),
+        tag_chips(tags),
+    ]
     if cfg.show_abstract_extras:
         body.extend(_abstract_extras(cfg, src, sid))
     if cfg.show_read_fulltext:
@@ -248,6 +269,7 @@ def _conflict_card(cfg: ConflictConfig, src: Source, decisions: list[dict], ai: 
                 className="mt-1",
             )
         )
+    body.append(_actions_row(cfg, sid, note_count))
     body.extend(
         [
             html.Hr(),
@@ -278,13 +300,28 @@ def _abstract_extras(cfg: ConflictConfig, src: Source, sid: Any) -> list[Any]:
         id={"type": f"{cfg.prefix}-abstract-body", "source": sid},
         is_open=False,
     )
-    if not cfg.show_history:
-        return [doi_el, abstract_btn, abstract_body]
-    history_btn = html.Div(
-        dbc.Button("History", id={"type": f"{cfg.prefix}-history-btn", "source": sid}, size="sm", color="link", className="p-0"),
-        className="mt-1",
+    return [doi_el, abstract_btn, abstract_body]
+
+
+def _actions_row(cfg: ConflictConfig, sid: Any, note_count: int) -> Any:
+    btns: list[Any] = []
+    if cfg.show_history:
+        btns.append(
+            dbc.Button("History", id={"type": f"{cfg.prefix}-history-btn", "source": sid}, size="sm", color="link", className="p-0 me-3")
+        )
+    btns.append(
+        dbc.Button("Tags", id={"type": f"{cfg.prefix}-tag-btn", "source": sid}, size="sm", color="link", className="p-0 me-3")
     )
-    return [doi_el, abstract_btn, abstract_body, history_btn]
+    btns.append(
+        dbc.Button(
+            f"Note ({note_count})" if note_count else "Note",
+            id={"type": f"{cfg.prefix}-note-btn", "source": sid},
+            size="sm",
+            color="link",
+            className="p-0",
+        )
+    )
+    return html.Div(btns, className="mt-1")
 
 
 def _resolved_list(cfg: ConflictConfig, reconciliations: list[dict]) -> Any:
