@@ -10,7 +10,7 @@ from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.criteria import load_screening_inputs, resolve_criteria
 from ailr.exceptions import AILRError
-from ailr.metrics import cohen_kappa, percent_agreement
+from ailr.metrics import cohen_kappa, cohen_kappa_ci, percent_agreement
 from ailr.reviewers import Reviewer, ScreeningDecision
 from ailr.reviewers import LLMReviewer
 
@@ -145,6 +145,8 @@ def _agreement_stats(by_source: dict[int, dict[str, str]]) -> dict:
     return {
         "paired_count": len(pairs),
         "kappa": cohen_kappa(pairs, categories=_KAPPA_CATEGORIES) if pairs else float("nan"),
+        # Wide on a handful of papers, which is the point: it stops a κ from 8 records reading as settled.
+        "kappa_ci": cohen_kappa_ci(pairs, categories=_KAPPA_CATEGORIES) if pairs else (float("nan"), float("nan")),
         "agreement": percent_agreement(pairs) if pairs else float("nan"),
         "ai_counts": ai_counts,
         "human_counts": human_counts,
@@ -295,6 +297,34 @@ class ExtractionQuickTestTask:
 
 
 _DECISION_STAGE = {"screening": "abstract", "extraction": "full_text"}
+
+
+def test_run_agreement(project: Project, run_id: int, test_stage: str = "abstract") -> dict:
+    """AI-vs-human agreement for one quick-test run. The AI side comes from the isolated test
+    tables, so it reflects the prompt THAT RUN used; the human side is the reviewer's real
+    decision, whenever they got around to making it. Recompute on every render: the human may
+    decide a paper long after the run, or change their mind."""
+    if test_stage == "extraction":
+        ai_by_source = {
+            r["source_id"]: r["full_text_decision"]
+            for r in project.db.list_test_extractions(run_id)
+        }
+        decision_stage = "full_text"
+    else:
+        ai_by_source = {r["source_id"]: r["decision"] for r in project.db.list_test_decisions(run_id)}
+        decision_stage = "abstract"
+
+    humans = _latest_by_reviewer_type(project, list(ai_by_source), decision_stage)
+    by_source: dict[int, dict[str, str]] = {}
+    for sid, ai in ai_by_source.items():
+        if ai not in _KAPPA_CATEGORIES:  # extraction leaves this null when flag_check is off
+            continue
+        entry = {"ai": ai}
+        human = humans.get(sid, {}).get("human")
+        if human:
+            entry["human"] = human
+        by_source[sid] = entry
+    return _agreement_stats(by_source)
 
 
 class CalibrationTask:

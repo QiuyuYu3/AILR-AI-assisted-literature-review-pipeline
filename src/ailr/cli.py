@@ -357,7 +357,12 @@ def calibrate(
     workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save the stage's workflow.")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
 ) -> None:
-    """Sample N sources, run AI screening on them, report initial agreement vs any existing human decisions."""
+    """Sample N sources, run AI screening on them, report initial agreement vs any existing human decisions.
+
+    Retired in the UI, which now reads κ off quick-test runs instead. This writes REAL AI decisions,
+    and `ailr screen` skips any source that already has one, so papers touched here keep the prompt
+    they were judged under even after you edit it.
+    """
     try:
         proj = Project.load(project)
 

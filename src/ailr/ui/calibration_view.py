@@ -1,21 +1,25 @@
 """Calibration / prompt-test area, embedded as a tab on each stage's Workflow page.
 
-stage="abstract"   — test the SCREENING prompt:
-    Quick test (isolated test tables) + Full calibration (κ vs human on the abstract verdict).
-stage="extraction" — test the EXTRACTION prompt:
-    Quick test (isolated test tables) + Full calibration (κ vs human on the full-text verdict,
-    which the AI derives while extracting).
+Quick test only: every run goes to the isolated test tables, never to the review's own decisions.
+κ is not a separate mode — once the reviewer has decided any of the papers a run covered, the
+run's agreement with them is computed and shown. The headline κ for the review comes from the
+full corpus, so the per-run figure is a prompt-tuning aid, not the published number.
+
+stage="abstract"   — test the SCREENING prompt (κ vs the human abstract decision).
+stage="extraction" — test the EXTRACTION prompt (κ vs the human full-text decision; the AI's
+    side is the verdict it derives from flag_check while extracting).
 """
 
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
 from ailr.quote_audit import QuoteAudit, audit_fields
+from ailr.tasks.calibrate import test_run_agreement
 from ailr.ui import ai_runner
 from ailr.ui._common import flag_check_block
 from ailr.ui._project import get_project
@@ -23,9 +27,11 @@ from ailr.ui._project import get_project
 
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
+# Full calibration is retired: it wrote real AI decisions, which then blocked the corpus run from
+# re-judging those papers under a newer prompt. The radio stays (hidden, single-valued) because the
+# run/poll/render callbacks are keyed on it.
 _MODE_OPTIONS = [
     {"label": "Quick test — run AI, eyeball output (not saved to the review)", "value": "quick"},
-    {"label": "Full calibration — AI + human blind review → κ", "value": "full"},
 ]
 
 # (config section, decision stage, where the human reviews the sample)
@@ -103,9 +109,10 @@ def layout(stage: str = "abstract") -> Any:
     if stage == "abstract":
         default_n = min(5, project.config.screening.calibration.min)
         intro = "Try the screening prompt on a sample before running the whole corpus."
-        full_bullet = html.Li(
-            ["Full calibration writes real AI decisions + a sample; review it in ",
-             html.Strong("Screening → status ‘Calibration sample’"), " to get κ."],
+        kappa_bullet = html.Li(
+            ["κ appears once you have screened some of the same papers yourself in ",
+             html.Strong("Screening"), ". Re-running with the same N draws the same sample, so two "
+             "runs are directly comparable and the κ difference is the prompt change."],
             className="small",
         )
         quick_bullet = html.Li(
@@ -115,10 +122,9 @@ def layout(stage: str = "abstract") -> Any:
     else:
         default_n = min(3, project.config.extraction.calibration.min)
         intro = "Try the extraction prompt on a few papers before running the whole full-text queue."
-        full_bullet = html.Li(
-            ["Full calibration runs the real extraction on a sample; review those papers in ",
-             html.Strong("Full-text review → status ‘Calibration sample’"),
-             " to get κ. Each paper is one full-text call, so keep N small."],
+        kappa_bullet = html.Li(
+            ["κ appears once you have decided some of the same papers yourself in ",
+             html.Strong("Full-text review"), ". Each paper is one full-text call, so keep N small."],
             className="small",
         )
         quick_bullet = html.Li(
@@ -127,33 +133,24 @@ def layout(stage: str = "abstract") -> Any:
             className="small",
         )
 
-    # Calibration tunes the AI until it can be trusted as a reviewer. Under `independent` the AI is
-    # not a reviewer — two humans decide everything — so there is nothing for κ to gate, and the
-    # AI-vs-human figure belongs on the reliability report with every other pair.
+    # Under `independent` the AI is not a reviewer — two humans decide everything — so a per-run
+    # AI-vs-human κ gates nothing, and both humans are stored as reviewer_type 'human', which would
+    # make the pairing arbitrary. The reliability report pairs them properly.
     independent = _is_independent(project, stage)
+    notes = [quick_bullet]
     if independent:
-        mode_block = [
-            dbc.RadioItems(id=f"{p}-mode", options=_MODE_OPTIONS[:1], value="quick", className="d-none"),
-            html.Ul(
-                [
-                    quick_bullet,
-                    html.Li(
-                        ["Full calibration is off in ", html.Strong("independent"),
-                         " workflow: two humans decide every record, so tuning the AI to agree with one "
-                         "of them gates nothing. Its agreement is on ", html.Strong("Reports → Reliability"),
-                         ", alongside the human-vs-human figure."],
-                        className="small",
-                    ),
-                ],
-                className="mt-1",
-            ),
-        ]
+        notes.append(html.Li(
+            ["κ is not shown here in ", html.Strong("independent"),
+             " workflow: two humans decide every record, so the AI is a reference rather than a "
+             "reviewer. Its agreement with each of them is on ", html.Strong("Reports → Reliability"), "."],
+            className="small",
+        ))
     else:
-        mode_block = [
-            dbc.Label("Mode", className="fw-bold"),
-            dbc.RadioItems(id=f"{p}-mode", options=_MODE_OPTIONS, value="quick"),
-            html.Ul([quick_bullet, full_bullet], className="mt-1"),
-        ]
+        notes.append(kappa_bullet)
+    mode_block = [
+        dbc.RadioItems(id=f"{p}-mode", options=_MODE_OPTIONS, value="quick", className="d-none"),
+        html.Ul(notes, className="mt-1"),
+    ]
 
     return html.Div(
         [
@@ -356,6 +353,69 @@ def _doi_line(doi: Any) -> Any:
     return html.Div(html.A(f"DOI: {doi}", href=f"https://doi.org/{doi}", target="_blank", className="small"), className="mb-2")
 
 
+def _fmt(x: Any) -> Optional[str]:
+    """None rather than the string 'nan', so callers can show a message instead of a broken number."""
+    try:
+        if x is None or x != x:
+            return None
+        return f"{x:.2f}"
+    except TypeError:
+        return None
+
+
+def _agreement_block(project: Any, run_id: int, stage: str) -> Any:
+    """This run's AI verdicts against the reviewer's own, recomputed on every render."""
+    if _is_independent(project, stage):
+        return None
+    try:
+        stats = test_run_agreement(project, run_id, stage)
+    except Exception as e:
+        return dbc.Alert(f"Could not compute agreement: {e}", color="warning", className="py-1 small mb-2")
+
+    paired = stats["paired_count"]
+    if not paired:
+        return html.Div(
+            "κ will appear here once you have decided some of these papers yourself.",
+            className="small text-muted mb-2",
+        )
+
+    k = _fmt(stats["kappa"])
+    lo, hi = stats["kappa_ci"]
+    lo_s, hi_s = _fmt(lo), _fmt(hi)
+    agreement = stats["agreement"]
+    rows: list[Any] = [
+        html.Div([
+            dbc.Badge(f"κ {k}" if k else "κ undefined", color="info", className="me-2"),
+            html.Span(f"95% CI {lo_s} to {hi_s}" if k and lo_s and hi_s else "", className="text-muted small me-2"),
+            html.Span(
+                f"agreement {agreement * 100:.0f}% · {paired} paired"
+                if agreement == agreement else f"{paired} paired",
+                className="text-muted small",
+            ),
+        ]),
+    ]
+    if not k:
+        rows.append(html.Div(
+            "Every paired record fell in the same category, which leaves κ undefined. "
+            "Percent agreement still holds.",
+            className="text-muted small",
+        ))
+    disagreements = stats["disagreements"]
+    if disagreements:
+        rows.append(html.Details(
+            [
+                html.Summary(f"{len(disagreements)} disagreement(s)", className="small"),
+                html.Ul(
+                    [html.Li(f"#{d['source_id']} — AI {d['ai']} / you {d['human']}", className="small")
+                     for d in disagreements],
+                    className="mb-0",
+                ),
+            ],
+            className="mt-1",
+        ))
+    return html.Div(rows, className="mb-2 p-2 border rounded")
+
+
 def _render_quick_screening(run_value: Any) -> Any:
     project = get_project()
     runs = project.db.list_test_runs(project.project_id, "abstract")
@@ -404,7 +464,7 @@ def _render_quick_screening(run_value: Any) -> Any:
             )
     except Exception as e:
         return dbc.Alert(f"Render error: {e}", color="danger")
-    return html.Div([header, *cards])
+    return html.Div([header, _agreement_block(project, run_id, "abstract"), *cards])
 
 
 def _render_quick_extraction(run_value: Any) -> Any:
@@ -421,7 +481,7 @@ def _render_quick_extraction(run_value: Any) -> Any:
     if not extractions:
         return dbc.Alert("This run produced no extractions (no papers with markdown available?).", color="warning")
 
-    cards = [_quote_audit_block(project, extractions)]
+    cards = [_agreement_block(project, run_id, "extraction"), _quote_audit_block(project, extractions)]
     for ex in extractions:
         dec = ex.get("full_text_decision")
         field_rows = [
