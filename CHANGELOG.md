@@ -7,6 +7,7 @@
 - Extraction form: per-field "Use" buttons and a confirmed "Fill all fields from AI" button that take AI's values back into the form, which previously stayed pinned to your first saved edit. Fill-all can draw from the current run or any earlier run a re-run retired. Fields the chosen run left empty are untouched, and nothing is written until Save/Submit.
 
 ### Fixed
+- `ailr ui` gave up when all 25 ports it scanned fell inside one Hyper-V reservation; it now restarts the scan at each following hundred, matches werkzeug's `SO_REUSEADDR` so a port in `TIME_WAIT` from the previous run is not skipped, and gives non-Windows users an `lsof` hint instead of `netsh`.
 - Abstract and full-text screening search could not find a paper by the `#123` number shown on its card; `#123` now matches that paper exactly, and a bare `123` matches it alongside the usual text search.
 - When the model serialized a structured field into a JSON string that does not parse, it was stored as that raw string instead of failing; the paper is now reported as failed so it can be re-run.
 

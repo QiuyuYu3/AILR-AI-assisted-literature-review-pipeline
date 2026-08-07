@@ -5,6 +5,7 @@ layout test renders each tab against a seeded project. No browser, no interactio
 this catches import breakage, layout-build errors, and callback-registration conflicts.
 """
 
+import os
 import socket
 
 import pytest
@@ -98,6 +99,14 @@ class TestPortSelection:
             port = taken.getsockname()[1]
             assert _bindable_port(port) > port
 
+    def test_hops_to_the_next_hundred_when_a_whole_block_is_reserved(self):
+        """A Hyper-V block is 100 ports wide, so a contiguous scan can sit entirely inside one."""
+        from ailr.ui.app import _port_candidates
+
+        candidates = list(_port_candidates(8050, tries=25, hops=8))
+        assert candidates[:25] == list(range(8050, 8075))
+        assert 8104 in candidates
+
     def test_exhausting_the_range_explains_where_to_look(self):
         """The OS error names no port and no cause; the message has to carry the diagnosis."""
         from ailr.ui.app import _bindable_port
@@ -107,5 +116,6 @@ class TestPortSelection:
             taken.listen(1)
             port = taken.getsockname()[1]
             with pytest.raises(SystemExit) as exc:
-                _bindable_port(port, tries=1)
-        assert "excludedportrange" in str(exc.value)
+                _bindable_port(port, tries=1, hops=0)
+        expected = "excludedportrange" if os.name == "nt" else "lsof"
+        assert expected in str(exc.value)

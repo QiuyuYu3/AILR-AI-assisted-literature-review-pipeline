@@ -313,27 +313,53 @@ def build_app() -> Dash:
 
 
 _UI_HOST = "127.0.0.1"
+_PORT_TRIES = 25
+_PORT_BLOCK_HOPS = 8
 
 
-def _bindable_port(start: int, tries: int = 25) -> int:
-    """First port from `start` upward the OS will actually hand us.
+def _can_bind(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        # Werkzeug binds with SO_REUSEADDR, so without it here a port left in TIME_WAIT by the
+        # previous run reads as taken while the real server would take it fine. Windows is left
+        # strict on purpose: there SO_REUSEADDR also lets you bind over a live listener.
+        if os.name != "nt":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((_UI_HOST, port))
+            return True
+        except OSError:
+            return False
 
-    Not just an in-use check: on Windows, Hyper-V reserves a block of ports that shifts on every
-    boot, and binding inside it fails with WSAEACCES even though nothing is listening. The OS
-    error text names no port and no cause, so a first-time user has nothing to go on.
-    """
-    for port in range(start, start + tries):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            try:
-                probe.bind((_UI_HOST, port))
-                return port
-            except OSError:
-                continue
+
+def _port_candidates(start: int, tries: int, hops: int):
+    yield from range(start, start + tries)
+    # Hyper-V reservations come in 100-port blocks, so a contiguous scan can sit entirely
+    # inside one. Restart the scan at each following hundred to step past it.
+    block = (start // 100 + 1) * 100
+    for _ in range(hops):
+        yield from range(block, block + tries)
+        block += 100
+
+
+def _bindable_port(start: int, tries: int = _PORT_TRIES, hops: int = _PORT_BLOCK_HOPS) -> int:
+    """First port at or after `start` the OS will actually hand us."""
+    for port in _port_candidates(start, tries, hops):
+        if _can_bind(port):
+            return port
+    if os.name == "nt":
+        hint = (
+            "On Windows this is usually Hyper-V holding those ranges. To see the reserved blocks:\n"
+            "    netsh interface ipv4 show excludedportrange protocol=tcp"
+        )
+    else:
+        hint = (
+            "To see what is holding a port:\n"
+            f"    lsof -i :{start}"
+        )
     raise SystemExit(
-        f"No port between {start} and {start + tries - 1} could be opened.\n"
-        "On Windows this is usually Hyper-V holding that range. To see the reserved blocks:\n"
-        "    netsh interface ipv4 show excludedportrange protocol=tcp\n"
-        "Then re-run with --port set to something outside them."
+        f"No port could be opened near {start}.\n"
+        f"{hint}\n"
+        "Then re-run with --port set to something free."
     )
 
 
