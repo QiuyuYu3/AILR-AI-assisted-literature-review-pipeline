@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from ailr.core.pdf_paths import resolve_pdf_path
+from ailr.core.pdf_paths import portable_path, resolve_pdf_path
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.preprocess import PDFConverter, make_converter, strip_references
@@ -57,7 +57,7 @@ def import_markdown_from_folder(project: Project, folder: Path) -> dict[str, Any
             continue
         dest = md_dir / f"{s.id}.md"
         shutil.copy2(src_md, dest)
-        project.db.update_markdown_path(s.id, dest)
+        project.db.update_markdown_path(s.id, portable_path(dest, project.root))
         matched += 1
 
     return {"md_files_found": len(md_files), "matched": matched, "no_pdf_path": no_pdf_path, "unmatched": unmatched}
@@ -123,9 +123,9 @@ class PreprocessTask:
             if md_path.exists() and not force:
                 summary.skipped_already_done += 1
                 if source.markdown_path is None:
-                    self.project.db.update_markdown_path(sid, md_path)
+                    self.project.db.update_markdown_path(sid, portable_path(md_path, self.project.root))
                 if source.pdf_path is None:
-                    self.project.db.update_pdf_path(sid, pdf_file)
+                    self.project.db.update_pdf_path(sid, portable_path(pdf_file, self.project.root))
                 done += 1
                 if on_progress:
                     on_progress(done, total, source, None)
@@ -145,8 +145,8 @@ class PreprocessTask:
                     md_text = fut.result()
                     md_path = md_dir / f"{sid}.md"
                     md_path.write_text(md_text, encoding="utf-8")
-                    self.project.db.update_markdown_path(sid, md_path)
-                    self.project.db.update_pdf_path(sid, pdf_file)
+                    self.project.db.update_markdown_path(sid, portable_path(md_path, self.project.root))
+                    self.project.db.update_pdf_path(sid, portable_path(pdf_file, self.project.root))
                     summary.converted += 1
                     if len(md_text.strip()) < low_text_threshold:
                         summary.low_quality.append(

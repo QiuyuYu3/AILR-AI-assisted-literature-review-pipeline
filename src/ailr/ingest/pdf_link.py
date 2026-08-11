@@ -4,7 +4,6 @@ Matches each RIS record to a source already in the project (DOI first, fuzzy tit
 and records the absolute PDF path on that source. `preprocess` reads it directly.
 """
 
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +12,7 @@ from typing import Optional
 import rispy
 from rapidfuzz import fuzz
 
+from ailr.core.pdf_paths import portable_path
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.exceptions import InputNotFoundError
@@ -70,7 +70,7 @@ def link_pdfs_from_ris(project: Project, ris_path: Path) -> PdfLinkSummary:
             summary.missing_files.append({"source_id": src.id, "path": str(pdf_path)})
             continue
 
-        store_path = _portable_path(pdf_path, project.root)
+        store_path = portable_path(pdf_path, project.root)
         if src.pdf_path is not None and Path(src.pdf_path) == store_path:
             summary.already_linked += 1
             continue
@@ -79,15 +79,6 @@ def link_pdfs_from_ris(project: Project, ris_path: Path) -> PdfLinkSummary:
         summary.linked += 1
 
     return summary
-
-
-def _portable_path(pdf_path: Path, project_root: Path) -> Path:
-    """Store PDF paths relative to the project root so they resolve on any teammate's machine
-    (the shared drive is mirrored). Falls back to absolute only across drives (Windows)."""
-    try:
-        return Path(os.path.relpath(pdf_path, project_root))
-    except ValueError:
-        return pdf_path
 
 
 # Per-session cache: skip the RIS parse + match entirely when nothing under data/pdfs changed.

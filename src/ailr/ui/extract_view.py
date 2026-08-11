@@ -11,6 +11,7 @@ import dash_bootstrap_components as dbc
 from dash import ALL, MATCH, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.core.config import save_stage_workflow
+from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.core.source import Source
 from ailr.ui import ai_runner
 from ailr.extraction import FieldSpec, compose_schema
@@ -767,13 +768,8 @@ def reader_body(project: Any, sid: int, mode: str) -> Any:
         if not src.pdf_path:
             return dbc.Alert("No PDF linked for this source.", color="warning")
         return html.Iframe(src=f"/pdf/{sid}", style={"width": "100%", "height": "100%", "border": "none"})
-    md_text = None
-    if src.markdown_path:
-        p = Path(src.markdown_path)
-        if not p.is_absolute():
-            p = project.root / p
-        if p.exists():
-            md_text = p.read_text(encoding="utf-8")
+    p = resolve_markdown_path(src.markdown_path, project.root, src.id)
+    md_text = p.read_text(encoding="utf-8") if p else None
     if not md_text:
         return dbc.Alert("No markdown yet for this source.", color="info")
     return dcc.Markdown(md_text, style={"height": "100%", "overflow": "auto"})

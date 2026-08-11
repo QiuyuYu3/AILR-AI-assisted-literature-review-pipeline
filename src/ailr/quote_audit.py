@@ -159,7 +159,7 @@ def audit_fields(
 def audit_project_ai(project: Any) -> tuple[QuoteAudit, int, int]:
     """Audit every AI extraction in the project. Returns (audit, papers_audited, papers_skipped);
     skipped = has AI rows but the markdown file is missing on this machine."""
-    from pathlib import Path
+    from ailr.core.pdf_paths import resolve_markdown_path
 
     total = QuoteAudit()
     audited = skipped = 0
@@ -168,10 +168,8 @@ def audit_project_ai(project: Any) -> tuple[QuoteAudit, int, int]:
         rows = [r for r in rows if not str(r["field_name"]).startswith("_")]
         if not rows:
             continue
-        md_path = Path(src.markdown_path)
-        if not md_path.is_absolute():
-            md_path = project.root / md_path
-        if not md_path.exists():
+        md_path = resolve_markdown_path(src.markdown_path, project.root, src.id)
+        if md_path is None:
             skipped += 1
             continue
         paper_text = md_path.read_text(encoding="utf-8")

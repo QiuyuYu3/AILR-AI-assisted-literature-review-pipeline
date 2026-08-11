@@ -2,9 +2,9 @@
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Callable, Optional
 
+from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.criteria import resolve_criteria
@@ -85,10 +85,8 @@ class ExtractionTask:
         done = 0
         to_extract: list[tuple] = []
         for source in candidates:
-            md_path = Path(source.markdown_path) if source.markdown_path else None
-            if md_path is not None and not md_path.is_absolute():
-                md_path = self.project.root / md_path
-            if md_path is None or not md_path.exists():
+            md_path = resolve_markdown_path(source.markdown_path, self.project.root, source.id)
+            if md_path is None:
                 summary.skipped_no_markdown += 1
             elif not force and source.id in already_done:
                 summary.skipped_already_done += 1

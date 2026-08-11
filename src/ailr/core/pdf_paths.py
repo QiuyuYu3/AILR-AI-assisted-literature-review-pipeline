@@ -1,9 +1,19 @@
-"""Resolve a source's stored PDF path. PDFs live under the shared project (data/pdfs), so a path
-stored relative to the project root resolves on every teammate's machine; absolute paths are used
-as-is for legacy/out-of-project files."""
+"""Resolve a source's stored PDF / markdown path. Both live under the shared project (data/pdfs,
+data/markdown), so a path stored relative to the project root resolves on every teammate's machine;
+absolute paths are used as-is for legacy/out-of-project files."""
 
+import os
 from pathlib import Path
 from typing import Optional
+
+
+def portable_path(path: Path, project_root: Path) -> Path:
+    """Store paths relative to the project root so they resolve on any teammate's machine
+    (the shared drive is mirrored). Falls back to absolute only across drives (Windows)."""
+    try:
+        return Path(os.path.relpath(path, project_root))
+    except ValueError:
+        return Path(path)
 
 
 def resolve_pdf_path(pdf_path: Optional[str], project_root: Path) -> Optional[Path]:
@@ -12,3 +22,23 @@ def resolve_pdf_path(pdf_path: Optional[str], project_root: Path) -> Optional[Pa
     p = Path(pdf_path)
     full = p if p.is_absolute() else project_root / p
     return full if full.exists() else None
+
+
+def resolve_markdown_path(
+    markdown_path: Optional[str],
+    project_root: Path,
+    source_id: Optional[int] = None,
+) -> Optional[Path]:
+    """Falls back to the canonical data/markdown/<id>.md, which is where preprocess always writes.
+    Rows written before paths were stored relative hold an absolute path from whichever machine ran
+    preprocess, so on a teammate's machine only the fallback resolves."""
+    if markdown_path:
+        p = Path(markdown_path)
+        full = p if p.is_absolute() else project_root / p
+        if full.exists():
+            return full
+    if source_id is not None:
+        canonical = project_root / "data" / "markdown" / f"{source_id}.md"
+        if canonical.exists():
+            return canonical
+    return None

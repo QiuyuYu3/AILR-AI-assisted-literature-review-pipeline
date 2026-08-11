@@ -206,7 +206,7 @@ class ExtractionQuickTestTask:
         note: Optional[str] = None,
         on_progress: Optional[ProgressCallback] = None,
     ) -> QuickExtractSummary:
-        from pathlib import Path
+        from ailr.core.pdf_paths import resolve_markdown_path
         from ailr.extraction import compose_schema
         from ailr.tasks.extract import _derive_ft_decision
 
@@ -250,10 +250,8 @@ class ExtractionQuickTestTask:
             sample = rng.sample(candidates, k=sample_size)
 
         for idx, source in enumerate(sample, 1):
-            md_path = Path(source.markdown_path)
-            if not md_path.is_absolute():
-                md_path = self.project.root / md_path
-            if not md_path.exists():
+            md_path = resolve_markdown_path(source.markdown_path, self.project.root, source.id)
+            if md_path is None:
                 summary.failed += 1
                 summary.failures.append({"source_id": source.id, "title": source.title, "error": "markdown file missing"})
                 if on_progress:

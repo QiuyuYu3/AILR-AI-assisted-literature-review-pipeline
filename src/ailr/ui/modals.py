@@ -7,12 +7,12 @@ both conflict tabs all reuse the same six. The exclusion modal is the odd one ou
 always mounted, but its callbacks sit with the full-text review that owns the workflow.
 """
 
-from pathlib import Path
 from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
+from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.exceptions import DuplicateError
 from ailr.ui._common import triggered_click_id
 from ailr.ui._project import get_project
@@ -449,13 +449,8 @@ def register_callbacks(app: Any) -> None:
                 style={"width": "100%", "height": "80vh", "border": "none"},
             )
 
-        md_text = None
-        if src.markdown_path:
-            p = Path(src.markdown_path)
-            if not p.is_absolute():
-                p = proj.root / p
-            if p.exists():
-                md_text = p.read_text(encoding="utf-8")
+        p = resolve_markdown_path(src.markdown_path, proj.root, src.id)
+        md_text = p.read_text(encoding="utf-8") if p else None
         if not md_text:
             return dbc.Alert(
                 "No markdown yet. Run `ailr preprocess` to convert this source's PDF.",

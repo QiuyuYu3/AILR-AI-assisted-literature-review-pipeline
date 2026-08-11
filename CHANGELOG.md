@@ -15,6 +15,7 @@
 - `ailr ui` gave up when all 25 ports it scanned fell inside one Hyper-V reservation; it now restarts the scan at each following hundred, matches werkzeug's `SO_REUSEADDR` so a port in `TIME_WAIT` from the previous run is not skipped, and gives non-Windows users an `lsof` hint instead of `netsh`.
 - Abstract and full-text screening search could not find a paper by the `#123` number shown on its card; `#123` now matches that paper exactly, and a bare `123` matches it alongside the usual text search.
 - When the model serialized a structured field into a JSON string that does not parse, it was stored as that raw string instead of failing; the paper is now reported as failed so it can be re-run.
+- Markdown was stored as an absolute path, so on a teammate's copy of a shared project every reader, extraction and calibration saw "no markdown" even though the file was there; paths are now stored relative to the project root and fall back to `data/markdown/<id>.md`, which also repairs existing rows without a migration. `preprocess` was overwriting the relative `pdf_path` from `import-pdfs` with an absolute one, which would have broken PDFs the same way.
 
 ---
 ## [0.32.0] – 2026-07-29

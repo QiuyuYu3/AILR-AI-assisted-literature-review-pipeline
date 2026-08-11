@@ -12,12 +12,12 @@ stage="extraction" — test the EXTRACTION prompt (κ vs the human full-text dec
 
 import json
 import time
-from pathlib import Path
 from typing import Any, Optional
 
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
 
+from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.quote_audit import QuoteAudit, audit_fields
 from ailr.tasks.calibrate import quick_test_agreement
 from ailr.ui import ai_runner
@@ -518,10 +518,8 @@ def _quote_audit_block(project: Any, extractions: list[dict]) -> Any:
     missing_md = 0
     for ex in extractions:
         src = project.db.get_source(ex["source_id"])
-        md = Path(src.markdown_path) if src and src.markdown_path else None
-        if md is not None and not md.is_absolute():
-            md = project.root / md
-        if md is None or not md.exists():
+        md = resolve_markdown_path(src.markdown_path, project.root, src.id) if src else None
+        if md is None:
             missing_md += 1
             continue
         total.merge(audit_fields(
