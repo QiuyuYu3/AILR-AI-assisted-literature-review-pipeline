@@ -307,6 +307,9 @@ class TestAgreementReporting:
     def test_builds_on_an_empty_project(self, tmp_project):
         text = build_methods_skeleton(tmp_project)
         assert text.startswith("# Methods")
+        # the sections still render off zero counts rather than the header alone coming back
+        assert f"threshold = {TITLE_MATCH_THRESHOLD}" in text
+        assert "Full texts" in text
 
 
 class TestFullTextExclusionReasons:

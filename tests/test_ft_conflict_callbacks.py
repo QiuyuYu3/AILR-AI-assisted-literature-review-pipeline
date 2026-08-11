@@ -135,5 +135,18 @@ class TestResolveConflict:
         assert "reconcile_undo" in actions
 
     def test_undo_missing_reconciliation_is_harmless(self, tmp_project):
-        refresh = _apply_undo_resolve(tmp_project.db, 99999)
+        """Harmless means the stale button does nothing, not merely that it does not raise: a
+        neighbouring reconciliation must survive and no undo may be logged against it."""
+        db = tmp_project.db
+        pid = tmp_project.project_id
+        sid = _add_source(tmp_project)
+        _vote(db, sid, "include", "gpt", reviewer_type="ai", stage="abstract")
+        _vote(db, sid, "exclude", "amber", stage="abstract")
+        _apply_resolve(db, sid, "include", "amber", None, stage="abstract")
+
+        refresh = _apply_undo_resolve(db, 99999)
+
         assert refresh and "ts" in refresh
+        assert len(db.list_reconciliations(pid, stage="abstract_screening")) == 1
+        assert db.unresolved_conflict_ids(pid, "assisted", stage="abstract") == set()
+        assert "reconcile_undo" not in [a["action"] for a in db.get_screening_actions(sid)]

@@ -103,3 +103,7 @@ class TestExtractionRun:
         assert field_rows
         for r in field_rows:
             assert r["value"] is not None  # every schema field got a fabricated value
+        # output_format defaults to with_quotes, so the evidence has to come back with the values
+        quotes = [r["source_quote"] for r in field_rows if r["source_quote"]]
+        assert quotes, "with_quotes is on: at least one field must carry its supporting quote"
+        assert all("Mock supporting quote" in q for q in quotes)

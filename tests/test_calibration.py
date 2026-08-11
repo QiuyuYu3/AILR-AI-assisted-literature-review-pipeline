@@ -281,6 +281,26 @@ class TestAgreementStatsCI:
         stats = _agreement_stats(_latest_by_reviewer_type(tmp_project, sids, "abstract"))
         lo, hi = stats["kappa_ci"]
         assert lo <= stats["kappa"] <= hi
+        assert lo < hi  # an interval, not a point
+
+    def test_the_interval_narrows_as_the_sample_grows(self, tmp_project):
+        """Bracketing the estimate is true of any pair of numbers either side of it. Shrinking with
+        n is the property that separates a real interval from a placeholder."""
+        db = tmp_project.db
+        sids = []
+        for i in range(40):
+            ai = "include" if i % 2 else "exclude"
+            human = ai if i % 4 else ("exclude" if ai == "include" else "include")  # 3 of 4 agree
+            sid = _add_source(tmp_project, f"P{i}")
+            _vote(db, sid, ai, "gpt", "ai")
+            _vote(db, sid, human, "amber", "human")
+            sids.append(sid)
+
+        def _width(subset):
+            lo, hi = _agreement_stats(_latest_by_reviewer_type(tmp_project, subset, "abstract"))["kappa_ci"]
+            return hi - lo
+
+        assert _width(sids) < _width(sids[:8])
 
     def test_kappa_ci_is_undefined_without_pairs(self, tmp_project):
         sid = _add_source(tmp_project)

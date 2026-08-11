@@ -38,44 +38,64 @@ def test_build_app(seeded_project):
 
     app = build_app()
     assert app.layout is not None
-    assert app.callback_map          # every view actually registered its callbacks
+    # Every view registers callbacks; a view whose registration silently no-ops would still leave
+    # callback_map non-empty, so check the outputs actually span the tabs rather than one of them.
+    outputs = " ".join(app.callback_map)
+    for owner in ("screen-", "ft-", "extract-", "cons-", "bulk-", "tmpl-", "crit-", "report-"):
+        assert owner in outputs, f"no callback registered for {owner}*"
 
 
+# Each layout must reach the widget its tab is actually for, not merely build some component tree.
+# The id is the one the tab's own callbacks write into, so if the page degrades to a placeholder
+# or an error alert, it goes missing.
 _LAYOUTS = [
-    ("project_manager", lambda: project_manager_view.layout()),
-    ("dashboard", lambda: dashboard_view.layout("")),
-    ("screen", lambda: screen_view.layout()),
-    ("conflicts", lambda: conflicts_view.layout()),
-    ("ft_conflicts", lambda: ft_conflicts_view.layout()),
-    ("full_text", lambda: full_text_view.layout()),
-    ("extract", lambda: extract_view.layout()),
-    ("consensus", lambda: consensus_view.layout()),
-    ("template_variables", lambda: template_view.variables_layout()),
-    ("template_prompt", lambda: template_view.prompt_layout()),
-    ("protocol", lambda: protocol_view.layout()),
-    ("sources", lambda: sources_view.layout()),
-    ("tags", lambda: tags_view.layout()),
-    ("duplicates", lambda: duplicates_view.layout()),
-    ("database", lambda: database_view.layout()),
-    ("reports", lambda: reports_view.layout()),
-    ("settings", lambda: settings_view.layout()),
-    ("import", lambda: import_view.layout()),
-    ("calibration_abstract", lambda: calibration_view.layout("abstract")),
-    ("calibration_extraction", lambda: calibration_view.layout("extraction")),
-    ("workflow_abstract", lambda: workflow_view.layout("abstract")),
-    ("workflow_fulltext", lambda: workflow_view.layout("full_text")),
+    ("project_manager", lambda: project_manager_view.layout(), ["pm-new-create", "pm-recent-list"]),
+    ("dashboard", lambda: dashboard_view.layout(""), ["dashboard-content"]),
+    ("screen", lambda: screen_view.layout(), ["screen-cards", "screen-filter-status", "screen-counts"]),
+    ("conflicts", lambda: conflicts_view.layout(), ["conflicts-cards", "conflicts-counts"]),
+    ("ft_conflicts", lambda: ft_conflicts_view.layout(), ["ft-conflicts-cards", "ft-conflicts-counts"]),
+    ("full_text", lambda: full_text_view.layout(), ["ft-cards", "ft-filter-status", "ft-counts"]),
+    ("extract", lambda: extract_view.layout(), ["extract-form-container", "extract-ai-panel", "extract-submit"]),
+    ("consensus", lambda: consensus_view.layout(), ["cons-body", "cons-save"]),
+    ("template_variables", lambda: template_view.variables_layout(), ["tmpl-add", "tmpl-f-name"]),
+    ("template_prompt", lambda: template_view.prompt_layout(), ["tmpl-additional"]),
+    ("protocol", lambda: protocol_view.layout(), ["crit-list", "tmpl-add", "workflow-select"]),
+    ("sources", lambda: sources_view.layout(), ["sources-grid", "bulk-apply"]),
+    ("tags", lambda: tags_view.layout(), ["tags-list", "tags-create-btn"]),
+    ("duplicates", lambda: duplicates_view.layout(), ["dup-manual-grid", "dup-ingest-grid"]),
+    ("database", lambda: database_view.layout(), ["db-grid", "db-table"]),
+    ("reports", lambda: reports_view.layout(), ["report-dl-prisma", "report-irr-body", "report-dl-csv"]),
+    ("settings", lambda: settings_view.layout(), ["settings-clear-btn", "settings-screen-model"]),
+    ("import", lambda: import_view.layout(), ["import-ref-upload", "import-ref-db"]),
+    ("calibration_abstract", lambda: calibration_view.layout("abstract"), ["cal-abs-run", "cal-abs-status"]),
+    ("calibration_extraction", lambda: calibration_view.layout("extraction"), ["cal-ext-run", "cal-ext-status"]),
+    ("workflow_abstract", lambda: workflow_view.layout("abstract"), ["cal-abs-run", "screen-ai-run", "screen-prompt"]),
+    ("workflow_fulltext", lambda: workflow_view.layout("full_text"), ["cal-ext-run", "extract-ai-run", "extract-runprompt"]),
 ]
 
 
-def _node_count(x) -> int:
+def _walk(x):
+    yield x
     children = getattr(x, "children", None)
-    kids = children if isinstance(children, (list, tuple)) else [children] if children is not None else []
-    return 1 + sum(_node_count(k) for k in kids)
+    for kid in (children if isinstance(children, (list, tuple)) else [children] if children is not None else []):
+        yield from _walk(kid)
 
 
-@pytest.mark.parametrize("build", [b for _, b in _LAYOUTS], ids=[n for n, _ in _LAYOUTS])
-def test_layout_renders(seeded_project, build):
-    assert _node_count(build()) > 1   # a real component tree, not an empty shell
+def _ids(component) -> set[str]:
+    """Every string id in the tree. Pattern-matching (dict) ids are skipped: they are built per
+    row from live data, so they say nothing about whether the page shell rendered."""
+    return {node.id for node in _walk(component)
+            if isinstance(getattr(node, "id", None), str)}
+
+
+@pytest.mark.parametrize(
+    "build,required",
+    [(b, r) for _, b, r in _LAYOUTS],
+    ids=[n for n, _, _ in _LAYOUTS],
+)
+def test_layout_renders(seeded_project, build, required):
+    ids = _ids(build())
+    assert set(required) <= ids, f"missing: {sorted(set(required) - ids)}"
 
 
 class TestPortSelection:

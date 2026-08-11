@@ -146,8 +146,8 @@ class TestApiTelemetry:
         rows = tmp_project.db.api_call_summary(tmp_project.project_id)
         assert len(rows) == 1                       # one (provider, model) group
         assert rows[0]["calls"] == 3
-        assert rows[0]["input_tokens"] == summary.total_input_tokens
-        assert rows[0]["output_tokens"] == summary.total_output_tokens
+        assert rows[0]["input_tokens"] == summary.total_input_tokens > 0
+        assert rows[0]["output_tokens"] == summary.total_output_tokens > 0
 
     def test_no_spend_estimate_is_reported(self, tmp_project):
         _add_source(tmp_project)

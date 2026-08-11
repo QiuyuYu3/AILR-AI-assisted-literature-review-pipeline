@@ -29,7 +29,8 @@ def test_database_roundtrip(db):
     note_id = db.add_note(sid, "amber", "check sample size")
     assert any(n["id"] == note_id for n in db.list_notes(sid))
     db.insert_screening_action(sid, "amber", action="decide", decision="include")
-    assert db.get_screening_actions(sid)
+    [action] = db.get_screening_actions(sid)
+    assert (action["action"], action["decision"]) == ("decide", "include")
 
     # Extraction mixin
     db.insert_extraction(ExtractionResult(extractor_type="human", extractor_id="amber",

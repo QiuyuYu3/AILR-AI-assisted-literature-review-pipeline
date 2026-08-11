@@ -12,7 +12,7 @@ import pytest
 
 from ailr.core.source import Source
 from ailr.extraction import FieldSpec
-from ailr.reviewers import QUOTE_SEPARATOR
+from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult
 from ailr.ui.extract_view import (
     _ROW_KEY,
     _ai_compare_values,
@@ -275,6 +275,91 @@ def test_ai_versions_reads_old_runs_through_the_current_schema():
     versions, _ = _ai_versions(db, _SRC, [f for f in _fields() if f.verify], ai_data)
     assert set(versions["run0"]["values"]) == {"design"}
     assert "n_dyads" not in versions["run0"]["values"]
+
+
+# ----- the runs _FakeDb stands in for -----------------------------------------------------------
+
+
+class TestSupersededRunsAgainstTheRealDb:
+    """_FakeDb hands _ai_versions ready-made runs, so the rule that PRODUCES them was never
+    exercised. list_superseded_ai_runs groups on the gap between row timestamps rather than on the
+    timestamp itself: one run writes its fields one row at a time and can straddle a boundary.
+    """
+
+    def _retired_row(self, db, sid, field_name, value, timestamp):
+        row_id = db.insert_extraction(ExtractionResult(
+            extractor_type="ai", extractor_id="gpt", field_name=field_name,
+            value=value, source_id=sid,
+        ))
+        db._conn.execute(
+            "UPDATE extractions SET extractor_type = 'ai_superseded', timestamp = ? WHERE id = ?",
+            (timestamp, row_id),
+        )
+        db._conn.commit()
+        return row_id
+
+    def _source(self, project):
+        return project.db.insert_source(Source(title="Dyadic play", project_id=project.project_id))
+
+    def test_rows_straddling_a_minute_boundary_are_one_run(self, tmp_project):
+        db = tmp_project.db
+        sid = self._source(tmp_project)
+        self._retired_row(db, sid, "design", "observational", "2026-07-28 14:31:59")
+        self._retired_row(db, sid, "n_dyads", 24, "2026-07-28 14:32:01")
+
+        [run] = db.list_superseded_ai_runs(sid)
+        assert {r["field_name"] for r in run["rows"]} == {"design", "n_dyads"}
+
+    def test_runs_minutes_apart_split_newest_first(self, tmp_project):
+        db = tmp_project.db
+        sid = self._source(tmp_project)
+        self._retired_row(db, sid, "design", "case study", "2026-07-21 09:05:44")
+        self._retired_row(db, sid, "design", "experimental", "2026-07-28 14:32:01")
+
+        runs = db.list_superseded_ai_runs(sid)
+        assert [r["timestamp"] for r in runs] == ["2026-07-28 14:32:01", "2026-07-21 09:05:44"]
+        assert [r["rows"][0]["value"] for r in runs] == ["experimental", "case study"]
+
+    def test_the_gap_boundary_is_inclusive(self, tmp_project):
+        """120s apart is still one slow run; past that it is a human clicking the button again."""
+        db = tmp_project.db
+        same = self._source(tmp_project)
+        self._retired_row(db, same, "design", "a", "2026-07-28 14:00:00")
+        self._retired_row(db, same, "n_dyads", 1, "2026-07-28 14:02:00")
+        assert len(db.list_superseded_ai_runs(same)) == 1
+
+        split = self._source(tmp_project)
+        self._retired_row(db, split, "design", "a", "2026-07-28 14:00:00")
+        self._retired_row(db, split, "n_dyads", 1, "2026-07-28 14:02:01")
+        assert len(db.list_superseded_ai_runs(split)) == 2
+
+    def test_the_live_ai_extraction_is_not_history(self, tmp_project):
+        db = tmp_project.db
+        sid = self._source(tmp_project)
+        db.insert_extraction(ExtractionResult(
+            extractor_type="ai", extractor_id="gpt", field_name="design",
+            value="observational", source_id=sid,
+        ))
+        assert db.list_superseded_ai_runs(sid) == []
+
+    def test_a_source_without_history_has_no_runs(self, tmp_project):
+        assert tmp_project.db.list_superseded_ai_runs(self._source(tmp_project)) == []
+
+    def test_the_real_rows_drive_the_version_picker(self, tmp_project):
+        """The contract _FakeDb asserts by fiat: what the DB returns is what _ai_versions reads."""
+        db = tmp_project.db
+        sid = self._source(tmp_project)
+        self._retired_row(db, sid, "design", "case study", "2026-07-21 09:05:44")
+        self._retired_row(db, sid, "design", "experimental", "2026-07-28 14:32:01")
+        ai_data = _ai_data_from_rows(_rows(("design", "observational", None)))
+
+        versions, options = _ai_versions(db, db.get_source(sid), [f for f in _fields() if f.verify], ai_data)
+
+        assert [o["value"] for o in options] == ["current", "run0", "run1"]
+        assert versions["current"]["values"]["design"] == "observational"
+        assert versions["run0"]["values"]["design"] == "experimental"
+        assert versions["run1"]["values"]["design"] == "case study"
+        assert "2026-07-28 14:32:01" in options[1]["label"]
 
 
 # ----- saving --------------------------------------------------------------------------------
