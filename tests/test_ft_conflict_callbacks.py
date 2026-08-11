@@ -134,6 +134,43 @@ class TestResolveConflict:
         actions = [a["action"] for a in db.get_screening_actions(sid)]
         assert "reconcile_undo" in actions
 
+    def test_the_rationale_reaches_the_audit_row(self, tmp_project):
+        """History reads screening_actions, not reconciliations: an undo deletes the latter, and a
+        paper adjudicated twice keeps only its newest row, so the reason has to live on the event."""
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        _apply_resolve(db, sid, "include", "amber", "borderline on the dyadic criterion", stage="abstract")
+        [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
+        assert row["rationale"] == "borderline on the dyadic criterion"
+
+    def test_a_rationale_outlives_the_undo_that_removes_the_reconciliation(self, tmp_project):
+        db = tmp_project.db
+        pid = tmp_project.project_id
+        sid = _add_source(tmp_project)
+        _apply_resolve(db, sid, "exclude", "amber", "conference abstract only", stage="abstract")
+        [rec] = db.list_reconciliations(pid, stage="abstract_screening")
+        _apply_undo_resolve(db, rec["id"])
+
+        assert db.list_reconciliations(pid, stage="abstract_screening") == []
+        [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
+        assert row["rationale"] == "conference abstract only"
+
+    def test_a_vote_without_reasons_records_no_rationale(self, tmp_project):
+        """The stage placeholders ('(inline screening)') are not reasons and must not surface."""
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        _apply_vote(db, sid, "include", "amber", "assisted", stage="full_text")
+        [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "vote"]
+        assert row["rationale"] is None
+
+    def test_a_modal_exclude_carries_its_reasons_into_history(self, tmp_project):
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        _apply_vote(db, sid, "exclude", "amber", "assisted", stage="full_text",
+                    reasoning="Wrong population; No full text")
+        [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "vote"]
+        assert row["rationale"] == "Wrong population; No full text"
+
     def test_undo_missing_reconciliation_is_harmless(self, tmp_project):
         """Harmless means the stale button does nothing, not merely that it does not raise: a
         neighbouring reconciliation must survive and no undo may be logged against it."""
@@ -150,3 +187,85 @@ class TestResolveConflict:
         assert len(db.list_reconciliations(pid, stage="abstract_screening")) == 1
         assert db.unresolved_conflict_ids(pid, "assisted", stage="abstract") == set()
         assert "reconcile_undo" not in [a["action"] for a in db.get_screening_actions(sid)]
+
+
+class TestAdjudicationVisibility:
+    """The review queues blind you to other reviewers' work, but an adjudication is the team's
+    conclusion rather than a vote — hiding it left the reason for a paper's fate visible only to
+    whoever happened to write it."""
+
+    def test_another_reviewers_adjudication_is_visible_but_their_votes_are_not(self, tmp_project):
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        _apply_vote(db, sid, "include", "amber", "independent", stage="abstract")
+        _apply_vote(db, sid, "exclude", "bo", "independent", stage="abstract")
+        _apply_resolve(db, sid, "exclude", "bo", "off-topic", stage="abstract")
+
+        mine = db.get_screening_actions(sid, reviewer_id="amber")
+        kinds = [(a["action"], a["reviewer_id"]) for a in mine]
+        assert ("vote", "amber") in kinds
+        assert ("vote", "bo") not in kinds
+        assert ("reconcile", "bo") in kinds
+        assert [a["rationale"] for a in mine if a["action"] == "reconcile"] == ["off-topic"]
+
+    def test_the_undo_of_another_reviewers_adjudication_is_visible_too(self, tmp_project):
+        """Without it a withdrawn ruling would still read as the current final decision."""
+        db = tmp_project.db
+        pid = tmp_project.project_id
+        sid = _add_source(tmp_project)
+        _apply_vote(db, sid, "include", "amber", "independent", stage="abstract")
+        _apply_resolve(db, sid, "exclude", "bo", None, stage="abstract")
+        [rec] = db.list_reconciliations(pid, stage="abstract_screening")
+        _apply_undo_resolve(db, rec["id"])
+
+        actions = [a["action"] for a in db.get_screening_actions(sid, reviewer_id="amber")]
+        assert "reconcile" in actions and "reconcile_undo" in actions
+
+    def test_the_all_reviewer_view_is_unchanged(self, tmp_project):
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        _apply_vote(db, sid, "include", "amber", "independent", stage="abstract")
+        _apply_vote(db, sid, "exclude", "bo", "independent", stage="abstract")
+        assert len(db.get_screening_actions(sid)) == 2
+
+
+class TestFullTextExcludeKeepsPrismaReasonsClean:
+    """A full-text Exclude adjudication doubles as the PRISMA exclusion reason, and
+    full_text_exclusion_counts only splits a ';' list when every part is a defined reason. Free
+    text merged into it would turn one report into a reason category of its own."""
+
+    def _conflicted(self, project, reviewer_b="bo"):
+        db = project.db
+        sid = _add_source(project)
+        _apply_vote(db, sid, "include", "amber", "independent", stage="full_text")
+        _apply_vote(db, sid, "exclude", reviewer_b, "independent", stage="full_text")
+        return sid
+
+    def test_a_typed_note_reaches_history_without_polluting_the_reasons(self, tmp_project):
+        db = tmp_project.db
+        pid = tmp_project.project_id
+        for name in ("Wrong population", "No full text"):
+            db.create_exclusion_reason(pid, name)
+        sid = self._conflicted(tmp_project)
+
+        _apply_resolve(
+            db, sid, "exclude", "bo", "Wrong population; No full text", stage="full_text",
+            audit_rationale="Wrong population; No full text — only a conference abstract",
+        )
+
+        counts = {r["reason"]: r["n"] for r in db.full_text_exclusion_counts(pid)}
+        assert counts == {"Wrong population": 1, "No full text": 1}
+        [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
+        assert row["rationale"] == "Wrong population; No full text — only a conference abstract"
+
+    def test_without_a_note_the_audit_row_keeps_the_reasons(self, tmp_project):
+        db = tmp_project.db
+        pid = tmp_project.project_id
+        db.create_exclusion_reason(pid, "Wrong population")
+        sid = self._conflicted(tmp_project)
+
+        _apply_resolve(db, sid, "exclude", "bo", "Wrong population", stage="full_text")
+
+        [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
+        assert row["rationale"] == "Wrong population"
+        assert {r["reason"] for r in db.full_text_exclusion_counts(pid)} == {"Wrong population"}
