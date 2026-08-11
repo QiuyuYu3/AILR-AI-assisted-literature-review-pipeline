@@ -42,7 +42,8 @@ def _apply_vote(
                 stage=stage,
             )
         )
-        db.insert_screening_action(source_id, rid, action="vote", decision=decision)
+        # Only a real reason reaches the audit row; the stage placeholders above say nothing.
+        db.insert_screening_action(source_id, rid, action="vote", decision=decision, rationale=reasoning)
     src = db.get_source(source_id)
     return {"ts": time.time()}, {
         "sid": source_id,
@@ -62,10 +63,21 @@ def _apply_reset(db: Any, source_id: int, rid: str, stage: str = "abstract") -> 
     return {"ts": time.time()}, None  # clear banner
 
 
-def _apply_resolve(db: Any, source_id: int, decision: str, rid: str, rationale: Optional[str], stage: str) -> dict:
-    """Adjudicate a conflict: record the final decision (+ audit row). Returns the refresh payload."""
+def _apply_resolve(
+    db: Any, source_id: int, decision: str, rid: str, rationale: Optional[str], stage: str,
+    audit_rationale: Optional[str] = None,
+) -> dict:
+    """Adjudicate a conflict: record the final decision (+ audit row). Returns the refresh payload.
+
+    A full-text exclusion keeps its PRISMA reasons verbatim in `rationale` — full_text_exclusion_counts
+    splits that string on ';' and only counts the parts it recognises, so free text appended there
+    would turn one report into its own reason category. Any typed note rides on `audit_rationale`,
+    which only the History timeline reads.
+    """
     db.insert_screening_reconciliation(source_id, decision, rid, rationale, stage=stage)
-    db.insert_screening_action(source_id, rid, action="reconcile", decision=decision)
+    db.insert_screening_action(
+        source_id, rid, action="reconcile", decision=decision, rationale=audit_rationale or rationale
+    )
     return {"ts": time.time()}
 
 

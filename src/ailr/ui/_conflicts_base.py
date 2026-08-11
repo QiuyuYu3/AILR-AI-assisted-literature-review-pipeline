@@ -16,7 +16,7 @@ from ailr.core.source import Source
 from ailr.ui._actions import _apply_resolve, _apply_undo_resolve
 from ailr.ui._cards import DECISION_COLORS as _DECISION_COLORS
 from ailr.ui._cards import doi_link, header_line, meta_line, tag_chips
-from ailr.ui._common import flag_check_block, triggered_click_id
+from ailr.ui._common import flag_check_block, triggered_click_id, value_for_source
 from ailr.ui._project import get_project
 
 
@@ -162,12 +162,7 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
 
         source_id = int(triggered["source"])
         decision = triggered["decision"]
-        rationale = None
-        for r_val, r_id in zip(rationales or [], rationale_ids or []):
-            if isinstance(r_id, dict) and r_id.get("source") == source_id:
-                rationale = (r_val or "").strip() or None
-                break
-
+        rationale = value_for_source(rationales, rationale_ids, source_id)
         return _apply_resolve(get_project().db, source_id, decision, rid, rationale, cfg.stage)
 
     if cfg.show_abstract_extras:
@@ -311,7 +306,7 @@ def _conflict_card(
             dbc.Input(
                 id={"type": f"{cfg.prefix}-rationale", "source": sid},
                 placeholder=(
-                    "Rationale for Include (optional). Exclude asks for PRISMA reasons."
+                    "Adjudicator rationale (optional). Exclude also asks for PRISMA reasons."
                     if cfg.exclude_needs_reason
                     else "Adjudicator rationale (optional)"
                 ),

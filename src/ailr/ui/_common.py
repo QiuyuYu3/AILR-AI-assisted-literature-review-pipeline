@@ -78,6 +78,14 @@ def triggered_click_id() -> Optional[dict]:
     return json.loads(clicked["prop_id"].rsplit(".", 1)[0])
 
 
+def value_for_source(values, ids, source_id: int) -> Optional[str]:
+    """Pick one card's input value out of a pattern-matching State pair, by source id."""
+    for val, cid in zip(values or [], ids or []):
+        if isinstance(cid, dict) and cid.get("source") == source_id:
+            return (val or "").strip() or None
+    return None
+
+
 def format_authors(raw: object, limit: int = 3) -> str:
     """Render a sources.authors value (JSON list or list) as 'A; B; C et al.'."""
     if not raw:

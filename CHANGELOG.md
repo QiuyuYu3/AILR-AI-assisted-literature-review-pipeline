@@ -4,6 +4,8 @@
 ## [Unreleased]
 
 ### Added
+- History now shows the adjudicator's rationale under each final decision, and the PRISMA reasons under a full-text exclude vote, at both stages. Needs `ALTER TABLE screening_actions ADD COLUMN rationale TEXT` on databases created before this release.
+
 - Extraction form: per-field "Use" buttons and a confirmed "Fill all fields from AI" button that take AI's values back into the form, which previously stayed pinned to your first saved edit. Fill-all can draw from the current run or any earlier run a re-run retired. Fields the chosen run left empty are untouched, and nothing is written until Save/Submit.
 
 - Conflicts and full-text conflicts cards now show tag chips plus Tags and Note buttons, matching the screening and full-text queues.
@@ -15,6 +17,7 @@
 - `ailr ui` gave up when all 25 ports it scanned fell inside one Hyper-V reservation; it now restarts the scan at each following hundred, matches werkzeug's `SO_REUSEADDR` so a port in `TIME_WAIT` from the previous run is not skipped, and gives non-Windows users an `lsof` hint instead of `netsh`.
 - Abstract and full-text screening search could not find a paper by the `#123` number shown on its card; `#123` now matches that paper exactly, and a bare `123` matches it alongside the usual text search.
 - When the model serialized a structured field into a JSON string that does not parse, it was stored as that raw string instead of failing; the paper is now reported as failed so it can be re-run.
+- Full-text conflicts: text typed in the adjudicator rationale box was silently dropped when the decision was Exclude, since that button routes through the PRISMA reason dialog. It is now kept on the audit row (and shown in History) while the reconciliation itself keeps the bare PRISMA reasons, which the per-reason counts split on.
 - Markdown was stored as an absolute path, so on a teammate's copy of a shared project every reader, extraction and calibration saw "no markdown" even though the file was there; paths are now stored relative to the project root and fall back to `data/markdown/<id>.md`, which also repairs existing rows without a migration. `preprocess` was overwriting the relative `pdf_path` from `import-pdfs` with an absolute one, which would have broken PDFs the same way.
 
 ---

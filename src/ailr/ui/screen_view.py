@@ -908,6 +908,14 @@ def _source_card(
     )
 
 
+def _rationale_line(a: dict) -> Any:
+    """The reason typed on an adjudication, or the PRISMA reasons picked on a full-text exclude."""
+    text = (a.get("rationale") or "").strip()
+    if not text:
+        return None
+    return html.Div(html.Small(text, className="text-muted fst-italic"), className="ms-4 mb-1")
+
+
 def _history_block(actions: list[dict], src: Source, show_reviewer: bool) -> Any:
     items: list[Any] = [
         html.Div(
@@ -937,6 +945,7 @@ def _history_block(actions: list[dict], src: Source, show_reviewer: bool) -> Any
                 row_children.append(by_part)
             row_children.append(html.Small(f"  {ts}", className="text-muted ms-2"))
             items.append(html.Div(row_children, className="mb-1"))
+            items.append(_rationale_line(a))
         elif a["action"] == "reset":
             row_children = [
                 html.Span("↻  ", className="me-1"),
@@ -957,6 +966,7 @@ def _history_block(actions: list[dict], src: Source, show_reviewer: bool) -> Any
                 row_children.append(by_part)
             row_children.append(html.Small(f"  {ts}", className="text-muted ms-2"))
             items.append(html.Div(row_children, className="mb-1"))
+            items.append(_rationale_line(a))
         elif a["action"] == "reconcile_undo":
             row_children = [
                 html.Span("↻  ", className="me-1"),
@@ -984,6 +994,6 @@ def _history_block(actions: list[dict], src: Source, show_reviewer: bool) -> Any
                 row_children.append(by_part)
             row_children.append(html.Small(f"  {ts}", className="text-muted ms-2"))
             items.append(html.Div(row_children, className="mb-1"))
-    return html.Div(items, className="mt-2 small")
+    return html.Div([i for i in items if i is not None], className="mt-2 small")
 
 

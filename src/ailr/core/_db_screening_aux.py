@@ -37,15 +37,18 @@ class ScreeningAuxMixin:
         reviewer_id: str,
         action: str,
         decision: Optional[str] = None,
+        rationale: Optional[str] = None,
     ) -> int:
-        """Append an audit row to screening_actions. Used by the History panel."""
+        """Append an audit row to screening_actions. Used by the History panel. `rationale` is the
+        adjudicator's reason (or an exclusion reason on a vote), kept here rather than read from
+        reconciliations so it survives an undo and stays attached to the event it belongs to."""
         try:
             cur = self._conn.execute(
                 """
-                INSERT INTO screening_actions (source_id, reviewer_id, action, decision)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO screening_actions (source_id, reviewer_id, action, decision, rationale)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (source_id, reviewer_id, action, decision),
+                (source_id, reviewer_id, action, decision, rationale),
             )
             self._conn.commit()
             return cur.lastrowid
@@ -60,7 +63,7 @@ class ScreeningAuxMixin:
         """Action timeline for a source. If reviewer_id is given, filter to that reviewer."""
         if reviewer_id is not None:
             sql = """
-                SELECT id, source_id, reviewer_id, action, decision, timestamp
+                SELECT id, source_id, reviewer_id, action, decision, rationale, timestamp
                 FROM screening_actions
                 WHERE source_id = ? AND reviewer_id = ?
                 ORDER BY id
@@ -68,7 +71,7 @@ class ScreeningAuxMixin:
             params: tuple = (source_id, reviewer_id)
         else:
             sql = """
-                SELECT id, source_id, reviewer_id, action, decision, timestamp
+                SELECT id, source_id, reviewer_id, action, decision, rationale, timestamp
                 FROM screening_actions
                 WHERE source_id = ?
                 ORDER BY id

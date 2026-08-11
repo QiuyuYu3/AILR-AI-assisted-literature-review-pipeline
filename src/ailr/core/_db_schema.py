@@ -200,6 +200,7 @@ Table(
     Column("reviewer_id", Text, nullable=False),
     Column("action", Text, nullable=False),
     Column("decision", Text),
+    Column("rationale", Text),
     Column("timestamp", DateTime, server_default=text("CURRENT_TIMESTAMP")),
     Index("idx_screening_actions_source", "source_id"),
     Index("idx_screening_actions_reviewer", "reviewer_id"),

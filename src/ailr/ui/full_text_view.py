@@ -26,7 +26,7 @@ from ailr.ui._cards import (
     peer_note,
     tag_chips,
 )
-from ailr.ui._common import triggered_click_id
+from ailr.ui._common import triggered_click_id, value_for_source
 from ailr.ui._project import get_project, reload_project
 
 from ailr.ui.preprocess_view import _low_text_md
@@ -374,9 +374,11 @@ def register_callbacks(app: Any) -> None:
         State("ft-exclude-choices", "value"),
         State("ft-exclude-source", "data"),
         State("shared-reviewer", "value"),
+        State({"type": "ft-conflict-rationale", "source": ALL}, "value"),
+        State({"type": "ft-conflict-rationale", "source": ALL}, "id"),
         prevent_initial_call=True,
     )
-    def _confirm_exclude(_n, reasons, data, reviewer):
+    def _confirm_exclude(_n, reasons, data, reviewer, rationales, rationale_ids):
         if not _n or not data:
             return (no_update,) * 5
         rid = (reviewer or "").strip()
@@ -388,8 +390,13 @@ def register_callbacks(app: Any) -> None:
         sid = int(data["sid"])
         if data.get("mode") == "resolve":
             # The reason becomes the adjudication rationale, which is where PRISMA reads it from
-            # for an adjudicated exclusion (see full_text_exclusion_counts).
-            refresh = _apply_resolve(get_project().db, sid, "exclude", rid, reason, "full_text")
+            # for an adjudicated exclusion (see full_text_exclusion_counts). Anything typed in the
+            # card's rationale box would otherwise be dropped, so it goes to the audit row instead.
+            note = value_for_source(rationales, rationale_ids, sid)
+            refresh = _apply_resolve(
+                get_project().db, sid, "exclude", rid, reason, "full_text",
+                audit_rationale=f"{reason} — {note}" if note else None,
+            )
             return no_update, no_update, False, "", refresh
         # Same vote lock as the inline buttons (idempotent self-vote + team cap) — this modal
         # must not be a second, weaker path to a duplicate vote.
