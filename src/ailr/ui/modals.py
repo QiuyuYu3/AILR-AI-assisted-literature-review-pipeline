@@ -216,13 +216,13 @@ def register_callbacks(app: Any) -> None:
         if src is None:
             return False, no_update, no_update
 
-        # The review queues show only your own timeline (blinding); the conflict tabs show everyone's,
-        # since that is what the adjudicator has to weigh.
+        # The review queues show only your own timeline (blinding) plus any adjudication, whoever
+        # made it; the conflict tabs show everyone's, since that is what the adjudicator has to weigh.
         if btn_type in ("screen-history-btn", "ft-history-btn", "extract-history-btn"):
             rid = (reviewer or "").strip() or None
             actions = db.get_screening_actions(sid, reviewer_id=rid)
             show_reviewer = False
-            title = f"History — #{sid} (your timeline)"
+            title = f"History — #{sid} (your timeline + final decisions)"
         else:
             actions = db.get_screening_actions(sid)
             show_reviewer = True

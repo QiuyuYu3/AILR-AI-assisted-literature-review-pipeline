@@ -961,20 +961,20 @@ def _history_block(actions: list[dict], src: Source, show_reviewer: bool) -> Any
                 html.Span("⚖  ", className="me-1"),
                 html.Strong("Final: "),
                 dbc.Badge(a.get("decision", "").upper(), color=color, className="me-2"),
+                # Named even in the per-reviewer timeline, which shows adjudications by anyone:
+                # unattributed, someone else's ruling would read as your own.
+                html.Small(f"by {reviewer}", className="text-muted ms-2"),
+                html.Small(f"  {ts}", className="text-muted ms-2"),
             ]
-            if by_part:
-                row_children.append(by_part)
-            row_children.append(html.Small(f"  {ts}", className="text-muted ms-2"))
             items.append(html.Div(row_children, className="mb-1"))
             items.append(_rationale_line(a))
         elif a["action"] == "reconcile_undo":
             row_children = [
                 html.Span("↻  ", className="me-1"),
                 html.Strong("Undo reconciliation"),
+                html.Small(f"by {reviewer}", className="text-muted ms-2"),
+                html.Small(f"  {ts}", className="text-muted ms-2"),
             ]
-            if by_part:
-                row_children.append(by_part)
-            row_children.append(html.Small(f"  {ts}", className="text-muted ms-2"))
             items.append(html.Div(row_children, className="mb-1"))
         elif a["action"] == "move_to_screening":
             row_children = [

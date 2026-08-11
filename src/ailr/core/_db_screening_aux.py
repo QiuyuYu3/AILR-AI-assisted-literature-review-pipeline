@@ -60,12 +60,17 @@ class ScreeningAuxMixin:
         source_id: int,
         reviewer_id: Optional[str] = None,
     ) -> list[dict]:
-        """Action timeline for a source. If reviewer_id is given, filter to that reviewer."""
+        """Action timeline for a source. If reviewer_id is given, filter to that reviewer — except
+        for adjudications, which stay visible to everyone: the final decision is the team's
+        conclusion, not a blinded vote, and its rationale is the record of why the paper ended up
+        where it did. The undo rides along, or a withdrawn adjudication would still read as current.
+        """
         if reviewer_id is not None:
             sql = """
                 SELECT id, source_id, reviewer_id, action, decision, rationale, timestamp
                 FROM screening_actions
-                WHERE source_id = ? AND reviewer_id = ?
+                WHERE source_id = ?
+                  AND (reviewer_id = ? OR action IN ('reconcile', 'reconcile_undo'))
                 ORDER BY id
             """
             params: tuple = (source_id, reviewer_id)
