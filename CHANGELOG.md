@@ -3,6 +3,9 @@
 ---
 ## [Unreleased]
 
+---
+## [0.33.0] – 2026-08-11
+
 ### Added
 - History now shows the adjudicator's rationale under each final decision, and the PRISMA reasons under a full-text exclude vote, at both stages. Adjudications also survive the queue's per-reviewer blinding filter (named, with the undo alongside): the final decision is the team's conclusion, not a blinded vote, so a rationale written by one reviewer was previously invisible to the other. Needs `ALTER TABLE screening_actions ADD COLUMN rationale TEXT` on databases created before this release.
 
