@@ -651,6 +651,7 @@ class ScreeningMixin:
         team_size: int = 2,
         extractors_required: int = 1,  # humans each paper needs extracted by (2 under independent)
         abstract_workflow: str = "assisted",  # decides when abstract screening is finished with a paper
+        abstract_conflict_ids: Optional[set[int]] = None,  # pass in to skip a repeated conflict scan
         sort_by: str = "id",
         page: int = 0,
         page_size: int = 25,
@@ -658,7 +659,7 @@ class ScreeningMixin:
         """Full-text review page, filtered/sorted/paginated in SQL. Candidates are the papers
         abstract screening has finished with and settled on include — see _ft_candidate_where.
         Returns (rows, total_matching, clamped_page)."""
-        cand_where, params = self._ft_candidate_where(project_id, abstract_workflow)
+        cand_where, params = self._ft_candidate_where(project_id, abstract_workflow, abstract_conflict_ids)
         where = [cand_where]
 
         if status == "to_review":
@@ -732,10 +733,15 @@ class ScreeningMixin:
             sort_by = "confidence_asc_full_text"
         return _fetch_source_page(self._conn, " AND ".join(where), params, sort_by, page, page_size)
 
-    def _ft_candidate_where(self, project_id: int, workflow: str) -> tuple[str, list]:
+    def _ft_candidate_where(
+        self, project_id: int, workflow: str, conflict_ids: Optional[set[int]] = None
+    ) -> tuple[str, list]:
         """THE full-text candidate rule: abstract screening is FINISHED for the paper and settled on
         include. A paper still in conflict, or waiting on a reviewer, is unfinished business at the
         abstract stage and must not be carried forward — adjudicate it first.
+
+        `conflict_ids` lets a caller that already holds the abstract-stage conflict set pass it in;
+        one full-text render calls this twice (count + page), which is otherwise two identical scans.
 
         Returns (where_fragment, params) so callers can splice it into their own query."""
         clause = (
@@ -743,23 +749,30 @@ class ScreeningMixin:
             + stage_final_include_sql("abstract", team_size_for(workflow))
         )
         params: list = [project_id]
-        conflicts = self.unresolved_conflict_ids(project_id, workflow, stage="abstract")
+        conflicts = (
+            conflict_ids if conflict_ids is not None
+            else self.unresolved_conflict_ids(project_id, workflow, stage="abstract")
+        )
         if conflicts:
             ph = ",".join("?" for _ in conflicts)
             clause += f" AND s.id NOT IN ({ph})"
             params += list(conflicts)
         return clause, params
 
-    def count_full_text_candidates(self, project_id: int, *, workflow: str) -> int:
+    def count_full_text_candidates(
+        self, project_id: int, *, workflow: str, conflict_ids: Optional[set[int]] = None
+    ) -> int:
         """Number of full-text candidates (abstract screening finished and settled on include)."""
-        where, params = self._ft_candidate_where(project_id, workflow)
+        where, params = self._ft_candidate_where(project_id, workflow, conflict_ids)
         return self._conn.execute(
             f"SELECT COUNT(*) AS n FROM sources s WHERE {where}", params
         ).fetchone()["n"]
 
-    def full_text_candidate_ids(self, project_id: int, *, workflow: str) -> list[int]:
+    def full_text_candidate_ids(
+        self, project_id: int, *, workflow: str, conflict_ids: Optional[set[int]] = None
+    ) -> list[int]:
         """Ids of all full-text candidates; used to compute the low-text set."""
-        where, params = self._ft_candidate_where(project_id, workflow)
+        where, params = self._ft_candidate_where(project_id, workflow, conflict_ids)
         rows = self._conn.execute(f"SELECT s.id FROM sources s WHERE {where}", params).fetchall()
         return [r["id"] for r in rows]
 

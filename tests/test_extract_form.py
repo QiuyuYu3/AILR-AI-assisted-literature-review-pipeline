@@ -6,8 +6,6 @@ that mapping, the Save-draft/Submit split, and the guard that refuses to save on
 screen and the schema on disk have drifted apart.
 """
 
-from types import SimpleNamespace
-
 import pytest
 
 from ailr.core.source import Source
@@ -189,15 +187,9 @@ def _rows(*pairs) -> list[dict]:
     ]
 
 
-class _FakeDb:
-    def __init__(self, runs: list[dict]):
-        self._runs = runs
-
-    def list_superseded_ai_runs(self, source_id: int) -> list[dict]:
-        return self._runs
-
-
-_SRC = SimpleNamespace(id=1)
+def _runs_of(*runs: tuple[str, list[dict]]) -> list[dict]:
+    """Retired AI runs as list_superseded_ai_runs returns them, newest first."""
+    return [{"timestamp": ts, "rows": rows} for ts, rows in runs]
 
 
 def test_ai_data_from_rows_wraps_everything_but_objects():
@@ -244,12 +236,12 @@ def test_ai_grid_rows_skips_a_field_the_ai_returned_empty():
 
 
 def test_ai_versions_puts_the_current_run_first_then_older_runs():
-    db = _FakeDb([
-        {"timestamp": "2026-07-28 14:32:01", "rows": _rows(("design", "experimental", None))},
-        {"timestamp": "2026-07-21 09:05:44", "rows": _rows(("design", "case study", None))},
-    ])
+    superseded = _runs_of(
+        ("2026-07-28 14:32:01", _rows(("design", "experimental", None))),
+        ("2026-07-21 09:05:44", _rows(("design", "case study", None))),
+    )
     ai_data = _ai_data_from_rows(_rows(("design", "observational", None)))
-    versions, options = _ai_versions(db, _SRC, [f for f in _fields() if f.verify], ai_data)
+    versions, options = _ai_versions(superseded, [f for f in _fields() if f.verify], ai_data)
 
     assert [o["value"] for o in options] == ["current", "run0", "run1"]
     assert versions["current"]["values"]["design"] == "observational"
@@ -260,19 +252,19 @@ def test_ai_versions_puts_the_current_run_first_then_older_runs():
 
 def test_ai_versions_is_empty_without_an_ai_extraction():
     # Drives the fill-all row's visibility: nothing to fill from, so it stays hidden.
-    assert _ai_versions(_FakeDb([]), _SRC, _fields(), None) == ({}, [])
-    assert _ai_versions(_FakeDb([]), _SRC, _fields(), {}) == ({}, [])
+    assert _ai_versions([], _fields(), None) == ({}, [])
+    assert _ai_versions([], _fields(), {}) == ({}, [])
 
 
 def test_ai_versions_reads_old_runs_through_the_current_schema():
     # An earlier run predates a schema edit: its dropped field is ignored, and a field added
     # since simply has nothing to fill.
-    db = _FakeDb([{"timestamp": "2026-07-01 08:00:00", "rows": _rows(
+    superseded = _runs_of(("2026-07-01 08:00:00", _rows(
         ("design", "experimental", None),
         ("retired_field", "gone from the schema", None),
-    )}])
+    )))
     ai_data = _ai_data_from_rows(_rows(("design", "observational", None)))
-    versions, _ = _ai_versions(db, _SRC, [f for f in _fields() if f.verify], ai_data)
+    versions, _ = _ai_versions(superseded, [f for f in _fields() if f.verify], ai_data)
     assert set(versions["run0"]["values"]) == {"design"}
     assert "n_dyads" not in versions["run0"]["values"]
 
@@ -281,7 +273,7 @@ def test_ai_versions_reads_old_runs_through_the_current_schema():
 
 
 class TestSupersededRunsAgainstTheRealDb:
-    """_FakeDb hands _ai_versions ready-made runs, so the rule that PRODUCES them was never
+    """The tests above hand _ai_versions ready-made runs, so the rule that PRODUCES them was never
     exercised. list_superseded_ai_runs groups on the gap between row timestamps rather than on the
     timestamp itself: one run writes its fields one row at a time and can straddle a boundary.
     """
@@ -346,14 +338,16 @@ class TestSupersededRunsAgainstTheRealDb:
         assert tmp_project.db.list_superseded_ai_runs(self._source(tmp_project)) == []
 
     def test_the_real_rows_drive_the_version_picker(self, tmp_project):
-        """The contract _FakeDb asserts by fiat: what the DB returns is what _ai_versions reads."""
+        """The contract the fixtures above assert by fiat: what the DB returns is what
+        _ai_versions reads."""
         db = tmp_project.db
         sid = self._source(tmp_project)
         self._retired_row(db, sid, "design", "case study", "2026-07-21 09:05:44")
         self._retired_row(db, sid, "design", "experimental", "2026-07-28 14:32:01")
         ai_data = _ai_data_from_rows(_rows(("design", "observational", None)))
 
-        versions, options = _ai_versions(db, db.get_source(sid), [f for f in _fields() if f.verify], ai_data)
+        versions, options = _ai_versions(
+            db.list_superseded_ai_runs(sid), [f for f in _fields() if f.verify], ai_data)
 
         assert [o["value"] for o in options] == ["current", "run0", "run1"]
         assert versions["current"]["values"]["design"] == "observational"

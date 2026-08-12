@@ -10,6 +10,10 @@
 - The full-text conflicts cards now carry the outdated badge too ("AI extraction outdated"), since their AI vote is the flag_check verdict of an extraction run. Both conflict pages check only the papers on screen instead of scanning the whole project.
 
 ### Changed
+- Entering the full-text pages no longer blocks on scanning `data/pdfs` for a Zotero RIS export: the first entry in a session still scans inline, later ones scan in the background. The walk itself ran on every tab switch, which is slow on a synced drive.
+- Full-text review resolves the abstract-stage conflict set once per render instead of re-scanning it inside each candidate query, and `sources_needing_consensus` no longer costs a second query to exclude adjudicated papers.
+- Opening a paper for extraction fetches its AI rows and retired AI runs once instead of twice each.
+- The composed screening/extraction prompt is cached on its input files' mtime. The queues rebuilt it — re-reading and re-parsing the prompt, `criteria.yaml` and `schema.yaml` — on every render just to mark stale AI runs.
 - `ailr calibrate` is hidden from `--help`. Full calibration is retired in the UI and no queue lists the sample it draws, so the command still runs but is no longer offered; its closing hint pointed at a UI screen that no longer exists.
 - The queues' "Calibration sample" status filter is now "Last quick test": it lists the papers the most recent quick-test run covered, so it works from the UI alone. It used to read the full-calibration sample, which only `ailr calibrate` writes and which was empty in any UI-only project.
 

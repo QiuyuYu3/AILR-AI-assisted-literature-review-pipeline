@@ -501,6 +501,9 @@ def register_callbacks(app: Any) -> None:
         fields = compose_schema(project.root / project.config.extraction.schema_path)
         workflow = project.config.extraction.workflow
 
+        # Fetched once and handed to the AI panel, which used to fetch its own copy.
+        ai_rows = db.list_extractions(src.id, extractor_type="ai")
+
         # Read-only: another reviewer has claimed it (verify), or all required reviewers have
         # submitted (independent). Show each relevant reviewer's table; Save/Submit off.
         locked, display_ids = _compute_locked(db, src, rid, workflow)
@@ -508,12 +511,15 @@ def register_callbacks(app: Any) -> None:
             return (_source_card(project.root, src),
                     html.Div([_claim_notice(workflow, display_ids),
                               _readonly_tables(db, src, display_ids, [f for f in fields if f.verify])]),
-                    _ai_panel(db, src, workflow, rid),
+                    _ai_panel(db, src, workflow, rid, ai_rows=ai_rows),
                     True, True, "", {}, hidden, *blank_useall)
 
         ai_data: dict[str, Any] | None = None
         if workflow == "verify":
-            ai_data = _ai_data_from_rows(db.list_extractions(src.id, extractor_type="ai"))
+            ai_data = _ai_data_from_rows(ai_rows)
+        # Only the version picker needs the retired runs up front; elsewhere the AI panel fetches
+        # them itself, and it may bail out before it gets that far.
+        superseded = db.list_superseded_ai_runs(src.id) if ai_data else None
         # Editable fields prefill from THIS reviewer's saved values (overriding AI); the AI value
         # stays visible as the "AI proposed" reference. Latest row wins (ORDER BY id).
         human_data = {
@@ -529,12 +535,12 @@ def register_callbacks(app: Any) -> None:
         # of that claim until you submit, after which the extraction is final.
         can_release = workflow == "verify" and bool(human_data) and not db.has_submitted(src.id, rid)
 
-        versions, version_options = _ai_versions(db, src, verify_fields, ai_data)
+        versions, version_options = _ai_versions(superseded or [], verify_fields, ai_data)
         current = versions.get("current", {})
 
         return (_source_card(project.root, src),
                 _build_form(verify_fields, prefill_data=prefill_data, ai_data=ai_data),
-                _ai_panel(db, src, workflow, rid),
+                _ai_panel(db, src, workflow, rid, ai_rows=ai_rows, superseded=superseded),
                 False, False, "",
                 current.get("values", {}),
                 shown if can_release else hidden,
@@ -863,7 +869,7 @@ def _ai_data_from_rows(rows: Any) -> dict[str, Any]:
     return out
 
 
-def _ai_versions(db: Any, src: Source, fields: list[FieldSpec], ai_data: dict[str, Any] | None) -> tuple[dict, list[dict]]:
+def _ai_versions(superseded: list[dict], fields: list[FieldSpec], ai_data: dict[str, Any] | None) -> tuple[dict, list[dict]]:
     """Fillable values for the current AI run and every run a re-run retired, newest first.
     Old runs are matched to the CURRENT schema by field name, so fields added since simply have
     nothing to fill and fields dropped since are ignored."""
@@ -875,7 +881,7 @@ def _ai_versions(db: Any, src: Source, fields: list[FieldSpec], ai_data: dict[st
         "grids": _ai_grid_rows(fields, ai_data),
     }}
     options = [{"label": "Current AI run", "value": "current"}]
-    for i, run in enumerate(db.list_superseded_ai_runs(src.id)):
+    for i, run in enumerate(superseded):
         data = _ai_data_from_rows(run["rows"])
         key = f"run{i}"
         versions[key] = {
@@ -1282,10 +1288,9 @@ def _ai_row_block(row: dict) -> Any:
     return html.Div(block, className="small mb-2")
 
 
-def _superseded_ai_block(db: Any, src: Source) -> Any:
+def _superseded_ai_block(runs: list[dict]) -> Any:
     """Collapsed view of AI extractions a re-run replaced. They stay in the database, so a re-run
     that reads the paper differently can still be compared against what it replaced."""
-    runs = db.list_superseded_ai_runs(src.id)
     if not runs:
         return None
     # One collapsible per run, all inside one outer collapsible: re-running several times would
@@ -1305,8 +1310,10 @@ def _superseded_ai_block(db: Any, src: Source) -> Any:
     )
 
 
-def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
-    ai_rows = db.list_extractions(src.id, extractor_type="ai")
+def _ai_panel(db: Any, src: Source, workflow: str, rid: str, *,
+              ai_rows: list[dict] | None = None, superseded: list[dict] | None = None) -> Any:
+    if ai_rows is None:
+        ai_rows = db.list_extractions(src.id, extractor_type="ai")
     flag_check = db.get_flag_check(src.id, extractor_type="ai")
     if not ai_rows and not flag_check:
         return html.P("No AI extraction yet.", className="text-muted small")
@@ -1340,7 +1347,9 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str) -> Any:
                 items.append(html.Div(fc["reason"], className="small ms-3 mb-1"))
             if fc.get("quote"):
                 items.append(html.Div(_quote_details(fc["quote"]), className="ms-3 mb-1"))
-    items.append(_superseded_ai_block(db, src))
+    # Fetched here, past the two early returns above, so a hidden panel costs no query for it.
+    items.append(_superseded_ai_block(
+        db.list_superseded_ai_runs(src.id) if superseded is None else superseded))
     return dbc.Card(dbc.CardBody(items), color="light")
 
 

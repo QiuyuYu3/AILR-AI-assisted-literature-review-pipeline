@@ -335,17 +335,24 @@ class ExtractionMixin:
 
     def sources_needing_consensus(self, source_ids: list[int], required: int = 2) -> set[int]:
         """Sources where enough reviewers have SUBMITTED an independent extraction but nobody has
-        adjudicated yet. Drives the full-text 'To reconcile' queue."""
+        adjudicated yet. Drives the full-text 'To reconcile' queue.
+
+        The 'already adjudicated' exclusion is a NOT EXISTS inside the same statement rather than a
+        second sources_with_consensus call — this runs on every full-text render, where each
+        statement is a round trip."""
         if not source_ids:
             return set()
         placeholders = ",".join("?" for _ in source_ids)
         rows = self._conn.execute(
-            f"SELECT source_id FROM extractions "
-            f"WHERE source_id IN ({placeholders}) AND extractor_type = 'human' AND field_name = '_submitted' "
-            f"GROUP BY source_id HAVING COUNT(DISTINCT extractor_id) >= ?",
+            f"SELECT e.source_id AS source_id FROM extractions e "
+            f"WHERE e.source_id IN ({placeholders}) AND e.extractor_type = 'human' "
+            f"  AND e.field_name = '_submitted' "
+            f"  AND NOT EXISTS (SELECT 1 FROM extractions c WHERE c.source_id = e.source_id "
+            f"                  AND c.extractor_type = 'consensus') "
+            f"GROUP BY e.source_id HAVING COUNT(DISTINCT e.extractor_id) >= ?",
             [*source_ids, required],
         ).fetchall()
-        return {r["source_id"] for r in rows} - self.sources_with_consensus(source_ids)
+        return {r["source_id"] for r in rows}
 
     def save_consensus(self, source_id: int, adjudicator: str, results: list["ExtractionResult"]) -> None:
         """Replace this source's consensus record in one go (delete then insert), so re-adjudicating

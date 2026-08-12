@@ -493,24 +493,39 @@ def register_callbacks(app: Any) -> None:
         # Low-text/failed is a file-content state, not a DB column: compute the id set on disk and
         # hand it to the SQL query as a whitelist (keeps filtering/paging in SQL).
         abstract_workflow = project.config.screening_workflow("abstract")
+        # Who counts as a full-text candidate depends on the abstract-stage conflict set, and every
+        # candidate query below needs it. Resolved once here rather than re-scanned inside each of
+        # them — on a remote database each of those repeats is a round trip.
+        abs_conflict_ids = db.unresolved_conflict_ids(pid, abstract_workflow, stage="abstract")
+
+        candidate_ids: Optional[list[int]] = None
+
+        def _candidate_ids() -> list[int]:
+            # Both filters below need the same list, and either may be off; fetched at most once.
+            nonlocal candidate_ids
+            if candidate_ids is None:
+                candidate_ids = db.full_text_candidate_ids(
+                    pid, workflow=abstract_workflow, conflict_ids=abs_conflict_ids)
+            return candidate_ids
+
         id_whitelist = None
         if low_mode:
             threshold = project.config.preprocess.low_text_threshold
             id_whitelist = {
-                cid for cid in db.full_text_candidate_ids(pid, workflow=abstract_workflow)
+                cid for cid in _candidate_ids()
                 if _low_text_md(project.root, cid, threshold)
             }
         # "To reconcile" is a state of the extraction records, not a screening column: resolve it to
         # an id set and hand it to the SQL query as a whitelist (same trick as low-text).
         if status == "to_reconcile":
-            pending = db.sources_needing_consensus(
-                list(db.full_text_candidate_ids(pid, workflow=abstract_workflow)))
+            pending = db.sources_needing_consensus(_candidate_ids())
             id_whitelist = pending if id_whitelist is None else (id_whitelist & pending)
             status = "all"
 
         req_page = (page_state or {}).get("page", 0)
 
-        total_candidates = db.count_full_text_candidates(pid, workflow=abstract_workflow)
+        total_candidates = db.count_full_text_candidates(
+            pid, workflow=abstract_workflow, conflict_ids=abs_conflict_ids)
         if total_candidates == 0:
             return (
                 [
@@ -538,8 +553,8 @@ def register_callbacks(app: Any) -> None:
             tag_id=tag_id, ft_avail=ft_avail, id_whitelist=id_whitelist,
             exclude_ids=ft_conflict_ids if status == "to_extract" else None,
             team_size=team_size, extractors_required=extractors_for(project.config.extraction.workflow),
-            abstract_workflow=abstract_workflow, sort_by=sort_by or "id",
-            page=req_page, page_size=psize,
+            abstract_workflow=abstract_workflow, abstract_conflict_ids=abs_conflict_ids,
+            sort_by=sort_by or "id", page=req_page, page_size=psize,
         )
 
         page_ids = [s.id for s in page_sources if s.id is not None]

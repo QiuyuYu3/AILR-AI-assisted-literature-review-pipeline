@@ -227,9 +227,9 @@ def build_app() -> Dash:
             return tags_view.layout()
         if tab in ("full_text", "workflow_fulltext", "ft_conflicts"):
             try:
-                from ailr.ingest.pdf_link import auto_link_pdfs
+                from ailr.ingest.pdf_link import auto_link_pdfs_on_entry
 
-                auto_link_pdfs(get_project())
+                auto_link_pdfs_on_entry(get_project())
             except Exception:
                 pass
         if tab == "full_text":

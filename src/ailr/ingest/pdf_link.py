@@ -5,6 +5,7 @@ and records the absolute PDF path on that source. `preprocess` reads it directly
 """
 
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -125,6 +126,45 @@ def auto_link_pdfs(project: Project, force: bool = False) -> PdfLinkSummary:
 
     _auto_link_sig[key] = sig
     return agg
+
+
+_auto_link_lock = threading.Lock()
+_auto_link_running: set[str] = set()
+
+
+def auto_link_pdfs_on_entry(project: Project) -> None:
+    """Entry hook for the full-text pages: link synchronously the first time in a session, in the
+    background every time after.
+
+    Deciding whether anything changed means walking data/pdfs for RIS files, and that walk is what
+    every entry pays — the signature cache only saves the parse behind it. On a synced drive
+    (Box/Dropbox) the walk alone can take seconds, and it used to block the tab switch. The first
+    entry stays synchronous so the list is right on its first paint; later ones render immediately
+    and pick up any newly linked PDF on the next refresh.
+    """
+    key = str(project.root)
+    if key not in _auto_link_sig:
+        try:
+            auto_link_pdfs(project)
+        except Exception:
+            pass
+        return
+
+    with _auto_link_lock:
+        if key in _auto_link_running:
+            return
+        _auto_link_running.add(key)
+
+    def _run() -> None:
+        try:
+            auto_link_pdfs(project)
+        except Exception:
+            pass
+        finally:
+            with _auto_link_lock:
+                _auto_link_running.discard(key)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _match_source(
