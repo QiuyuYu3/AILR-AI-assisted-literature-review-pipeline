@@ -609,20 +609,25 @@ def register_callbacks(app: Any) -> None:
 
         if trigger == "extract-submit" and submit:
             ai_rows = {r["field_name"]: r for r in db.list_extractions(src.id, extractor_type="ai")}
-            _save_extraction(db, src, rid, fields, val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids, ai_rows=ai_rows, include_autoaccept=True)
-            db.mark_extraction_submitted(src.id, rid)
+            with db._conn.transaction():  # saved rows that never got marked submitted read as a draft
+                _save_extraction(db, src, rid, fields, val_values, val_ids, quote_values, quote_ids, grid_rows, grid_ids, ai_rows=ai_rows, include_autoaccept=True)
+                db.mark_extraction_submitted(src.id, rid)
             return no_update, no_update, "full_text"
 
         if trigger == "extract-move-ft" and move_ft:
-            db.delete_stage_decisions(src.id, "full_text", reviewer_type="human")
-            db.delete_reconciliations_for_source(src.id, "full_text_screening")
-            db.insert_screening_action(src.id, rid, action="move_to_full_text")
+            # One commit: clearing the votes but keeping the reconciliation would leave a final
+            # decision standing on no vote at all.
+            with db._conn.transaction():
+                db.delete_stage_decisions(src.id, "full_text", reviewer_type="human")
+                db.delete_reconciliations_for_source(src.id, "full_text_screening")
+                db.insert_screening_action(src.id, rid, action="move_to_full_text")
             return {"sid": None}, no_update, "full_text"
 
         if trigger == "extract-move-screen" and move_screen:
-            db.delete_all_screening_decisions(src.id, reviewer_type="human")
-            db.delete_reconciliations_for_source(src.id)
-            db.insert_screening_action(src.id, rid or "?", action="move_to_screening")
+            with db._conn.transaction():
+                db.delete_all_screening_decisions(src.id, reviewer_type="human")
+                db.delete_reconciliations_for_source(src.id)
+                db.insert_screening_action(src.id, rid or "?", action="move_to_screening")
             return {"sid": None}, no_update, "full_text"
 
         if trigger == "extract-duplicate" and dup:

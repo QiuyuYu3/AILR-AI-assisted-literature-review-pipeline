@@ -308,6 +308,8 @@ class _EngineConn:
         if getattr(self._tls, "tx_conn", None) is not None:
             yield  # already inside a transaction: reuse it
             return
+        # Not registered in self._held: the finally below always returns it, and the only thing
+        # that skips a finally is interpreter shutdown, which takes the pool with it.
         conn = self._engine.connect()
         trans = conn.begin()
         self._tls.tx_conn = conn

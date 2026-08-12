@@ -57,9 +57,12 @@ def _apply_vote(
 def _apply_reset(db: Any, source_id: int, rid: str, stage: str = "abstract") -> tuple:
     """Undo my vote and any final decision at this stage so the paper is re-reviewable.
     Returns (refresh, last_action)."""
-    db.delete_screening_decision(source_id, rid, stage=stage, reviewer_type="human")
-    db.delete_reconciliations_for_source(source_id, _reconcile_stage(stage))
-    db.insert_screening_action(source_id, rid, action="reset")
+    # One commit: dropping the vote but keeping the reconciliation would leave a final decision
+    # standing on no vote at all, and nothing in the UI would show it.
+    with db._conn.transaction():
+        db.delete_screening_decision(source_id, rid, stage=stage, reviewer_type="human")
+        db.delete_reconciliations_for_source(source_id, _reconcile_stage(stage))
+        db.insert_screening_action(source_id, rid, action="reset")
     return {"ts": time.time()}, None  # clear banner
 
 
@@ -74,10 +77,11 @@ def _apply_resolve(
     would turn one report into its own reason category. Any typed note rides on `audit_rationale`,
     which only the History timeline reads.
     """
-    db.insert_screening_reconciliation(source_id, decision, rid, rationale, stage=stage)
-    db.insert_screening_action(
-        source_id, rid, action="reconcile", decision=decision, rationale=audit_rationale or rationale
-    )
+    with db._conn.transaction():  # decision + audit row in one commit
+        db.insert_screening_reconciliation(source_id, decision, rid, rationale, stage=stage)
+        db.insert_screening_action(
+            source_id, rid, action="reconcile", decision=decision, rationale=audit_rationale or rationale
+        )
     return {"ts": time.time()}
 
 
@@ -85,7 +89,8 @@ def _apply_undo_resolve(db: Any, rec_id: int) -> dict:
     """Undo a reconciliation, so the conflict re-enters the queue. Returns the refresh payload."""
     # Fetch the row to learn source_id + adjudicator before deleting (for the audit trail).
     row = db.get_reconciliation(rec_id)
-    db.delete_reconciliation(rec_id)
-    if row:
-        db.insert_screening_action(row["source_id"], row["adjudicator"], action="reconcile_undo")
+    with db._conn.transaction():  # without the audit row the decision would vanish from History
+        db.delete_reconciliation(rec_id)
+        if row:
+            db.insert_screening_action(row["source_id"], row["adjudicator"], action="reconcile_undo")
     return {"ts": time.time()}

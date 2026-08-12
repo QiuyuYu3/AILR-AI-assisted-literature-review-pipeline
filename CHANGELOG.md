@@ -5,6 +5,7 @@
 
 ### Fixed
 - The UI froze for 30 seconds and then failed every database call once ~15 web-server threads had come and gone ("QueuePool limit of size 5 overflow 10 reached"): each thread pinned a pooled connection for its lifetime and only the garbage collector gave it back. Connections are now handed back at the end of each request, connections held by dead threads are reclaimed, and the pool is larger.
+- Adjudicating a conflict, undoing an adjudication, undoing a vote, submitting an extraction, and moving a paper back a stage each wrote two or three rows without a shared commit, so a failure partway through could leave a final decision with no vote behind it, or drop the History entry for a decision that did take effect. Each is now one transaction.
 - "AI screening outdated" was on for every AI result that carries no prompt version (early runs, imported results) and for anything tagged with a version that stored no composed prompt: unknown provenance compared as the empty string, so it read as changed. Unknown is now unknown, and the same rule applies to AI extractions.
 
 ### Added
