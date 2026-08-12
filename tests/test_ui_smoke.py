@@ -43,6 +43,9 @@ def test_build_app(seeded_project):
     outputs = " ".join(app.callback_map)
     for owner in ("screen-", "ft-", "extract-", "cons-", "bulk-", "tmpl-", "crit-", "report-"):
         assert owner in outputs, f"no callback registered for {owner}*"
+    # Losing this hook brings back the pool exhaustion that made every callback fail (test_db_pool).
+    names = [f.__name__ for f in app.server.teardown_request_funcs.get(None, [])]
+    assert "_release_db_conn" in names
 
 
 # Each layout must reach the widget its tab is actually for, not merely build some component tree.

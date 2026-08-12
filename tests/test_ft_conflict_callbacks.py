@@ -5,6 +5,7 @@ The abstract-stage variants of _apply_vote/_apply_reset are covered in
 test_screen_callbacks.py; here: stage='full_text' semantics + resolve/undo.
 """
 
+import pytest
 from dash import no_update
 
 from ailr.core.source import Source
@@ -170,6 +171,24 @@ class TestResolveConflict:
                     reasoning="Wrong population; No full text")
         [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "vote"]
         assert row["rationale"] == "Wrong population; No full text"
+
+    def test_a_failed_audit_row_rolls_the_whole_undo_back(self, tmp_project, monkeypatch):
+        """The two writes are one transaction: a failure on the second must not leave the
+        reconciliation deleted with nothing in History to say who deleted it."""
+        db = tmp_project.db
+        pid = tmp_project.project_id
+        sid = _add_source(tmp_project)
+        _apply_resolve(db, sid, "include", "amber", None, stage="abstract")
+        [rec] = db.list_reconciliations(pid, stage="abstract_screening")
+
+        def boom(*a, **k):
+            raise RuntimeError("write failed")
+
+        monkeypatch.setattr(db, "insert_screening_action", boom)
+        with pytest.raises(RuntimeError):
+            _apply_undo_resolve(db, rec["id"])
+
+        assert len(db.list_reconciliations(pid, stage="abstract_screening")) == 1
 
     def test_undo_missing_reconciliation_is_harmless(self, tmp_project):
         """Harmless means the stale button does nothing, not merely that it does not raise: a
