@@ -172,24 +172,25 @@ class SourcesMixin:
         if primary_id is not None and primary_id == source_id:
             raise DatabaseError("A report cannot be a companion of itself.")
         try:
-            if primary_id is not None:
-                row = self._conn.execute(
-                    "SELECT study_group_id FROM sources WHERE id = ?", (primary_id,)
-                ).fetchone()
-                if row is None:
-                    raise DatabaseError(f"No source {primary_id} to group with.")
-                primary_id = row["study_group_id"] or primary_id
-                if primary_id == source_id:
-                    raise DatabaseError("A report cannot be a companion of itself.")
-                # Anything already pointing at this report follows it into the new group.
+            # Both updates move the same group; landing only the first would strand companions.
+            with self._conn.transaction():
+                if primary_id is not None:
+                    row = self._conn.execute(
+                        "SELECT study_group_id FROM sources WHERE id = ?", (primary_id,)
+                    ).fetchone()
+                    if row is None:
+                        raise DatabaseError(f"No source {primary_id} to group with.")
+                    primary_id = row["study_group_id"] or primary_id
+                    if primary_id == source_id:
+                        raise DatabaseError("A report cannot be a companion of itself.")
+                    # Anything already pointing at this report follows it into the new group.
+                    self._conn.execute(
+                        "UPDATE sources SET study_group_id = ? WHERE study_group_id = ?",
+                        (primary_id, source_id),
+                    )
                 self._conn.execute(
-                    "UPDATE sources SET study_group_id = ? WHERE study_group_id = ?",
-                    (primary_id, source_id),
+                    "UPDATE sources SET study_group_id = ? WHERE id = ?", (primary_id, source_id)
                 )
-            self._conn.execute(
-                "UPDATE sources SET study_group_id = ? WHERE id = ?", (primary_id, source_id)
-            )
-            self._conn.commit()
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to group source {source_id}: {e}") from e
 

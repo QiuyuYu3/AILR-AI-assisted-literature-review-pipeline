@@ -910,13 +910,13 @@ class ScreeningMixin:
             where += " AND stage = ?"
             params.append(stage)
         n = self._conn.execute(f"SELECT COUNT(*) AS n FROM screening_decisions WHERE {where}", params).fetchone()["n"]
-        self._conn.execute(f"DELETE FROM screening_decisions WHERE {where}", params)
-        # mock screening/calibration API-call rows (token tracking)
-        self._conn.execute(
-            "DELETE FROM api_calls WHERE project_id = ? AND provider = 'mock' AND model = 'mock-screen'",
-            (project_id,),
-        )
-        self._conn.commit()
+        with self._conn.transaction():  # decisions + their API-call rows go together
+            self._conn.execute(f"DELETE FROM screening_decisions WHERE {where}", params)
+            # mock screening/calibration API-call rows (token tracking)
+            self._conn.execute(
+                "DELETE FROM api_calls WHERE project_id = ? AND provider = 'mock' AND model = 'mock-screen'",
+                (project_id,),
+            )
         return n
 
     def screen_counts(self, project_id: int, reviewer_id: str, stage: str = "abstract") -> tuple[int, int]:

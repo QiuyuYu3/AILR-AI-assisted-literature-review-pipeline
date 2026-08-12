@@ -387,19 +387,19 @@ class ExtractionMixin:
         in_proj = "source_id IN (SELECT id FROM sources WHERE project_id = ?)"
         where_ext = f"extractor_type = 'ai' AND extractor_id LIKE 'mock:%' AND {in_proj}"
         n = self._conn.execute(f"SELECT COUNT(*) AS n FROM extractions WHERE {where_ext}", (project_id,)).fetchone()["n"]
-        self._conn.execute(f"DELETE FROM extractions WHERE {where_ext}", (project_id,))
-        # Extraction also derives a full-text AI screening decision per source — remove those mock rows too.
-        self._conn.execute(
-            "DELETE FROM screening_decisions WHERE reviewer_type = 'ai' AND reviewer_id LIKE 'mock:%' "
-            f"AND stage = 'full_text' AND {in_proj}",
-            (project_id,),
-        )
-        # mock extraction API-call rows (token tracking)
-        self._conn.execute(
-            "DELETE FROM api_calls WHERE project_id = ? AND provider = 'mock' AND model = 'mock-extract'",
-            (project_id,),
-        )
-        self._conn.commit()
+        with self._conn.transaction():  # partial mock cleanup would leave orphaned derived rows
+            self._conn.execute(f"DELETE FROM extractions WHERE {where_ext}", (project_id,))
+            # Extraction also derives a full-text AI screening decision per source — remove those mock rows too.
+            self._conn.execute(
+                "DELETE FROM screening_decisions WHERE reviewer_type = 'ai' AND reviewer_id LIKE 'mock:%' "
+                f"AND stage = 'full_text' AND {in_proj}",
+                (project_id,),
+            )
+            # mock extraction API-call rows (token tracking)
+            self._conn.execute(
+                "DELETE FROM api_calls WHERE project_id = ? AND provider = 'mock' AND model = 'mock-extract'",
+                (project_id,),
+            )
         return n
 
     def list_abstract_includes(self, project_id: int) -> list[Source]:

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import ALL, Input, Output, State, ctx, html, no_update
+from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.core.source import Source
 from ailr.ui._actions import _apply_resolve, _apply_undo_resolve
@@ -131,6 +131,9 @@ def build_layout(cfg: ConflictConfig) -> Any:
                 className="small text-muted mb-1",
             ),
             html.Div(count_text, id=f"{cfg.store_prefix}-counts", className="small text-muted"),
+            # Whether the cards currently show data (True) or the "enter your reviewer ID"
+            # prompt (False); None until the refresh callback has run once.
+            dcc.Store(id=f"{cfg.store_prefix}-rendered", data=None),
             html.Hr(className="mt-2 mb-3"),
             html.Div(cards, id=f"{cfg.store_prefix}-cards"),
             html.Hr(className="mt-4"),
@@ -201,21 +204,29 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         Output(f"{cfg.store_prefix}-cards", "children"),
         Output(f"{cfg.store_prefix}-counts", "children"),
         Output(f"{cfg.store_prefix}-resolved", "children"),
+        Output(f"{cfg.store_prefix}-rendered", "data"),
         Input(refresh_id, "data"),
         Input("shared-reviewer", "value"),
         Input("tags-refresh", "data"),
         Input("notes-refresh", "data"),
+        State(f"{cfg.store_prefix}-rendered", "data"),
         prevent_initial_call=True,
     )
-    def _render(_refresh, reviewer, _tr, _nr):
-        rid = (reviewer or "").strip()
-        if not rid:
+    def _render(_refresh, reviewer, _tr, _nr, rendered):
+        has_rid = bool((reviewer or "").strip())
+        # The reviewer field fires this on every keystroke, and rebuilding the cards is ~8
+        # queries. Only the empty <-> non-empty flip changes what is shown, so ignore the rest.
+        if ctx.triggered_id == "shared-reviewer" and rendered is not None and rendered == has_rid:
+            return no_update, no_update, no_update, no_update
+        if not has_rid:
             return (
                 [dbc.Alert("Enter your reviewer ID above to act as adjudicator.", color="info")],
                 "",
                 "",
+                False,
             )
-        return initial_payload(cfg)
+        cards, count_text, resolved_ui = initial_payload(cfg)
+        return cards, count_text, resolved_ui, True
 
 
 def _conflict_card(

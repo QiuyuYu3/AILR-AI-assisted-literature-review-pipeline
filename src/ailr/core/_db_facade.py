@@ -153,9 +153,11 @@ class _EngineConn:
 
     Keeps the existing call shape (`conn.execute(sql, params).fetchone()`,
     `conn.commit()`, `cur.lastrowid`) working unchanged while routing through
-    SQLAlchemy. Each thread gets its own connection; autonomous statements use the
-    original "implicit transaction until commit()" semantics, and the 6 multi-write
-    methods use the explicit `transaction()` context for atomicity.
+    SQLAlchemy. Each thread gets its own AUTOCOMMIT connection, so one statement costs
+    one round trip; anything that needs several writes to land together MUST use the
+    explicit `transaction()` context, which opens its own non-autocommit connection.
+    Consecutive statements on the thread connection are NOT atomic, and `commit()` on
+    it does nothing — it is kept only so the sqlite3-shaped call sites still read right.
     """
 
     def __init__(self, engine):
@@ -165,9 +167,11 @@ class _EngineConn:
     def _thread_conn(self):
         c = getattr(self._tls, "conn", None)
         if c is None or c.closed:
-            c = self._engine.connect()
+            # Without AUTOCOMMIT every standalone statement costs three round trips
+            # (implicit BEGIN, the statement, then ROLLBACK/COMMIT) instead of one:
+            # ~210ms vs ~70ms against a remote Postgres such as Neon.
+            c = self._engine.connect().execution_options(isolation_level="AUTOCOMMIT")
             self._tls.conn = c
-            self._tls.has_writes = False
         return c
 
     def _discard_thread_conn(self):
@@ -184,7 +188,6 @@ class _EngineConn:
             except Exception:
                 pass
         self._tls.conn = None
-        self._tls.has_writes = False
 
     def execute(self, sql, params=()):
         sql, want_id, is_write = _prepare_sql(sql)
@@ -198,9 +201,9 @@ class _EngineConn:
         except SQLAlchemyError as e:
             # A held thread-local connection can go stale when the server closes it (e.g.
             # Neon dropping an idle connection). Retry once with a fresh connection, but
-            # only for a standalone statement with no pending work — retrying mid-write or
-            # inside an explicit transaction would break atomicity.
-            if _is_disconnect(e) and self._can_retry_disconnect():
+            # only for a standalone read — a write may already have been applied server-side
+            # before the connection dropped, so retrying it could duplicate the row.
+            if _is_disconnect(e) and self._can_retry_disconnect(is_write):
                 self._discard_thread_conn()
                 try:
                     return self._execute_once(compiled, pdict, want_id, is_write)
@@ -210,11 +213,8 @@ class _EngineConn:
             self._safe_rollback()
             raise sqlite3.Error(str(e)) from e
 
-    def _can_retry_disconnect(self) -> bool:
-        return (
-            getattr(self._tls, "tx_conn", None) is None
-            and not getattr(self._tls, "has_writes", False)
-        )
+    def _can_retry_disconnect(self, is_write: bool) -> bool:
+        return not is_write and getattr(self._tls, "tx_conn", None) is None
 
     def _execute_once(self, compiled, pdict, want_id, is_write):
         tx_conn = getattr(self._tls, "tx_conn", None)
@@ -233,23 +233,14 @@ class _EngineConn:
                 rc = result.rowcount
             except Exception:
                 rc = -1
-            if tx_conn is None:
-                self._tls.has_writes = True
             return _Result(lastrowid=lastid, rowcount=rc)
-        # read
         keys = list(result.keys())
         rows = [_coerce_row(m) for m in result.mappings()]
-        if tx_conn is None and not getattr(self._tls, "has_writes", False):
-            conn.rollback()  # standalone read: don't pin a snapshot
         return _Result(rows=rows, keys=keys, rowcount=len(rows))
 
     def commit(self):
-        if getattr(self._tls, "tx_conn", None) is not None:
-            return  # the transaction() context owns the commit
-        conn = getattr(self._tls, "conn", None)
-        if conn is not None and conn.in_transaction():
-            conn.commit()
-        self._tls.has_writes = False
+        """No-op outside transaction(): the thread connection is in AUTOCOMMIT, so each
+        statement is already durable by the time it returns."""
 
     def rollback(self):
         if getattr(self._tls, "tx_conn", None) is not None:
@@ -266,17 +257,12 @@ class _EngineConn:
                     conn.rollback()
             except Exception:
                 pass
-        self._tls.has_writes = False
 
     @contextmanager
     def transaction(self):
         if getattr(self._tls, "tx_conn", None) is not None:
             yield  # already inside a transaction: reuse it
             return
-        auto = getattr(self._tls, "conn", None)
-        if auto is not None and auto.in_transaction():
-            auto.commit()  # flush any pending autonomous work first
-            self._tls.has_writes = False
         conn = self._engine.connect()
         trans = conn.begin()
         self._tls.tx_conn = conn

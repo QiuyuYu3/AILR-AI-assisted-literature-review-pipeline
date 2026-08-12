@@ -254,9 +254,9 @@ class AdminMixin:
 
     def delete_tag(self, tag_id: int) -> None:
         try:
-            self._conn.execute("DELETE FROM source_tags WHERE tag_id = ?", (tag_id,))
-            self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
-            self._conn.commit()
+            with self._conn.transaction():  # assignments + tag row must go together
+                self._conn.execute("DELETE FROM source_tags WHERE tag_id = ?", (tag_id,))
+                self._conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete tag: {e}") from e
 

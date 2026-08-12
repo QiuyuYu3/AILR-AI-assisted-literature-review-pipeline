@@ -12,6 +12,10 @@
 - Full-text conflicts cards gained the History button (all-reviewer timeline) and the "Same study as #n" badge; abstract conflicts cards now carry the "AI screening outdated" badge, so a conflict produced by a superseded prompt is visible before adjudicating.
 - Adjudicating a full-text conflict as Exclude now opens the same PRISMA exclusion-reason dialog the full-text queue uses, instead of taking a free-text rationale.
 
+### Changed
+- Every standalone statement now runs on an AUTOCOMMIT connection, cutting three network round trips per query to one; on a remote Postgres (Neon) the full-text conflicts page dropped from ~2.4s to ~0.8s and every other page benefits equally. Methods needing several writes to land together were moved onto the existing `transaction()` context.
+- Conflicts and full-text conflicts no longer rebuild the whole card list on each keystroke in the reviewer ID field.
+
 ### Fixed
 - PRISMA dropped every full-text report whose exclusion came only from adjudication: the counts were read from human exclude votes, so an assisted AI-exclude vs human-include conflict, or two 'uncertain' votes, resolved as exclude appeared in neither the included nor the excluded box. Both the report count and the per-reason breakdown now read the adjudication, whose rationale supplies the reason.
 - `ailr ui` gave up when all 25 ports it scanned fell inside one Hyper-V reservation; it now restarts the scan at each following hundred, matches werkzeug's `SO_REUSEADDR` so a port in `TIME_WAIT` from the previous run is not skipped, and gives non-Windows users an `lsof` hint instead of `netsh`.
