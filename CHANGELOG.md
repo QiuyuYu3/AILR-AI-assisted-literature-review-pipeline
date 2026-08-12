@@ -4,6 +4,7 @@
 ## [Unreleased]
 
 ### Fixed
+- The UI froze for 30 seconds and then failed every database call once ~15 web-server threads had come and gone ("QueuePool limit of size 5 overflow 10 reached"): each thread pinned a pooled connection for its lifetime and only the garbage collector gave it back. Connections are now handed back at the end of each request, connections held by dead threads are reclaimed, and the pool is larger.
 - "AI screening outdated" was on for every AI result that carries no prompt version (early runs, imported results) and for anything tagged with a version that stored no composed prompt: unknown provenance compared as the empty string, so it read as changed. Unknown is now unknown, and the same rule applies to AI extractions.
 
 ### Added

@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import threading
+import weakref
 from contextlib import contextmanager
 from datetime import date, datetime
 from functools import lru_cache
@@ -13,6 +14,7 @@ from typing import Optional
 from sqlalchemy import Integer, create_engine, event, text
 from sqlalchemy.exc import IntegrityError as _SAIntegrityError
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import TimeoutError as _SAPoolTimeout
 
 from ailr.core._db_schema import metadata
 from ailr.core.source import Source
@@ -163,16 +165,38 @@ class _EngineConn:
     def __init__(self, engine):
         self._engine = engine
         self._tls = threading.local()
+        # Thread -> its held connection. A dead thread's connection returns to the pool only
+        # when the garbage collector gets to it, and SQLAlchemy connection objects sit in
+        # reference cycles, so refcounting alone does not do it. The web server runs one thread
+        # per HTTP connection, so without an explicit reap the pool runs dry.
+        self._held: dict = {}
+        self._held_lock = threading.Lock()
+        _LIVE_FACADES.add(self)
 
     def _thread_conn(self):
         c = getattr(self._tls, "conn", None)
         if c is None or c.closed:
+            self._reap_dead_threads()
             # Without AUTOCOMMIT every standalone statement costs three round trips
             # (implicit BEGIN, the statement, then ROLLBACK/COMMIT) instead of one:
             # ~210ms vs ~70ms against a remote Postgres such as Neon.
             c = self._engine.connect().execution_options(isolation_level="AUTOCOMMIT")
             self._tls.conn = c
+            with self._held_lock:
+                self._held[threading.current_thread()] = c
         return c
+
+    def _reap_dead_threads(self) -> int:
+        with self._held_lock:
+            dead = [(t, c) for t, c in self._held.items() if not t.is_alive()]
+            for t, _ in dead:
+                del self._held[t]
+        for _, c in dead:
+            try:
+                c.close()  # returns it to the pool; the owning thread is gone
+            except Exception:
+                pass
+        return len(dead)
 
     def _discard_thread_conn(self):
         """Drop the cached thread-local connection so the next call reconnects.
@@ -182,12 +206,24 @@ class _EngineConn:
         here lets _thread_conn check out a fresh (pre-pinged) connection.
         """
         conn = getattr(self._tls, "conn", None)
+        self._tls.conn = None
+        with self._held_lock:
+            self._held.pop(threading.current_thread(), None)
         if conn is not None:
             try:
                 conn.close()
             except Exception:
                 pass
-        self._tls.conn = None
+
+    def release_thread_connection(self):
+        """Give this thread's pooled connection back. The next statement checks out a fresh one.
+
+        Called at the end of every web request: a request thread that sits idle on keep-alive
+        must not keep a pool slot. A no-op inside transaction(), which owns its own connection.
+        """
+        if getattr(self._tls, "tx_conn", None) is not None:
+            return
+        self._discard_thread_conn()
 
     def execute(self, sql, params=()):
         sql, want_id, is_write = _prepare_sql(sql)
@@ -198,6 +234,15 @@ class _EngineConn:
         except _SAIntegrityError as e:
             self._safe_rollback()
             raise sqlite3.IntegrityError(str(e)) from e
+        except _SAPoolTimeout as e:
+            # Pool exhausted. Threads that finished during the wait may still be listed as
+            # holding a connection: reap them and try once more before failing.
+            if self._reap_dead_threads():
+                try:
+                    return self._execute_once(compiled, pdict, want_id, is_write)
+                except SQLAlchemyError as e2:
+                    raise sqlite3.Error(str(e2)) from e2
+            raise sqlite3.Error(str(e)) from e
         except SQLAlchemyError as e:
             # A held thread-local connection can go stale when the server closes it (e.g.
             # Neon dropping an idle connection). Retry once with a fresh connection, but
@@ -277,14 +322,30 @@ class _EngineConn:
             conn.close()
 
     def close(self):
-        conn = getattr(self._tls, "conn", None)
-        if conn is not None:
+        with self._held_lock:
+            held = list(self._held.values())
+            self._held.clear()
+        for c in held:  # includes other threads' connections; the database is going away
             try:
-                conn.close()
+                c.close()
             except Exception:
                 pass
-            self._tls.conn = None
+        self._tls.conn = None
         self._engine.dispose()
+
+
+# Every live facade, so a web request can hand back its connections without knowing which
+# project (and therefore which Database) served it.
+_LIVE_FACADES: "weakref.WeakSet[_EngineConn]" = weakref.WeakSet()
+
+
+def release_thread_connections() -> None:
+    """Return the calling thread's pooled connection on every open database."""
+    for facade in list(_LIVE_FACADES):
+        try:
+            facade.release_thread_connection()
+        except Exception:
+            pass
 
 
 def _normalize_db_url(url: str) -> str:
@@ -299,9 +360,22 @@ def _normalize_db_url(url: str) -> str:
     return url
 
 
+_POOL_SIZE = 10
+_POOL_OVERFLOW = 20
+# The default 30s meant an exhausted pool froze the UI for half a minute before erroring.
+_POOL_TIMEOUT = 10
+
+
 def _make_engine(url: str):
     if url.startswith("sqlite"):
-        engine = create_engine(url, future=True, connect_args={"check_same_thread": False})
+        engine = create_engine(
+            url,
+            future=True,
+            connect_args={"check_same_thread": False},
+            pool_size=_POOL_SIZE,
+            max_overflow=_POOL_OVERFLOW,
+            pool_timeout=_POOL_TIMEOUT,
+        )
 
         @event.listens_for(engine, "connect")
         def _set_sqlite_pragma(dbapi_conn, _record):  # noqa: ARG001
@@ -316,7 +390,15 @@ def _make_engine(url: str):
     # breaks on PgBouncer transaction-pooling endpoints (e.g. Neon's `-pooler` host) where a
     # connection is reassigned per transaction. Disable auto-prepare so poolers work.
     connect_args = {"prepare_threshold": None} if "psycopg" in url else {}
-    return create_engine(url, future=True, pool_pre_ping=True, connect_args=connect_args)
+    return create_engine(
+        url,
+        future=True,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+        pool_size=_POOL_SIZE,
+        max_overflow=_POOL_OVERFLOW,
+        pool_timeout=_POOL_TIMEOUT,
+    )
 
 
 def _opt_col(row, name: str):

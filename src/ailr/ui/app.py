@@ -32,6 +32,7 @@ from ailr.ui import (
     template_view,
     workflow_view,
 )
+from ailr.core._db_facade import release_thread_connections
 from ailr.ui._common import triggered_click_id, workflow_summary
 from ailr.ui._project import get_project, has_project, resolve_pdf_path
 
@@ -167,6 +168,13 @@ def build_app() -> Dash:
             html.H4(f"ailr — {cfg.project.name}", className="mb-1"),
             html.P(workflow_summary(cfg), className="text-muted small mb-2"),
         ]
+
+    @app.server.teardown_request
+    def _release_db_conn(_exc=None):
+        # Werkzeug serves each HTTP connection on its own thread and the facade keeps one pooled
+        # DB connection per thread. Without handing it back here, threads idling on keep-alive
+        # hold the whole pool and the next callback dies on a checkout timeout.
+        release_thread_connections()
 
     @app.server.route("/pdf/<int:sid>")
     def _serve_pdf(sid: int):
