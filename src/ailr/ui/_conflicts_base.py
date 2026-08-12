@@ -22,6 +22,18 @@ from ailr.ui._project import get_project
 
 
 
+_STALE_BADGE = {
+    "abstract": (
+        "AI screening outdated",
+        "Criteria or the screening prompt changed since this paper was AI-screened — consider re-running before adjudicating.",
+    ),
+    "full_text": (
+        "AI extraction outdated",
+        "Criteria or the extraction prompt changed since this paper was AI-extracted — the flag_check verdict below predates the change.",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class ConflictConfig:
     prefix: str               # pattern-id 'type' prefix, e.g. "conflict" / "ft-conflict"
@@ -94,13 +106,19 @@ def initial_payload(cfg: ConflictConfig) -> tuple[Any, str, Any]:
         tags_per_source = db.get_tags_for_sources(sids)
         note_counts = db.count_notes(sids)
         companions = db.list_study_companions(sids) if cfg.show_companions else {}
-        if cfg.show_stale_badge:
+        # Scoped to the cards on screen: the project-wide scan the queues run is wasted here.
+        if not cfg.show_stale_badge:
+            stale_ids = set()
+        elif cfg.stage == "abstract":
             from ailr.ui.ai_runner import current_screening_composed
             stale_ids = db.stale_ai_screening_source_ids(
-                project.project_id, current_screening_composed(project), stage=cfg.stage
+                project.project_id, current_screening_composed(project), stage=cfg.stage, source_ids=sids
             )
         else:
-            stale_ids = set()
+            from ailr.ui.ai_runner import current_extraction_composed
+            stale_ids = db.stale_ai_extraction_source_ids(
+                project.project_id, current_extraction_composed(project), source_ids=sids
+            )
         cards = [
             _conflict_card(
                 cfg, s, human.get(s.id, []), ai_rows.get(s.id), flags.get(s.id),
@@ -276,10 +294,8 @@ def _conflict_card(
         ]
     )
 
-    stale_badge = dbc.Badge(
-        "AI screening outdated", color="warning", className="ms-1",
-        title="Criteria or the screening prompt changed since this paper was AI-screened — consider re-running before adjudicating.",
-    ) if stale else None
+    stale_label, stale_title = _STALE_BADGE[cfg.stage]
+    stale_badge = dbc.Badge(stale_label, color="warning", className="ms-1", title=stale_title) if stale else None
     study_badge = dbc.Badge(
         f"Same study as {', '.join('#' + str(c['id']) for c in companions)}",
         color="info", className="ms-1",

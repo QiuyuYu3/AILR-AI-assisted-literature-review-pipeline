@@ -239,7 +239,9 @@ class TestStaleDetection:
             ))
         assert db.stale_ai_screening_source_ids(pid, "NEW") == set()
 
-    def test_decision_without_a_version_is_stale(self, tmp_project):
+    def test_decision_without_a_version_is_unknown_not_stale(self, tmp_project):
+        """Early runs and imported results carry no prompt version. Calling those outdated badged
+        every such paper forever, which is noise that teaches you to ignore the badge."""
         db = tmp_project.db
         pid = tmp_project.project_id
         sid = _add_source(tmp_project)
@@ -247,4 +249,29 @@ class TestStaleDetection:
             decision="include", reasoning="t", reviewer_type="ai", reviewer_id="mock:mock",
             source_id=sid, stage="abstract",
         ))
-        assert db.stale_ai_screening_source_ids(pid, "CURRENT") == {sid}
+        assert db.stale_ai_screening_source_ids(pid, "CURRENT") == set()
+
+    def test_a_version_that_stored_no_composed_prompt_is_unknown_too(self, tmp_project):
+        db = tmp_project.db
+        pid = tmp_project.project_id
+        sid = _add_source(tmp_project)
+        version = db.save_prompt_version(pid, "screening", "template", composed="")
+        db.insert_screening_decision(ScreeningDecision(
+            decision="include", reasoning="t", reviewer_type="ai", reviewer_id="mock:mock",
+            source_id=sid, stage="abstract", prompt_version=version,
+        ))
+        assert db.stale_ai_screening_source_ids(pid, "CURRENT") == set()
+
+    def test_source_ids_narrows_the_scan(self, tmp_project):
+        db = tmp_project.db
+        pid = tmp_project.project_id
+        version = db.save_prompt_version(pid, "screening", "template", composed="OLD")
+        a, b = _add_source(tmp_project), _add_source(tmp_project)
+        for sid in (a, b):
+            db.insert_screening_decision(ScreeningDecision(
+                decision="include", reasoning="t", reviewer_type="ai", reviewer_id="mock:mock",
+                source_id=sid, stage="abstract", prompt_version=version,
+            ))
+        assert db.stale_ai_screening_source_ids(pid, "NEW") == {a, b}
+        assert db.stale_ai_screening_source_ids(pid, "NEW", source_ids=[a]) == {a}
+        assert db.stale_ai_screening_source_ids(pid, "NEW", source_ids=[]) == set()

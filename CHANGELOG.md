@@ -3,6 +3,12 @@
 ---
 ## [Unreleased]
 
+### Fixed
+- "AI screening outdated" was on for every AI result that carries no prompt version (early runs, imported results) and for anything tagged with a version that stored no composed prompt: unknown provenance compared as the empty string, so it read as changed. Unknown is now unknown, and the same rule applies to AI extractions.
+
+### Added
+- The full-text conflicts cards now carry the outdated badge too ("AI extraction outdated"), since their AI vote is the flag_check verdict of an extraction run. Both conflict pages check only the papers on screen instead of scanning the whole project.
+
 ### Changed
 - `ailr calibrate` is hidden from `--help`. Full calibration is retired in the UI and no queue lists the sample it draws, so the command still runs but is no longer offered; its closing hint pointed at a UI screen that no longer exists.
 - The queues' "Calibration sample" status filter is now "Last quick test": it lists the papers the most recent quick-test run covered, so it works from the UI alone. It used to read the full-calibration sample, which only `ailr calibrate` writes and which was empty in any UI-only project.

@@ -533,23 +533,36 @@ class ExtractionMixin:
             out.append(d)
         return out
 
-    def stale_ai_extraction_source_ids(self, project_id: int, current_composed: str) -> set[int]:
+    def stale_ai_extraction_source_ids(
+        self, project_id: int, current_composed: str, source_ids: Optional[list[int]] = None
+    ) -> set[int]:
         """Sources whose AI extraction was produced under a prompt/criteria that no longer matches the
-        current one (its version's resolved prompt differs from current_composed) — i.e. needs re-running."""
-        # Compare the composed prompt in SQL and return only the stale source_ids — otherwise every
-        # row ships its (large) composed-prompt text over the wire just to be diffed in Python.
+        current one — i.e. needs re-running. `source_ids` narrows the scan to the ids a page is showing.
+
+        Rows with no recorded prompt version (or a version that stored no composed prompt) are UNKNOWN
+        rather than stale; see stale_ai_screening_source_ids for why. Compared in SQL so the composed
+        prompt is not shipped per row just to be diffed in Python.
+        """
+        where = ["s.project_id = ?", "e.extractor_type = 'ai'"]
+        params: list = [project_id]
+        if source_ids is not None:
+            if not source_ids:
+                return set()
+            where.append(f"e.source_id IN ({','.join('?' for _ in source_ids)})")
+            params += list(source_ids)
         rows = self._conn.execute(
-            """
+            f"""
             SELECT DISTINCT e.source_id AS sid
             FROM extractions e
             JOIN sources s ON s.id = e.source_id
             LEFT JOIN prompt_versions pv
               ON pv.project_id = s.project_id AND pv.prompt_type = 'extraction' AND pv.version = e.prompt_version
-            WHERE s.project_id = ? AND e.extractor_type = 'ai'
+            WHERE {' AND '.join(where)}
               AND e.field_name NOT IN ('_flag_check', '_submitted')
-              AND COALESCE(pv.composed, '') != ?
+              AND COALESCE(pv.composed, '') != ''
+              AND pv.composed != ?
             """,
-            (project_id, current_composed),
+            [*params, current_composed],
         ).fetchall()
         return {r["sid"] for r in rows}
 

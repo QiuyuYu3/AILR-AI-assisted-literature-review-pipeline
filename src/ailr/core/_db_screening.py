@@ -225,23 +225,44 @@ def _assisted_conflict_sql(select_clause: str, with_order: bool = False) -> str:
 
 
 class ScreeningMixin:
-    def stale_ai_screening_source_ids(self, project_id: int, current_composed: str, stage: str = "abstract") -> set[int]:
+    def stale_ai_screening_source_ids(
+        self,
+        project_id: int,
+        current_composed: str,
+        stage: str = "abstract",
+        source_ids: Optional[list[int]] = None,
+    ) -> set[int]:
         """Sources whose latest AI screening decision was made under a prompt/criteria that no longer
-        matches the current one (its version's resolved prompt differs from current_composed)."""
+        matches the current one. `source_ids` narrows the scan to the ids a page is showing.
+
+        A decision with no recorded prompt version, or one whose version stored no composed prompt,
+        is UNKNOWN rather than stale: early runs and imported results carry no version, and calling
+        those outdated marked every such paper, which is noise that teaches you to ignore the badge.
+        The comparison happens in SQL so the composed prompt is not shipped per row just to be diffed.
+        """
+        where = ["s.project_id = ?", "d.reviewer_type = 'ai'", "d.stage = ?"]
+        params: list = [project_id, stage]
+        if source_ids is not None:
+            if not source_ids:
+                return set()
+            where.append(f"d.source_id IN ({','.join('?' for _ in source_ids)})")
+            params += list(source_ids)
         rows = self._conn.execute(
-            """
-            SELECT d.source_id AS sid, COALESCE(pv.composed, '') AS composed
+            f"""
+            SELECT d.source_id AS sid
             FROM screening_decisions d
             JOIN sources s ON s.id = d.source_id
             LEFT JOIN prompt_versions pv
               ON pv.project_id = s.project_id AND pv.prompt_type = 'screening' AND pv.version = d.prompt_version
-            WHERE s.project_id = ? AND d.reviewer_type = 'ai' AND d.stage = ?
+            WHERE {' AND '.join(where)}
+              AND COALESCE(pv.composed, '') != ''
+              AND pv.composed != ?
               AND d.id = (SELECT MAX(d2.id) FROM screening_decisions d2
                           WHERE d2.source_id = d.source_id AND d2.reviewer_type = 'ai' AND d2.stage = d.stage)
             """,
-            (project_id, stage),
+            [*params, current_composed],
         ).fetchall()
-        return {r["sid"] for r in rows if r["composed"] != current_composed}
+        return {r["sid"] for r in rows}
 
     def insert_screening_decision(self, decision: "ScreeningDecision") -> int:
         if decision.source_id is None:

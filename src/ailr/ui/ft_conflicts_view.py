@@ -20,6 +20,7 @@ _CFG = ConflictConfig(
     show_abstract_extras=True,
     show_read_fulltext=True,
     show_history=True,
+    show_stale_badge=True,
     show_companions=True,
     exclude_needs_reason=True,
 )
