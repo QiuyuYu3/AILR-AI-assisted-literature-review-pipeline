@@ -349,7 +349,7 @@ def preprocess(
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(hidden=True)  # retired with the UI's full calibration; still runs if typed
 def calibrate(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     stage: Annotated[str, typer.Option("--stage", help="screening | extraction")] = "screening",
@@ -358,11 +358,9 @@ def calibrate(
     workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save the stage's workflow.")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
 ) -> None:
-    """Sample N sources, run AI screening on them, report initial agreement vs any existing human decisions.
+    """Sample N sources, run AI screening on them, report agreement vs existing human decisions.
 
-    Retired in the UI, which now reads κ off quick-test runs instead. This writes REAL AI decisions,
-    and `ailr screen` skips any source that already has one, so papers touched here keep the prompt
-    they were judged under even after you edit it.
+    Writes REAL AI decisions, which `ailr screen` then skips. No queue lists the sample it draws.
     """
     try:
         proj = Project.load(project)
@@ -456,7 +454,7 @@ def calibrate(
             typer.echo(f"  Percent agreement: {summary.agreement:.1%}")
         else:
             typer.echo("Agreement: no paired AI+human decisions yet on this sample.")
-            typer.echo(f"  Next: `ailr ui {project}` to enter human decisions on the calibration sample.")
+            typer.echo(f"  Sample ids: calibration_samples, round {summary.sample_round}. Decide those, then re-run.")
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)

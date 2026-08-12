@@ -44,9 +44,9 @@ def test_to_reconcile_is_offered_only_for_independent_extraction():
     assert _RECONCILE_FILTER in _status_filters(_project("independent"))
 
 
-def test_to_reconcile_sits_before_the_calibration_and_all_entries():
+def test_to_reconcile_sits_before_the_quick_test_and_all_entries():
     values = [o["value"] for o in _status_filters(_project("independent"))]
-    assert values.index("to_reconcile") < values.index("calibration") < values.index("all")
+    assert values.index("to_reconcile") < values.index("quick_test") < values.index("all")
 
 
 def _write_md(root, sid, text):

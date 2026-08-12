@@ -35,12 +35,10 @@ See [workflow modes](../concepts.md#workflow-modes).
 
 ### Calibrate extraction
 
-Like screening, extraction has a **Calibration** tab with the same two modes.
+Like screening, extraction has a **Calibration** tab.
 
 - **Quick test.** Run the AI on a few papers and eyeball the extracted values before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them. Nothing is written to the review. Choose **Random sample** (N papers) or **Pick specific papers** (a searchable multi-select by author / title / DOI / id) to test on cases you care about. The test composes the *same* prompt the real run sends, additional instructions included, so what you are reading is what you will get. Results carry a **quote audit** (coverage and verbatim rate, with a per-field breakdown and the quotes that were not found in the paper), which is often the fastest way to spot a field the model is answering from memory rather than from the text.
-- **Full calibration.** Measures whether you can trust the AI's **full-text include/exclude verdict**, which it produces while extracting by re-checking each criterion against the full text. A round samples from the full-text queue and runs the real extraction on it, then waits for you: read those papers under **Full-text review → status "Calibration sample"**, decide them yourself, and κ appears against `extraction.target_kappa`. The next round samples papers you have not calibrated on before.
-
-Full calibration needs `extraction.flag_check` on, since the criterion check is where the AI's verdict comes from. Keep N small: unlike screening, each paper is a whole-paper call. The extractions it produces are real and count towards the review, so nothing is wasted. Like screening, it is off under `independent` workflow.
+To judge those same papers yourself, go to **Full-text review → status "Last quick test"**: it lists exactly the papers the most recent quick test covered. The AI's full-text verdict stays hidden on each card until you submit your own, so the comparison is a fair one. Keep N small: unlike screening, each paper is a whole-paper call.
 
 ![extraction calibration](../figures/ft_ca.png)
 

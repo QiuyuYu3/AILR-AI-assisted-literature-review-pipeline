@@ -5,7 +5,6 @@ import re
 import sqlite3
 from typing import TYPE_CHECKING, Optional
 
-from ailr.core._db_calibration import CALIBRATION_STAGE
 from ailr.core._db_facade import _row_to_source
 from ailr.core.config import team_size_for
 from ailr.core.source import Source
@@ -43,11 +42,21 @@ _FINAL_INCLUDE_PREDICATE = """
                 )
 """
 
-# The most recent calibration round for a stage. Takes (project_id, cal_stage, project_id, cal_stage).
-_LATEST_CALIBRATION_ROUND_SQL = (
-    "s.id IN (SELECT source_id FROM calibration_samples WHERE project_id = ? AND stage = ? "
-    "AND sample_round = (SELECT MAX(sample_round) FROM calibration_samples WHERE project_id = ? AND stage = ?))"
-)
+def _last_quick_test_sql(stage: str) -> tuple[str, str]:
+    """The papers the most recent quick test covered, as (sql, test_runs.stage). The sql takes
+    (project_id, test_stage).
+
+    `test_runs.stage` is a third vocabulary again: 'abstract' / 'extraction', where
+    calibration_samples says 'screening' / 'extraction'.
+    """
+    table, test_stage = (
+        ("test_decisions", "abstract") if stage == "abstract" else ("test_extractions", "extraction")
+    )
+    return (
+        f"s.id IN (SELECT source_id FROM {table} WHERE run_id = "
+        "(SELECT MAX(id) FROM test_runs WHERE project_id = ? AND stage = ?))",
+        test_stage,
+    )
 
 
 def stage_final_include_sql(stage: str, team_size: int = 1) -> str:
@@ -588,10 +597,10 @@ class ScreeningMixin:
                 "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = ?)"
             )
             params += [reviewer_id, stage]
-        elif status == "calibration":
-            where.append(_LATEST_CALIBRATION_ROUND_SQL)
-            cal_stage = CALIBRATION_STAGE.get(stage, stage)
-            params += [project_id, cal_stage, project_id, cal_stage]
+        elif status in ("quick_test", "calibration"):  # 'calibration': the old value, still in saved sessions
+            sql, test_stage = _last_quick_test_sql(stage)
+            where.append(sql)
+            params += [project_id, test_stage]
 
         kw_sql, kw_params = _keyword_filter(keyword, within)
         if kw_sql:
@@ -666,10 +675,10 @@ class ScreeningMixin:
                          "AND e.extractor_type = 'human' AND e.field_name = '_submitted' "
                          "ORDER BY e.id DESC LIMIT 1) = ?")
             params.append(reviewer_id)
-        elif status == "calibration":
-            where.append(_LATEST_CALIBRATION_ROUND_SQL)
-            cal_stage = CALIBRATION_STAGE["full_text"]
-            params += [project_id, cal_stage, project_id, cal_stage]
+        elif status in ("quick_test", "calibration"):  # 'calibration': the old value, still in saved sessions
+            sql, test_stage = _last_quick_test_sql("full_text")
+            where.append(sql)
+            params += [project_id, test_stage]
 
         kw_sql, kw_params = _keyword_filter(keyword, within)
         if kw_sql:

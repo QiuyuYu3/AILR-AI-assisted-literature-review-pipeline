@@ -78,7 +78,7 @@ def _prompt_version_options() -> list[Any]:
 _STATUS_FILTERS = [
     {"label": "To screen", "value": "to_screen"},
     {"label": "Reviewed by me", "value": "reviewed"},
-    {"label": "Calibration sample", "value": "calibration"},
+    {"label": "Last quick test", "value": "quick_test"},
     {"label": "All", "value": "all"},
 ]
 
