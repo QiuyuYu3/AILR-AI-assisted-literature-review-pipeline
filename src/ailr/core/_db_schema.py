@@ -120,6 +120,33 @@ Table(
 )
 
 Table(
+    "cross_checks",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("source_id", Integer, ForeignKey("sources.id"), nullable=False),
+    Column("stage", Text, nullable=False),  # abstract | full_text | extraction
+    Column("target_type", Text, nullable=False),  # ai | human — whose record was checked
+    Column("target_id", Text, nullable=False),
+    # The exact row checked (extractions.id / screening_decisions.id). A re-run appends a new row,
+    # so a check whose target_row_id is behind the latest row for that field is stale, not wrong.
+    Column("target_row_id", Integer),
+    Column("field_name", Text),  # extraction only; NULL for screening
+    Column("checker_type", Text, nullable=False),  # ai | human
+    Column("checker_id", Text, nullable=False),
+    Column("check_kind", Text, nullable=False),  # deterministic | llm
+    Column("verdict", Text, nullable=False),  # agree | disagree | uncertain
+    Column("issue_code", Text),  # deterministic layer only
+    Column("reason", Text),
+    Column("suggested_value", Text),
+    Column("confidence", Float),
+    Column("llm_params", Text),
+    Column("prompt_version", Text),
+    Column("raw_output", Text),
+    Column("timestamp", DateTime, server_default=text("CURRENT_TIMESTAMP")),
+    Index("idx_cross_checks_lookup", "source_id", "stage", "target_type"),
+)
+
+Table(
     "prompt_versions",
     metadata,
     Column("project_id", Integer, nullable=False),

@@ -42,7 +42,7 @@ from ailr.tasks import (
     ScreeningTask,
 )
 
-__version__ = "0.33.0"
+__version__ = "0.35.0"
 
 __all__ = [
     "Project",

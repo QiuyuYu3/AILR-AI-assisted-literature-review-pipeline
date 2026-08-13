@@ -197,6 +197,13 @@ def layout() -> Any:
                                         ),
                                         style={"display": "inline-block"},
                                     ),
+                                    dbc.Button(
+                                        "Cross-check AI extraction",
+                                        id="extract-crosscheck",
+                                        size="sm",
+                                        color="link",
+                                        className="p-0 ms-3 text-secondary",
+                                    ),
                                     # Only shown when you hold an unsubmitted claim on this paper.
                                     html.Div(
                                         dcc.ConfirmDialogProvider(
@@ -213,6 +220,7 @@ def layout() -> Any:
                                 className="mt-1 mb-1",
                             ),
                             html.Div(id="extract-rerun-status", className="small mb-1"),
+                            html.Div(id="extract-crosscheck-status", className="small mb-1"),
                             dcc.Interval(id="extract-rerun-poll", interval=1500, disabled=True),
                             html.Div(id="extract-ai-panel"),
                             html.Hr(),
@@ -382,6 +390,36 @@ def register_callbacks(app: Any) -> None:
             # Refresh so the form and the AI reference pick up the new extraction.
             return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}
         return no_update, True, no_update
+
+    # Deterministic checks make no API calls and read one markdown file, so this runs inline
+    # rather than going through ai_runner.
+    @app.callback(
+        Output("extract-crosscheck-status", "children"),
+        Output("extract-refresh", "data", allow_duplicate=True),
+        Input("extract-crosscheck", "n_clicks"),
+        State("extract-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_one(n, store):
+        sid = (store or {}).get("sid")
+        if not n or not sid:
+            return no_update, no_update
+        from ailr.tasks.crosscheck import DeterministicCrossCheckTask
+
+        try:
+            summary = DeterministicCrossCheckTask(get_project()).run([int(sid)])
+        except Exception as e:
+            return dbc.Alert(f"Cross-check failed: {e}", color="danger", className="py-1 mb-0"), no_update
+        if summary.skipped_no_extraction:
+            return dbc.Alert("No AI extraction to check yet.", color="secondary", className="py-1 mb-0"), no_update
+        if summary.skipped_no_markdown:
+            return dbc.Alert("No converted full text for this paper.", color="warning", className="py-1 mb-0"), no_update
+        if not summary.findings:
+            msg, color = "Cross-check found nothing to flag.", "success"
+        else:
+            detail = ", ".join(f"{code}: {n}" for code, n in sorted(summary.per_issue.items()))
+            msg, color = f"{summary.findings} finding(s) — {detail}", "warning"
+        return dbc.Alert(msg, color=color, className="py-1 mb-0"), {"ts": time.time()}
 
     def _extraction_started_alert(mock: Any, force: bool) -> Any:
         started = ai_runner.start_extraction(get_project(), bool(mock), force=force)
@@ -1269,7 +1307,56 @@ def _desc(field: FieldSpec) -> Any:
     return html.Span()
 
 
-def _ai_row_block(row: dict) -> Any:
+_ISSUE_LABEL = {
+    "quote_not_found": "quote not found",
+    "value_not_in_quote": "value not in quote",
+    "invalid_enum": "not an allowed option",
+    "empty_required": "required, empty",
+}
+
+
+def _crosscheck_badge(findings: list[dict] | None) -> Any:
+    """Advisory marker for one field. A cross-check never blocks anything, and quote misses in
+    particular can come from PDF conversion artifacts, so this stays a prompt to look, not a verdict."""
+    if not findings:
+        return None
+    flagged = [f for f in findings if (f.get("verdict") or "") != "agree"]
+    if not flagged:
+        return dbc.Badge("checked", color="light", className="ms-2 text-muted fw-normal")
+    labels = ", ".join(dict.fromkeys(_ISSUE_LABEL.get(f.get("issue_code"), "flagged") for f in flagged))
+    return html.Details(
+        [
+            html.Summary(
+                dbc.Badge(labels, color="warning", className="ms-2 fw-normal"),
+                style={"display": "inline", "cursor": "pointer", "listStyle": "none"},
+            ),
+        ]
+        + [html.Div(f.get("reason") or "", className="small text-muted ms-3") for f in flagged],
+        style={"display": "inline"},
+    )
+
+
+def _crosscheck_summary(findings: dict[str, list[dict]]) -> Any:
+    """Panel-level line. Also the only place a field the AI never extracted can surface, since
+    those have no row of their own to hang a badge on."""
+    flagged = sorted(
+        name for name, rows in findings.items()
+        if any((r.get("verdict") or "") != "agree" for r in rows)
+    )
+    if not flagged:
+        return html.Div("Cross-checked, nothing flagged.", className="small text-muted mb-2")
+    return html.Div(
+        [
+            html.Span(f"Cross-check flagged {len(flagged)} field(s): ", className="fw-bold"),
+            html.Span(", ".join(flagged)),
+            html.Div("Advisory only. Quote misses can also come from PDF conversion, so check the paper before changing a value.",
+                     className="text-muted fst-italic"),
+        ],
+        className="small mb-2",
+    )
+
+
+def _ai_row_block(row: dict, findings: list[dict] | None = None) -> Any:
     """One field of an AI extraction: value, its quote(s), and confidence."""
     quotes: list = []
     clean = _strip_nested_quotes(row["value"], quotes)
@@ -1279,6 +1366,7 @@ def _ai_row_block(row: dict) -> Any:
         html.Div([
             html.Strong(f"{row['field_name']}: "),
             html.Code(json.dumps(clean, ensure_ascii=False), style={"whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
+            _crosscheck_badge(findings),
         ]),
     ]
     if quotes:
@@ -1328,8 +1416,11 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str, *,
     if workflow == "independent" and not db.has_submitted(src.id, rid):
         return dbc.Alert("AI extraction hidden until you submit (workflow: independent).", color="secondary")
 
+    findings = db.cross_checks_by_field(src.id, target_type="ai")
     items: list[Any] = [html.H6("AI extraction")]
-    items.extend(_ai_row_block(row) for row in ai_rows)
+    if findings:
+        items.append(_crosscheck_summary(findings))
+    items.extend(_ai_row_block(row, findings.get(row["field_name"])) for row in ai_rows)
     if flag_check:
         from ailr.ui._common import criterion_names
 

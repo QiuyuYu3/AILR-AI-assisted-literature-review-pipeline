@@ -17,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from ailr.core import audit
 from ailr.core._db_admin import AdminMixin
 from ailr.core._db_calibration import CalibrationMixin
+from ailr.core._db_crosscheck import CrossCheckMixin
 from ailr.core._db_extraction import ExtractionMixin
 from ailr.core._db_facade import _EngineConn, _make_engine, _normalize_db_url
 from ailr.core._db_schema import metadata
@@ -31,6 +32,7 @@ class Database(
     ScreeningMixin,
     ScreeningAuxMixin,
     ExtractionMixin,
+    CrossCheckMixin,
     CalibrationMixin,
     AdminMixin,
 ):

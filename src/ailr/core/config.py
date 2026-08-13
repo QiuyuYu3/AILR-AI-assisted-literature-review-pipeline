@@ -103,6 +103,18 @@ class ExtractionConfig(BaseModel):
     workers: int = 2  # concurrent LLM extraction calls (1 = serial; full-paper prompts are large)
 
 
+class CrossCheckConfig(BaseModel):
+    """Post-hoc verification of records that already exist. Orthogonal to the stage workflows:
+    any of them can turn it on, and it never feeds conflict resolution or agreement statistics."""
+    deterministic: bool = True
+    llm_enabled: bool = False
+    targets: list[Literal["ai", "human"]] = Field(default_factory=lambda: ["ai"])
+    llm: Optional[StageLLMOverride] = None
+    # A checker on the same model as the extractor agrees with itself far more often than an
+    # independent one would, which makes the agreement rate it produces unreportable.
+    allow_same_model: bool = False
+
+
 class PreprocessConfig(BaseModel):
     pdf_backend: Literal["pymupdf", "marker", "grobid"] = "pymupdf"
     strip_references: bool = True
@@ -127,6 +139,7 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     screening: ScreeningConfig = Field(default_factory=ScreeningConfig)
     extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
+    crosscheck: CrossCheckConfig = Field(default_factory=CrossCheckConfig)
     preprocess: PreprocessConfig = Field(default_factory=PreprocessConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
@@ -218,6 +231,28 @@ def resolve_stage_llm(top_level: LLMConfig, override: Optional[StageLLMOverride]
     fields = top_level.model_dump()
     fields.update(override.model_dump(exclude_none=True))
     return LLMConfig(**fields)
+
+
+def crosscheck_llm_blocked(config: "Config", stage: str = "extraction") -> Optional[str]:
+    """Why the LLM cross-check must not run, or None when it may. A checker sharing the model it
+    checks is the failure mode worth refusing by default, not just warning about."""
+    cc = config.crosscheck
+    if not cc.llm_enabled:
+        return "LLM cross-check is disabled (crosscheck.llm_enabled)."
+    checker = resolve_stage_llm(config.llm, cc.llm)
+    if not checker.model:
+        return "No cross-check model configured (crosscheck.llm.model)."
+    if cc.allow_same_model:
+        return None
+    stage_override = config.screening.llm if stage != "extraction" else config.extraction.llm
+    target = resolve_stage_llm(config.llm, stage_override)
+    if (checker.provider, checker.model) == (target.provider, target.model):
+        return (
+            f"Cross-check model is the same as the {stage} model "
+            f"({checker.provider}:{checker.model}). Pick a different model, or set "
+            f"crosscheck.allow_same_model to override."
+        )
+    return None
 
 
 def _edit_config_block(project_dir: Path, key: str, mutate) -> None:
