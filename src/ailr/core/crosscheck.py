@@ -4,9 +4,8 @@ No LLM involved. Every check is a string or schema comparison, so running one is
 verdict is reproducible. These findings are advisory: they flag a record worth a second look,
 they never block a submission.
 
-Quote matching is not reimplemented here — ailr.quote_audit already does it, including the
-'...' elision fragments and PDF typography folding. This module turns those matches, plus the
-schema checks, into per-field findings that get stored and shown against the record they judge.
+Quote matching lives in ailr.quote_audit; this module turns its results, plus the schema
+checks, into stored per-field findings.
 """
 
 from dataclasses import dataclass

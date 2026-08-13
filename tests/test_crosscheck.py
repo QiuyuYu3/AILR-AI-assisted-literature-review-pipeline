@@ -149,36 +149,58 @@ def test_clean_fields_get_an_explicit_agree_row():
 
 # ----- Storage -----
 
-def _seed_extraction(db, project_id, quote="We used a within-subjects design"):
+AI_ID = "anthropic:x"
+
+
+def _seed_extraction(db, project_id, extractor_type="ai", extractor_id=AI_ID, field="design"):
     sid = db.insert_source(Source(title="A paper", project_id=project_id))
     row_id = db.insert_extraction(ExtractionResult(
-        extractor_type="ai", extractor_id="anthropic:x", field_name="design",
-        value="within-subjects", source_quote=quote, source_id=sid,
+        extractor_type=extractor_type, extractor_id=extractor_id, field_name=field,
+        value="within-subjects", source_quote="We used a within-subjects design", source_id=sid,
     ))
     return sid, row_id
 
 
+def _finding(sid, row_id, field="design", verdict="disagree", code=QUOTE_NOT_FOUND,
+             target_type="ai", target_id=AI_ID):
+    return CrossCheckRecord(
+        source_id=sid, stage="extraction", target_type=target_type, target_id=target_id,
+        target_row_id=row_id, field_name=field, checker_type="ai",
+        checker_id="ailr:deterministic", check_kind="deterministic", verdict=verdict,
+        issue_code=code, reason="because",
+    )
+
+
+def _store(db, sid, records, target_type="ai", target_id=AI_ID):
+    db.replace_cross_checks(sid, "extraction", target_type, target_id, "deterministic", records)
+
+
 def test_replace_cross_checks_supersedes_the_previous_run(db, tmp_project):
     sid, row_id = _seed_extraction(db, tmp_project.project_id)
-    first = [CrossCheckRecord(
-        source_id=sid, stage="extraction", target_type="ai", target_id="anthropic:x",
-        target_row_id=row_id, field_name="design", checker_type="ai",
-        checker_id="ailr:deterministic", check_kind="deterministic", verdict="disagree",
-        issue_code=QUOTE_NOT_FOUND, reason="nope",
-    )]
-    db.replace_cross_checks(sid, "extraction", "ai", "deterministic", first)
-    db.replace_cross_checks(sid, "extraction", "ai", "deterministic", [])
+    _store(db, sid, [_finding(sid, row_id)])
+    _store(db, sid, [])
     assert db.get_cross_checks(sid) == []
+
+
+def test_one_extractors_findings_do_not_clear_anothers(db, tmp_project):
+    """Two humans can hold rows for the same paper at once; checking one must not wipe the other."""
+    sid, amber_row = _seed_extraction(db, tmp_project.project_id, "human", "amber")
+    bo_row = db.insert_extraction(ExtractionResult(
+        extractor_type="human", extractor_id="bo", field_name="design",
+        value="between", source_quote="nope", source_id=sid,
+    ))
+    _store(db, sid, [_finding(sid, amber_row, target_type="human", target_id="amber")],
+           target_type="human", target_id="amber")
+    _store(db, sid, [_finding(sid, bo_row, target_type="human", target_id="bo")],
+           target_type="human", target_id="bo")
+
+    stored = {r["target_id"] for r in db.get_cross_checks(sid)}
+    assert stored == {"amber", "bo"}
 
 
 def test_cross_checks_by_field_groups_live_findings(db, tmp_project):
     sid, row_id = _seed_extraction(db, tmp_project.project_id)
-    db.replace_cross_checks(sid, "extraction", "ai", "deterministic", [CrossCheckRecord(
-        source_id=sid, stage="extraction", target_type="ai", target_id="anthropic:x",
-        target_row_id=row_id, field_name="design", checker_type="ai",
-        checker_id="ailr:deterministic", check_kind="deterministic", verdict="disagree",
-        issue_code=QUOTE_NOT_FOUND, reason="not found",
-    )])
+    _store(db, sid, [_finding(sid, row_id)])
     grouped = db.cross_checks_by_field(sid)
     assert list(grouped) == ["design"]
     assert grouped["design"][0]["issue_code"] == QUOTE_NOT_FOUND
@@ -186,16 +208,11 @@ def test_cross_checks_by_field_groups_live_findings(db, tmp_project):
 
 def test_a_finding_goes_stale_when_the_row_it_judged_is_re_extracted(db, tmp_project):
     sid, row_id = _seed_extraction(db, tmp_project.project_id)
-    db.replace_cross_checks(sid, "extraction", "ai", "deterministic", [CrossCheckRecord(
-        source_id=sid, stage="extraction", target_type="ai", target_id="anthropic:x",
-        target_row_id=row_id, field_name="design", checker_type="ai",
-        checker_id="ailr:deterministic", check_kind="deterministic", verdict="disagree",
-        issue_code=QUOTE_NOT_FOUND, reason="not found",
-    )])
+    _store(db, sid, [_finding(sid, row_id)])
     assert db.get_cross_checks(sid)[0]["stale"] is False
 
     db.insert_extraction(ExtractionResult(
-        extractor_type="ai", extractor_id="anthropic:x", field_name="design",
+        extractor_type="ai", extractor_id=AI_ID, field_name="design",
         value="between-subjects", source_quote="a later run", source_id=sid,
     ))
     assert db.get_cross_checks(sid)[0]["stale"] is True
@@ -204,17 +221,68 @@ def test_a_finding_goes_stale_when_the_row_it_judged_is_re_extracted(db, tmp_pro
 
 def test_cross_check_counts_ignores_agreeing_rows(db, tmp_project):
     sid, row_id = _seed_extraction(db, tmp_project.project_id)
-    db.replace_cross_checks(sid, "extraction", "ai", "deterministic", [
-        CrossCheckRecord(
-            source_id=sid, stage="extraction", target_type="ai", target_id="anthropic:x",
-            target_row_id=row_id, field_name="design", checker_type="ai",
-            checker_id="ailr:deterministic", check_kind="deterministic", verdict="agree",
-        ),
-        CrossCheckRecord(
-            source_id=sid, stage="extraction", target_type="ai", target_id="anthropic:x",
-            target_row_id=row_id, field_name="sample_size", checker_type="ai",
-            checker_id="ailr:deterministic", check_kind="deterministic", verdict="disagree",
-            issue_code=EMPTY_REQUIRED, reason="empty",
-        ),
+    _store(db, sid, [
+        _finding(sid, row_id, verdict="agree", code=None),
+        _finding(sid, row_id, field="sample_size", code=EMPTY_REQUIRED),
     ])
     assert db.cross_check_counts([sid]) == {sid: 1}
+
+
+# ----- Task -----
+
+def _write_markdown(project, source_id, text=PAPER):
+    path = project.root / "data" / "markdown" / f"{source_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_targets_decides_whose_extraction_is_checked(tmp_project):
+    """`targets` is the whole point of the setting: with both on, the AI and each human get their
+    own stored findings; with only 'ai' on, the human's rows are left alone."""
+    from ailr.tasks.crosscheck import DeterministicCrossCheckTask
+
+    db = tmp_project.db
+    sid = db.insert_source(Source(title="A paper", project_id=tmp_project.project_id))
+    _write_markdown(tmp_project, sid)
+    for etype, eid in (("ai", AI_ID), ("human", "amber")):
+        db.insert_extraction(ExtractionResult(
+            extractor_type=etype, extractor_id=eid, field_name="design",
+            value="within-subjects", source_quote="a quote that is not in the paper", source_id=sid,
+        ))
+
+    summary = DeterministicCrossCheckTask(tmp_project).run([sid], targets=["ai", "human"])
+    assert summary.checked == 2
+    assert summary.sources == 1
+    assert {r["target_type"] for r in db.get_cross_checks(sid)} == {"ai", "human"}
+
+    db.delete_cross_checks(sid)
+    DeterministicCrossCheckTask(tmp_project).run([sid], targets=["ai"])
+    assert {r["target_type"] for r in db.get_cross_checks(sid)} == {"ai"}
+
+
+def test_task_skips_a_paper_with_no_converted_full_text(tmp_project):
+    from ailr.tasks.crosscheck import DeterministicCrossCheckTask
+
+    db = tmp_project.db
+    sid = db.insert_source(Source(title="No markdown", project_id=tmp_project.project_id))
+    db.insert_extraction(ExtractionResult(
+        extractor_type="ai", extractor_id=AI_ID, field_name="design",
+        value="within", source_quote="q", source_id=sid,
+    ))
+    summary = DeterministicCrossCheckTask(tmp_project).run([sid], targets=["ai"])
+    assert summary.skipped_no_markdown == 1
+    assert summary.checked == 0
+    assert db.get_cross_checks(sid) == []
+
+
+def test_cross_check_counts_ignores_stale_findings(db, tmp_project):
+    """The queue filter and the badges have to agree on what counts as an open finding."""
+    sid, row_id = _seed_extraction(db, tmp_project.project_id)
+    _store(db, sid, [_finding(sid, row_id)])
+    assert db.cross_check_counts([sid]) == {sid: 1}
+
+    db.insert_extraction(ExtractionResult(
+        extractor_type="ai", extractor_id=AI_ID, field_name="design",
+        value="between-subjects", source_quote="a later run", source_id=sid,
+    ))
+    assert db.cross_check_counts([sid]) == {}

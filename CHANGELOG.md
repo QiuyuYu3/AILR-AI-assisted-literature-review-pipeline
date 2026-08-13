@@ -3,12 +3,21 @@
 ---
 ## [Unreleased]
 
+### Added
+
+
+
+
 ---
 ## [0.35.0] – 2026-08-12
 
 ### Added
 - Cross-check: a per-field verification pass over an AI extraction, stored in a new `cross_checks` table and shown as advisory badges in the extraction view's AI panel. This first layer is deterministic (verbatim quotes, enum values, empty required fields) so it makes no API calls; findings never block a submission, and a finding goes stale when the row it judged is re-extracted. Configured under `crosscheck` in `lit_review.yaml`, on by default.
 
+- Cross-check can run over the whole project at once (AI extraction page), and `crosscheck.targets` now decides whose extractions are read — AI, humans, or both — with a switch for it under Settings -> Cross-check. Each extractor's findings are stored separately, so checking one human's rows no longer clears another's. The full-text queue gains a "Cross-check flagged" filter and the dashboard's extraction card counts flagged papers; both ignore findings that went stale.
+
+### Removed
+- `crosscheck.deterministic`. The deterministic layer runs on demand and costs nothing, so not pressing the button was already the off switch.
 ---
 ## [0.34.0] – 2026-08-12
 

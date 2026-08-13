@@ -105,6 +105,26 @@ def start_preprocess(project: Any, force: bool = False, only_ids=None) -> bool:
     return _start("preprocess", _run_preprocess, project, force, only_ids)
 
 
+def start_crosscheck(project: Any, source_ids=None) -> bool:
+    """Deterministic cross-check over the whole project. No LLM involved, but it reads a markdown
+    file per paper, so it runs in a thread like the rest rather than blocking the callback."""
+    return _start("crosscheck", _run_crosscheck, project, source_ids)
+
+
+def _run_crosscheck(key: str, project: Any, source_ids) -> None:
+    try:
+        from ailr.tasks.crosscheck import DeterministicCrossCheckTask
+
+        if source_ids is None:
+            source_ids = [s.id for s in project.db.list_sources_with_markdown(project.project_id)]
+        summary = DeterministicCrossCheckTask(project).run(source_ids, on_progress=_progress_cb(key))
+        with _lock:
+            _jobs[key].update({"running": False, "summary": summary.text()})
+    except Exception as e:
+        with _lock:
+            _jobs[key].update({"running": False, "error": str(e)})
+
+
 def _run_preprocess(key: str, project: Any, force: bool, only_ids) -> None:
     try:
         from ailr.tasks.preprocess import PreprocessTask

@@ -36,21 +36,19 @@ class CrossCheckMixin:
         source_id: int,
         stage: str,
         target_type: str,
+        target_id: str,
         check_kind: str,
         records: list[CrossCheckRecord],
     ) -> int:
-        """Swap in a fresh set of findings for one (source, stage, target, kind).
-
-        Re-running a check supersedes the previous run rather than accumulating alongside it, so
-        the delete and the insert have to land together.
-        """
+        """Swap in a fresh set of findings, replacing the previous run's. target_id is part of the
+        key: a source can have several human extractors, and one's must not clear another's."""
         group = "(" + ",".join("?" for _ in _COLUMNS) + ")"
         try:
             with self._conn.transaction():
                 self._conn.execute(
                     "DELETE FROM cross_checks WHERE source_id = ? AND stage = ? "
-                    "AND target_type = ? AND check_kind = ?",
-                    (source_id, stage, target_type, check_kind),
+                    "AND target_type = ? AND target_id = ? AND check_kind = ?",
+                    (source_id, stage, target_type, target_id, check_kind),
                 )
                 if records:
                     params: list = []
@@ -73,12 +71,14 @@ class CrossCheckMixin:
     ) -> list[dict]:
         """Findings for a source, each carrying `stale`: True when the record it checked has since
         been re-run, so the finding describes a row that is no longer live."""
+        # A re-run retypes old AI rows, so 'ai' alone finds the live one; humans need extractor_id.
         sql = """
             SELECT c.*, (
                 SELECT MAX(e.id) FROM extractions e
                 WHERE e.source_id = c.source_id
                   AND e.field_name = c.field_name
                   AND e.extractor_type = c.target_type
+                  AND (c.target_type = 'ai' OR e.extractor_id = c.target_id)
             ) AS latest_row_id
             FROM cross_checks c
             WHERE c.source_id = ?
@@ -110,12 +110,12 @@ class CrossCheckMixin:
         return out
 
     def cross_checks_by_field(
-        self, source_id: int, target_type: str = "ai"
+        self, source_id: int, target_type: str = "ai", target_id: Optional[str] = None
     ) -> dict[str, list[dict]]:
         """Extraction findings grouped by field, for the per-field badges in the extraction view."""
         grouped: dict[str, list[dict]] = {}
         for row in self.get_cross_checks(source_id, stage="extraction", target_type=target_type):
-            if row.get("stale"):
+            if row.get("stale") or (target_id and row.get("target_id") != target_id):
                 continue
             grouped.setdefault(row.get("field_name") or "", []).append(row)
         return grouped
@@ -123,16 +123,25 @@ class CrossCheckMixin:
     def cross_check_counts(
         self, source_ids: list[int], stage: str = "extraction", target_type: str = "ai"
     ) -> dict[int, int]:
-        """Open (non-agreeing) finding counts per source, for queue filters and badges."""
+        """Open finding counts per source, for queue filters and badges. Stale findings are left
+        out for the same reason the badges hide them: they judge a row that no longer exists."""
         if not source_ids:
             return {}
         placeholders = ",".join("?" for _ in source_ids)
         rows = self._conn.execute(
             f"""
-            SELECT source_id, COUNT(*) AS n FROM cross_checks
-            WHERE stage = ? AND target_type = ? AND verdict != 'agree'
-              AND source_id IN ({placeholders})
-            GROUP BY source_id
+            SELECT c.source_id, COUNT(*) AS n FROM cross_checks c
+            WHERE c.stage = ? AND c.target_type = ? AND c.verdict != 'agree'
+              AND c.source_id IN ({placeholders})
+              AND NOT EXISTS (
+                  SELECT 1 FROM extractions e
+                  WHERE e.source_id = c.source_id
+                    AND e.field_name = c.field_name
+                    AND e.extractor_type = c.target_type
+                    AND (c.target_type = 'ai' OR e.extractor_id = c.target_id)
+                    AND e.id > c.target_row_id
+              )
+            GROUP BY c.source_id
             """,
             [stage, target_type, *source_ids],
         ).fetchall()

@@ -106,9 +106,10 @@ class ExtractionConfig(BaseModel):
 class CrossCheckConfig(BaseModel):
     """Post-hoc verification of records that already exist. Orthogonal to the stage workflows:
     any of them can turn it on, and it never feeds conflict resolution or agreement statistics."""
-    deterministic: bool = True
-    llm_enabled: bool = False
+    # Which side's records get checked. The deterministic layer is free and runs on demand, so
+    # there is no separate on/off for it — not pressing the button is the off switch.
     targets: list[Literal["ai", "human"]] = Field(default_factory=lambda: ["ai"])
+    llm_enabled: bool = False
     llm: Optional[StageLLMOverride] = None
     # A checker on the same model as the extractor agrees with itself far more often than an
     # independent one would, which makes the agreement rate it produces unreportable.
@@ -276,6 +277,12 @@ def _edit_config_block(project_dir: Path, key: str, mutate) -> None:
 
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+
+
+def save_crosscheck_targets(project_dir: Path, targets: list[str]) -> None:
+    """Update `crosscheck.targets` in lit_review.yaml: whose records the cross-check reads."""
+    allowed = [t for t in targets if t in ("ai", "human")]
+    _edit_config_block(project_dir, "crosscheck", lambda block: block.update({"targets": allowed}))
 
 
 def save_llm_config(

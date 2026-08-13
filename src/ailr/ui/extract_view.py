@@ -73,6 +73,15 @@ def ai_extraction_panel() -> list[Any]:
         ),
         html.Div(id="extract-ai-status", className="small mt-2"),
         dcc.Interval(id="extract-ai-poll", interval=1200, disabled=True),
+        html.Hr(className="my-2"),
+        dbc.Label("Cross-check", className="fw-bold"),
+        html.P("Checks extractions already in the project against the paper text: quotes matched verbatim, "
+               "enum values, required fields left empty. No API calls. Findings show as badges in the AI panel "
+               "when you open a paper; they are advisory and never block a submission.",
+               className="text-muted small mb-1"),
+        dbc.Button("Cross-check all extractions", id="extract-crosscheck-all", color="secondary", outline=True, size="sm"),
+        html.Div(id="extract-crosscheck-all-status", className="small mt-2"),
+        dcc.Interval(id="extract-crosscheck-all-poll", interval=1200, disabled=True),
         dcc.ConfirmDialogProvider(
             dbc.Button("Clear mock AI results", color="link", size="sm", className="text-danger p-0 mt-2"),
             id="extract-clear-mock",
@@ -410,16 +419,41 @@ def register_callbacks(app: Any) -> None:
             summary = DeterministicCrossCheckTask(get_project()).run([int(sid)])
         except Exception as e:
             return dbc.Alert(f"Cross-check failed: {e}", color="danger", className="py-1 mb-0"), no_update
-        if summary.skipped_no_extraction:
-            return dbc.Alert("No AI extraction to check yet.", color="secondary", className="py-1 mb-0"), no_update
-        if summary.skipped_no_markdown:
-            return dbc.Alert("No converted full text for this paper.", color="warning", className="py-1 mb-0"), no_update
-        if not summary.findings:
-            msg, color = "Cross-check found nothing to flag.", "success"
-        else:
-            detail = ", ".join(f"{code}: {n}" for code, n in sorted(summary.per_issue.items()))
-            msg, color = f"{summary.findings} finding(s) — {detail}", "warning"
-        return dbc.Alert(msg, color=color, className="py-1 mb-0"), {"ts": time.time()}
+        if not summary.checked:
+            return dbc.Alert(summary.text(), color="secondary", className="py-1 mb-0"), no_update
+        color = "warning" if summary.findings else "success"
+        return dbc.Alert(summary.text(), color=color, className="py-1 mb-0"), {"ts": time.time()}
+
+    @app.callback(
+        Output("extract-crosscheck-all-poll", "disabled"),
+        Output("extract-crosscheck-all-status", "children"),
+        Input("extract-crosscheck-all", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_all(n):
+        if not n:
+            return no_update, no_update
+        if not ai_runner.start_crosscheck(get_project()):
+            return True, dbc.Alert("A cross-check run is already in progress.", color="warning", className="py-1 mb-0")
+        return False, dbc.Alert("Cross-checking every extraction…", color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output("extract-crosscheck-all-status", "children", allow_duplicate=True),
+        Output("extract-crosscheck-all-poll", "disabled", allow_duplicate=True),
+        Input("extract-crosscheck-all-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_all_poll(_n):
+        st = ai_runner.get_status("crosscheck")
+        if st.get("running"):
+            done, total = st.get("done", 0), st.get("total", 0)
+            label = f"Cross-checking… {done}/{total}" if total else "Cross-checking…"
+            return html.Small(label, className="text-muted"), False
+        if st.get("error"):
+            return dbc.Alert(f"Cross-check failed: {st['error']}", color="danger", className="py-1 mb-0"), True
+        if st.get("summary"):
+            return dbc.Alert(st["summary"], color="info", className="py-1 mb-0"), True
+        return no_update, True
 
     def _extraction_started_alert(mock: Any, force: bool) -> Any:
         started = ai_runner.start_extraction(get_project(), bool(mock), force=force)

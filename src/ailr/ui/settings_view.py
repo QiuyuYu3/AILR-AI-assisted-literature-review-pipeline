@@ -7,7 +7,12 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html, no_update
 
-from ailr.core.config import resolve_stage_llm, save_project_type, save_stage_llm_config
+from ailr.core.config import (
+    resolve_stage_llm,
+    save_crosscheck_targets,
+    save_project_type,
+    save_stage_llm_config,
+)
 from ailr.extraction import (
     compose_extraction_prompt,
     compose_schema,
@@ -213,6 +218,27 @@ def layout() -> Any:
         html.Div(id="settings-stage-feedback", className="small mt-2"),
     ]
 
+    crosscheck_block = [
+        html.Small(
+            "Cross-check verifies extractions that already exist against the paper text (quotes matched "
+            "verbatim, enum values, empty required fields). It makes no API calls, produces advisory "
+            "findings only, and never feeds conflict resolution or agreement statistics. Run it from the "
+            "AI extraction page.",
+            className="text-muted d-block mt-3 mb-2",
+        ),
+        dbc.Checklist(
+            id="settings-crosscheck-targets",
+            options=[
+                {"label": "Check AI extractions", "value": "ai"},
+                {"label": "Check human extractions", "value": "human"},
+            ],
+            value=list(project.config.crosscheck.targets),
+            switch=True,
+        ),
+        html.Div(dbc.Button("Save cross-check", id="settings-crosscheck-save", color="primary", size="sm", className="mt-2")),
+        html.Div(id="settings-crosscheck-feedback", className="small mt-2"),
+    ]
+
     prompts_block = [
         html.P(
             [
@@ -277,6 +303,7 @@ def layout() -> Any:
         [
             dbc.Tab(html.Div(project_block, className="mt-3"), label="Project", tab_id="settings-tab-project"),
             dbc.Tab(html.Div(models_block, className="mt-3"), label="Models", tab_id="settings-tab-models"),
+            dbc.Tab(html.Div(crosscheck_block, className="mt-3"), label="Cross-check", tab_id="settings-tab-crosscheck"),
             dbc.Tab(html.Div(prompts_block, className="mt-3"), label="Prompts", tab_id="settings-tab-prompts"),
             dbc.Tab(html.Div(danger_block, className="mt-3"), label="Danger zone", tab_id="settings-tab-danger"),
         ],
@@ -340,6 +367,26 @@ def register_callbacks(app: Any) -> None:
         except Exception as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
         return dbc.Alert("Saved models for both stages.", color="success", className="mb-0 py-1")
+
+    @app.callback(
+        Output("settings-crosscheck-feedback", "children"),
+        Input("settings-crosscheck-save", "n_clicks"),
+        State("settings-crosscheck-targets", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_crosscheck(n, targets):
+        if not n:
+            return no_update
+        project = get_project()
+        try:
+            save_crosscheck_targets(project.root, list(targets or []))
+            reload_project()
+        except Exception as e:
+            return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
+        if not targets:
+            return dbc.Alert("Saved. Nothing is selected, so cross-check has nothing to read.",
+                             color="warning", className="mb-0 py-1")
+        return dbc.Alert(f"Saved. Cross-check reads: {', '.join(targets)}.", color="success", className="mb-0 py-1")
 
     @app.callback(
         Output("settings-clear-feedback", "children"),

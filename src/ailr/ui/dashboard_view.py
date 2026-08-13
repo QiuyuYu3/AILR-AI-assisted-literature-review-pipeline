@@ -71,6 +71,7 @@ def _build_content(reviewer: Optional[str]) -> Any:
         len(db.sources_needing_consensus(eligible_ext_ids))
         if cfg.extraction.workflow == "independent" else 0
     )
+    crosscheck_flagged = len(db.cross_check_counts(eligible_ext_ids))
 
     my_done = db.count_reviewer_decisions(pid, rid) if rid else 0
 
@@ -133,7 +134,9 @@ def _build_content(reviewer: Optional[str]) -> Any:
             sub_metrics=[
                 ("with markdown", with_md, "info"),
                 ("verified by human", human_extracted, "primary"),
-            ] + ([("awaiting reconciliation", awaiting_consensus, "warning")] if awaiting_consensus else []),
+            ]
+            + ([("awaiting reconciliation", awaiting_consensus, "warning")] if awaiting_consensus else [])
+            + ([("cross-check flagged", crosscheck_flagged, "warning")] if crosscheck_flagged else []),
         ),
         _stage_card(
             title="API usage",

@@ -37,6 +37,7 @@ _STATUS_FILTERS = [
     {"label": "Reviewed by me", "value": "reviewed"},
     {"label": "To extract", "value": "to_extract"},
     {"label": "Extracted by me", "value": "extracted_mine"},
+    {"label": "Cross-check flagged", "value": "crosscheck_flagged"},
     {"label": "Last quick test", "value": "quick_test"},
     {"label": "All", "value": "all"},
 ]
@@ -520,6 +521,11 @@ def register_callbacks(app: Any) -> None:
         if status == "to_reconcile":
             pending = db.sources_needing_consensus(_candidate_ids())
             id_whitelist = pending if id_whitelist is None else (id_whitelist & pending)
+            status = "all"
+        # Same trick again: cross-check findings live in their own table, not a screening column.
+        if status == "crosscheck_flagged":
+            flagged = set(db.cross_check_counts(_candidate_ids()))
+            id_whitelist = flagged if id_whitelist is None else (id_whitelist & flagged)
             status = "all"
 
         req_page = (page_state or {}).get("page", 0)
