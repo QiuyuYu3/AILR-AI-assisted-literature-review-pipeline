@@ -72,6 +72,25 @@ To keep the second reviewer honest, the app hides the other reviewer's verdict u
 
 Disagreements then surface on the **Conflicts** pages for reconciliation.
 
+## Cross-check
+
+:::{warning}
+Not yet tested in production.
+:::
+
+A **reviewer** produces a verdict of their own. A **cross-check** does something different: it audits a record that already exists, taking the recorded value together with the quote offered as its support and asking whether the paper backs that up.
+
+That difference decides where it belongs. Because a cross-check's input contains the record it judges, it is **not independent** of it, so it can never count as a second reviewer. Its verdicts stay out of κ and every other agreement statistic, out of conflict resolution, and out of the PRISMA counts, and nothing it finds blocks a submission. It is a signal that a paper is worth a second look — the same role a spell-checker plays, not the role of a co-author.
+
+It runs in two layers: a **deterministic** one (verbatim quote matching, enum values, empty required fields) that makes no API calls, and an **LLM** one that asks a second model for a per-field verdict. The LLM layer must run on a **different model** from the one that extracted, since a model agrees with itself far more often than an independent one would.
+
+Two things it cannot tell you:
+
+- A quote that fails to match may still be genuine — PDF-to-markdown conversion mangles passages.
+- Its agreement rate is **not an accuracy measure**: the checker sees the value it is judging, so it leans towards agreeing. A reportable accuracy figure needs a human gold standard.
+
+The full description, including how to run it and how to read the badges, is under [Data extraction → Cross-check](workflow/extraction.md#cross-check).
+
 ## Per-stage models
 
 Each stage runs on its own model, set in **Settings → Models**. There is no built-in default: model names date quickly, so ailr asks you to name the one you want rather than shipping a stale choice. Screening sees every record you import, so a cheap, fast model there saves the most; extraction reads whole papers, so it is worth a strong one. Token usage is logged per call; see **Reports → API usage**. Tokens only, not money: prices change faster than the package ships, so multiply by your provider's current rates.
@@ -109,6 +128,7 @@ The criteria, variables, and prompts are **yours**; the tool never writes them. 
 | extraction **variables** (the fields to extract) | `schema.yaml` (+ `extraction_variables.json` mirror) | **Protocol → Variables** |
 | the **screening prompt** | `prompts/screening.txt` | **Abstract → Workflow → Prompt** |
 | the **extraction prompt** | `prompts/extraction.txt` | **Full text → Workflow → Prompt** |
+| the **cross-check prompt** (optional; a built-in default is used when absent) | `prompts/crosscheck.txt` | **Full text → Workflow → Prompt → Cross-check** |
 | optional value definitions | `codebook.yaml` | n/a |
 
 The structured criteria (`criteria.yaml`) are the single source of truth. Because both stages reference the criteria by the same locked IDs, every AI decision is recorded **per criterion** (PASS / FAIL / UNCERTAIN, with reason and quote). See [Set up your protocol](protocol.md).

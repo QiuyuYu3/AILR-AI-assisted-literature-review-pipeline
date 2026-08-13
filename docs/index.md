@@ -27,6 +27,7 @@ Each stage is a page in the app's left sidebar. The AI participates as a blinded
 | **Abstract screening** | AI and a human screen titles/abstracts (blinded to each other); calibrate the prompt against human judgement with Cohen's κ first |
 | **Full text & screening** | link PDFs from Zotero, convert to markdown, then include/exclude on the full text with recorded reasons |
 | **Data extraction** | the AI fills the exact fields you defined; a human verifies or edits each value, with the source quote attached |
+| **[Cross-check](concepts.md#cross-check)** | optionally audit an extraction that already exists: quotes matched against the paper, and a second model asked whether each value holds up. Advisory only; not yet tested in production |
 | **Reports & exports** | PRISMA flow, methods skeleton, inter-rater reliability, API usage, and CSV / JSON / RIS exports, all derived from the stored data |
 
 ---

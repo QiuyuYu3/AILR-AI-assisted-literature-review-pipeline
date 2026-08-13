@@ -6,7 +6,7 @@ Pull structured data out of the included full texts. This is the step that turns
 
 **The variables** (the fields to pull out) are defined on the [**Protocol → Variables**](../protocol.md#variables) page, not here. They are shared definitions: each field carries its type, description, options, whether it's **required**, and whether a **human must verify** it. Set them up before you run extraction (see [Set up your protocol](../protocol.md)).
 
-**The prompt** (how to read the paper) lives on the **Prompt** tab of this Workflow page. Only two parts are worth editing: your **criteria** (shown here, but edited on Protocol) and free-form **additional instructions** (`{{additional}}`, stage-specific guidance). The rest is a fixed scaffold ailr fills in, tucked under *Advanced*, and a live preview shows the full prompt exactly as sent.
+**The prompt** (how to read the paper) lives on the **Prompt** tab of this Workflow page, which is split into **Extraction** and **Cross-check**. On the Extraction side, only two parts are worth editing: your **criteria** (shown here, but edited on Protocol) and free-form **additional instructions** (`{{additional}}`, stage-specific guidance). The rest is a fixed scaffold ailr fills in, tucked under *Advanced*, and a live preview shows the full prompt exactly as sent. The Cross-check side works the same way and is described under [Cross-check](#cross-check).
 
 ![extraction prompt tab, with the full prompt preview](../figures/ft_prompt.png)
 
@@ -40,6 +40,8 @@ Like screening, extraction has a **Calibration** tab.
 - **Quick test.** Run the AI on a few papers and eyeball the extracted values before extracting the whole set, so you catch a mis-described field while it costs a handful of papers, not all of them. Nothing is written to the review. Choose **Random sample** (N papers) or **Pick specific papers** (a searchable multi-select by author / title / DOI / id) to test on cases you care about. The test composes the *same* prompt the real run sends, additional instructions included, so what you are reading is what you will get. Results carry a **quote audit** (coverage and verbatim rate, with a per-field breakdown and the quotes that were not found in the paper), which is often the fastest way to spot a field the model is answering from memory rather than from the text.
 To judge those same papers yourself, go to **Full-text review → status "Last quick test"**: it lists exactly the papers the most recent quick test covered. The AI's full-text verdict stays hidden on each card until you submit your own, so the comparison is a fair one. Keep N small: unlike screening, each paper is a whole-paper call.
 
+- **Cross-check this run.** Beside the run picker, this rehearses the [cross-check](#cross-check) on the run you are looking at — same checker, same prompt, smaller sample. The result is a table of *which fields* got flagged and how often. That breakdown is the point: "this field is flagged in 8 of 10 papers" tells you the field's description needs work, whereas one overall percentage tells you nothing you can act on. Findings from a quick test are stored against that run and never appear in the real extraction badges or counts.
+
 ![extraction calibration](../figures/ft_ca.png)
 
 ## 3. Run AI extraction
@@ -56,7 +58,58 @@ The run summary reports what happened rather than just a count: the **quote audi
 
 ![AI extraction](../figures/ft_ai.png)
 
-## 4. Verify and edit
+## 4. Cross-check
+
+:::{warning}
+Not yet tested in production.
+:::
+
+This step is optional; skip it and everything else works as before. A cross-check **audits a record that already exists**. It is given the recorded value and the quote offered as its support, and asked whether the paper actually backs that up. It never extracts anything of its own, and it is not a third reviewer: because its input contains the record it is judging, it is not independent of it, so its verdicts stay out of agreement statistics, conflict resolution, and the PRISMA counts. Nothing it produces blocks a submission.
+
+There are two layers, and they are stored and shown side by side.
+
+**Deterministic** (no API calls, free to run). Pure string and schema comparisons, so the verdict is reproducible:
+
+- `quote_not_found` — the attached quote does not appear in the paper's markdown. Matching folds the differences PDF conversion introduces (ligatures, curly quotes, words hyphenated across a line break) and handles quotes the model elided with `...`.
+- `value_not_in_quote` — a numeric value that appears nowhere in its own supporting quote, which is the signature of a number carried over from elsewhere in the paper.
+- `invalid_enum` — the value is not one of the options the variable declares.
+- `empty_required` — a required variable came back empty, or was never extracted.
+
+**LLM** (one call per paper, off by default). A second model reads the paper, the schema, and each value with its quote, and returns **agree / disagree / uncertain** per field with a one-sentence reason and, where the paper states a specific different value, a **suggested value**.
+
+:::{important}
+The checker must be a **different model** from the one that extracted. A model agrees with itself far more often than an independent one does, so a same-model check produces a number that cannot be reported. ailr refuses to run it and tells you why; `crosscheck.allow_same_model` overrides this if you are deliberately running that comparison.
+:::
+
+The checker is deliberately **not** shown the extractor's confidence or reasoning. Seeing how sure the first model was anchors the second onto the answer it is supposed to be testing.
+
+### Running it
+
+Both layers run from the **AI extraction** tab, over the whole project. A single paper can also be cross-checked from its action row in the verify queue. **Mock** mode runs the LLM layer with fabricated verdicts so you can see the whole flow before spending anything.
+
+Under **Settings → Cross-check** you choose whose extractions get read (`targets`: the AI, the humans, or both), the checker's provider and model, and whether the LLM layer is enabled at all. Each extractor's findings are stored separately, so checking one reviewer's rows never clears another's.
+
+### Reading the findings
+
+Findings appear as badges beside each field in the AI panel of the verify form, with a line at the top of the panel naming the flagged fields. A field that was checked and came back clean says `checked`, so "no problem found" is distinguishable from "never checked". Expanding a badge shows the reason and, for the LLM layer, any suggested value with a **Use this value** button that drops it into your form (scalar fields only — a suggestion is a plain string, so list and object fields show it but leave the edit to you). As with the other fill buttons, nothing is written until you Save or Submit.
+
+Two more places surface them: the full-text queue has a **Cross-check flagged** status filter, and the dashboard's extraction card counts the flagged papers.
+
+A finding goes **stale** when the row it judged is re-extracted, since it now describes a value that no longer exists. Stale findings are hidden from the badges and excluded from both the filter and the dashboard count, so the three never disagree about what is outstanding.
+
+### What the numbers mean
+
+:::{caution}
+`quote_not_found` has a real false-positive rate: PDF-to-markdown conversion mangles passages, so a genuine quote can fail to match. Check the paper before changing a value on this flag alone.
+
+The LLM layer's agreement rate is **not** an accuracy measure — the checker sees the value it is judging, so it leans towards agreeing. Use it to compare prompt versions, not to report accuracy.
+:::
+
+### Its prompt
+
+The cross-check prompt is on the **Prompt → Cross-check** tab, beside the extraction prompt it judges. ailr ships a default, so you only need to touch it if your variables need domain-specific guidance — for example, that N in your literature means dyads rather than individual participants, which belongs in **additional instructions**. Under *Advanced* you can edit the whole scaffold; keep the `{{project_name}}`, `{{schema_md}}` and `{{additional}}` markers so ailr can fill them in. Saving writes `prompts/crosscheck.txt` into your project; delete that file to fall back to the built-in prompt, or use **Restore built-in prompt**.
+
+## 5. Verify and edit
 
 The **Extraction** page is the verify queue: it shows each paper whose final full-text decision is **include**, with the extracted fields, the verbatim **quote** the AI attached to each value, and the AI's **confidence** (1 to 10) per field (so you can check the value against the source, and skim to the low-confidence fields first). Verify or edit the values per paper. The AI panel also carries the **flag_check** block, the model's PASS / FAIL / UNCERTAIN verdict per criterion, each with the quote it read that verdict off.
 
@@ -97,7 +150,7 @@ Saving a draft **claims** a paper: under `verify` only one reviewer extracts eac
 
 ![verify form](../figures/ft_extraction2.png)
 
-## 5. Reconcile two extractions
+## 6. Reconcile two extractions
 
 Only in `independent` mode. Once two reviewers have submitted their own extraction of a paper, it moves to **To reconcile** on the Full-text review list (the filter is not shown in `verify` mode, where one person extracts each paper). Click **Open comparison →**.
 

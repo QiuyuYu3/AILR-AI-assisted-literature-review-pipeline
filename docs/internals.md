@@ -14,7 +14,9 @@ ailr/
   criteria.py       structured inclusion/exclusion criteria (criteria.yaml → {{criteria}})
   extraction.py     schema → tool definition; unwrap tool call → rows
   quote_audit.py    matches stored quotes against the paper markdown (coverage / verbatim)
-  tasks/            screen / extract / calibrate / preprocess: the pipeline steps
+  crosschecker.py   LLM cross-checker: judges an existing record (not a Reviewer — it extracts nothing)
+  crosscheck_prompt.txt  the built-in cross-check prompt; a project may override it
+  tasks/            screen / extract / calibrate / crosscheck / preprocess: the pipeline steps
   llm/              provider-agnostic client: base, factory, retry, mock, providers/
   modes/            built-in config presets (strict.yaml, assisted.yaml)
   exports/          prisma, methods, tables, ris, reliability (raw votes CSV)
@@ -23,7 +25,9 @@ ailr/
   ui/               Dash app: one *_view.py per sidebar page, plus shared parts (see below)
 ```
 
-`core/database.py` is a **facade**: the `Database` class is assembled from per-domain mixins that each hold their own SQL, `_db_sources.py`, `_db_screening.py` (+ `_db_screening_aux.py`), `_db_extraction.py`, `_db_calibration.py`, `_db_admin.py`, with the table definitions in `_db_schema.py`. Call sites only ever see `project.db`.
+`core/database.py` is a **facade**: the `Database` class is assembled from per-domain mixins that each hold their own SQL, `_db_sources.py`, `_db_screening.py` (+ `_db_screening_aux.py`), `_db_extraction.py`, `_db_crosscheck.py`, `_db_calibration.py`, `_db_admin.py`, with the table definitions in `_db_schema.py`. Call sites only ever see `project.db`.
+
+The deterministic cross-check lives in `core/crosscheck.py` and reuses `quote_audit.py` for the matching itself rather than reimplementing it; `tasks/crosscheck.py` walks (source, extractor) pairs once and subclasses supply either the free checks or the LLM call, which is also how the calibration rehearsal reuses the same code against the quick-test tables.
 
 The `ui/` package is the same idea. Each sidebar page is a `*_view.py`, and the parts more than one page needs live beside them: `modals.py` (shared dialogs), `_cards.py` (the record card), `_actions.py`, `_common.py`, `_project.py` (project loading), `version_ui.py` (the version/diff widgets), and `ai_runner.py`.
 
@@ -57,6 +61,7 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 | `screening_decisions` | every abstract/full-text verdict (AI and human), with reasoning, evidence, confidence, `prompt_version` |
 | `extractions` | one row per extracted field, with `source_quote`, page/section, `prompt_version`, and `raw_output` (what the model returned for that field before unwrapping) |
 | `reconciliations` | conflict resolutions; links the AI and human decisions and records the final value + rationale |
+| `cross_checks` | verification findings against an existing record: `stage`, whose record (`target_type` / `target_id`), the exact row judged (`target_row_id`), the field, the checker, `check_kind` (`deterministic` / `llm`), and the verdict. Advisory only — never read by conflicts, agreement stats, or PRISMA |
 | `prompt_versions` / `codebook_versions` | snapshots of prompts/codebook so each decision traces to the exact wording |
 | `artifact_versions` | snapshots of criteria, variables, and prompts per save; drives the version diff and the amendment log |
 | `tags` / `source_tags` | labels and their many-to-many links to sources |
@@ -75,6 +80,7 @@ The primary audit trail is the **database itself**:
 - `llm_params` records the **decoding settings the decision was actually made under**, model and temperature (and the seed where the provider accepts one), which is what lets the methods export describe the run rather than the current config.
 - Re-running the AI on a paper does not delete its previous extraction: those rows are re-typed as **superseded** and kept, which is what the "earlier version" view and the fill-all picker read. A run is reconstructed from the timestamp gaps between rows, since one run writes its fields one at a time.
 - `reconciliations` records *who* adjudicated a conflict and *why*.
+- `cross_checks` is the one table that is **not** append-only: re-running a check replaces that (source, stage, target, kind) set rather than accumulating, because a finding describes the current state of a record rather than an event. Each row still pins the `target_row_id` it judged, so a finding whose row was since re-extracted reads as **stale** rather than silently applying to a value it never saw.
 - `prompt_versions` / `codebook_versions` make every decision reproducible against the exact prompt that produced it.
 - `api_calls` accounts for every token spent.
 
@@ -108,6 +114,8 @@ Everything below is also doable from the UI. The CLI is the power-user bypass, u
 | `ailr db-migrate <project> --to <url>` | copy a SQLite project into Postgres |
 
 Add `--mock` to `screen` / `extract` / `calibrate` to run with no API call. Run `ailr <command> --help` for all options.
+
+**Cross-check is UI-only** and has no command here. It is deliberate: the CLI covers the pipeline steps that predate the UI, and new features are added to the UI rather than to both. Both cross-check layers run from **Full text → Workflow → AI extraction** (and their mock mode from the same place).
 
 ## Pipeline diagram
 

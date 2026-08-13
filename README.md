@@ -94,6 +94,14 @@ Set per stage on **Protocol → Workflow** (or `ailr workflow <project> --stage 
 
 Bibliographic metadata (title, authors, year, journal, DOI) comes from the imported record and is joined into exports by `source_id` — the AI only extracts what the full text adds.
 
+## Cross-check
+
+> **Not yet tested in production.**
+
+An optional pass that audits an extraction that already exists, rather than producing one: each recorded value is checked against the quote offered as its support. The **deterministic** layer (verbatim quotes, enum values, empty required fields) makes no API calls; the **LLM** layer asks a second model — which must differ from the one that extracted — for a verdict per field.
+
+Findings are advisory: they never block a submission and stay out of κ, conflict resolution, and the PRISMA counts.
+
 ## Models & tokens
 
 Each stage has its own model in **Settings** (provider / model / temperature), e.g. a cheaper model for abstract screening and a stronger one for full-text extraction. No model ships as a default, so set one before the first AI run. The provider's API key must be in your environment (see above). Token usage is logged per call (see Summary / Reports). Tokens only, no spend estimate.
