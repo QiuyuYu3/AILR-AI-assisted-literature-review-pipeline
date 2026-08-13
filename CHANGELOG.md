@@ -4,9 +4,7 @@
 ## [Unreleased]
 
 ### Added
-
-
-
+- Cross-check gained its LLM layer: a second model is given each recorded value with the quote offered as its support, plus the paper and the schema, and returns agree / disagree / uncertain per field with a one-sentence reason and an optional suggested value. It refuses to run on the same model that produced the extraction (`crosscheck.allow_same_model` overrides), costs one call per paper, and is off until enabled under Settings -> Cross-check. The prompt ships with the package; a project can override it with `prompts/crosscheck.txt`. The checker is deliberately not shown the extractor's confidence or reasoning, which would anchor it onto the answer it is meant to test. Verdicts store as `check_kind = llm` alongside the deterministic findings rather than replacing them, and stay out of agreement statistics.
 
 ---
 ## [0.35.0] – 2026-08-12

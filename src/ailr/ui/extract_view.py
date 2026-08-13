@@ -82,6 +82,13 @@ def ai_extraction_panel() -> list[Any]:
         dbc.Button("Cross-check all extractions", id="extract-crosscheck-all", color="secondary", outline=True, size="sm"),
         html.Div(id="extract-crosscheck-all-status", className="small mt-2"),
         dcc.Interval(id="extract-crosscheck-all-poll", interval=1200, disabled=True),
+        html.P("A second model can also judge each value against its quote and the paper. This one costs tokens, "
+               "needs a different model from the one that extracted (Settings -> Cross-check), and is slower: "
+               "one call per paper.", className="text-muted small mb-1 mt-3"),
+        dbc.Switch(id="extract-crosscheck-llm-mock", label="Mock (no API calls)", value=True, className="small"),
+        dbc.Button("LLM cross-check all extractions", id="extract-crosscheck-llm", color="secondary", outline=True, size="sm"),
+        html.Div(id="extract-crosscheck-llm-status", className="small mt-2"),
+        dcc.Interval(id="extract-crosscheck-llm-poll", interval=1500, disabled=True),
         dcc.ConfirmDialogProvider(
             dbc.Button("Clear mock AI results", color="link", size="sm", className="text-danger p-0 mt-2"),
             id="extract-clear-mock",
@@ -444,7 +451,34 @@ def register_callbacks(app: Any) -> None:
         prevent_initial_call=True,
     )
     def _crosscheck_all_poll(_n):
-        st = ai_runner.get_status("crosscheck")
+        return _crosscheck_poll_result("crosscheck")
+
+    @app.callback(
+        Output("extract-crosscheck-llm-poll", "disabled"),
+        Output("extract-crosscheck-llm-status", "children"),
+        Input("extract-crosscheck-llm", "n_clicks"),
+        State("extract-crosscheck-llm-mock", "value"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_llm(n, mock):
+        if not n:
+            return no_update, no_update
+        if not ai_runner.start_llm_crosscheck(get_project(), bool(mock)):
+            return True, dbc.Alert("An LLM cross-check run is already in progress.", color="warning", className="py-1 mb-0")
+        note = " (mock)" if mock else ""
+        return False, dbc.Alert(f"LLM cross-check started{note}…", color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output("extract-crosscheck-llm-status", "children", allow_duplicate=True),
+        Output("extract-crosscheck-llm-poll", "disabled", allow_duplicate=True),
+        Input("extract-crosscheck-llm-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_llm_poll(_n):
+        return _crosscheck_poll_result("crosscheck-llm")
+
+    def _crosscheck_poll_result(job_key: str):
+        st = ai_runner.get_status(job_key)
         if st.get("running"):
             done, total = st.get("done", 0), st.get("total", 0)
             label = f"Cross-checking… {done}/{total}" if total else "Cross-checking…"
@@ -1349,6 +1383,19 @@ _ISSUE_LABEL = {
 }
 
 
+def _finding_label(f: dict) -> str:
+    if f.get("check_kind") == "llm":
+        return f"LLM {f.get('verdict') or 'flagged'}"
+    return _ISSUE_LABEL.get(f.get("issue_code"), "flagged")
+
+
+def _finding_detail(f: dict) -> Any:
+    body: list[Any] = [html.Span(f.get("reason") or "")]
+    if f.get("suggested_value"):
+        body.append(html.Span([" Suggested: ", html.Code(str(f["suggested_value"]))]))
+    return html.Div(body, className="small text-muted ms-3")
+
+
 def _crosscheck_badge(findings: list[dict] | None) -> Any:
     """Advisory marker for one field. A cross-check never blocks anything, and quote misses in
     particular can come from PDF conversion artifacts, so this stays a prompt to look, not a verdict."""
@@ -1357,15 +1404,17 @@ def _crosscheck_badge(findings: list[dict] | None) -> Any:
     flagged = [f for f in findings if (f.get("verdict") or "") != "agree"]
     if not flagged:
         return dbc.Badge("checked", color="light", className="ms-2 text-muted fw-normal")
-    labels = ", ".join(dict.fromkeys(_ISSUE_LABEL.get(f.get("issue_code"), "flagged") for f in flagged))
+    labels = ", ".join(dict.fromkeys(_finding_label(f) for f in flagged))
+    # 'uncertain' from the LLM layer is weaker than a real disagreement: the paper did not settle it.
+    color = "warning" if any(f.get("verdict") == "disagree" for f in flagged) else "secondary"
     return html.Details(
         [
             html.Summary(
-                dbc.Badge(labels, color="warning", className="ms-2 fw-normal"),
+                dbc.Badge(labels, color=color, className="ms-2 fw-normal"),
                 style={"display": "inline", "cursor": "pointer", "listStyle": "none"},
             ),
         ]
-        + [html.Div(f.get("reason") or "", className="small text-muted ms-3") for f in flagged],
+        + [_finding_detail(f) for f in flagged],
         style={"display": "inline"},
     )
 

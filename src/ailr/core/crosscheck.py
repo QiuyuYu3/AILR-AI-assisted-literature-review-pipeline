@@ -8,6 +8,7 @@ Quote matching lives in ailr.quote_audit; this module turns its results, plus th
 checks, into stored per-field findings.
 """
 
+import json
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -173,6 +174,43 @@ def check_extraction(rows: list[dict], fields: list[FieldSpec], paper_text: str)
         if field.required and field.name not in latest:
             issues.append(Issue(field.name, EMPTY_REQUIRED, "Required field was not extracted."))
     return issues
+
+
+def llm_verdicts_to_records(
+    verdicts: dict[str, dict],
+    *,
+    source_id: int,
+    target_type: str,
+    target_id: str,
+    row_ids: dict[str, int],
+    checker_id: str,
+    llm_params: Optional[dict] = None,
+    prompt_version: Optional[str] = None,
+) -> list["CrossCheckRecord"]:
+    """LLM verdicts (keyed by field) as rows. Unlike the deterministic layer these carry no
+    issue_code: the model's reason is the finding."""
+    records: list[CrossCheckRecord] = []
+    for field_name, v in verdicts.items():
+        suggested = v.get("suggested_value")
+        records.append(CrossCheckRecord(
+            source_id=source_id,
+            stage="extraction",
+            target_type=target_type,
+            target_id=target_id,
+            target_row_id=row_ids.get(field_name),
+            field_name=field_name,
+            checker_type="ai",
+            checker_id=checker_id,
+            check_kind="llm",
+            verdict=v.get("verdict") or "uncertain",
+            reason=v.get("reason") or None,
+            suggested_value=None if suggested is None else str(suggested),
+            confidence=v.get("confidence"),
+            llm_params=llm_params,
+            prompt_version=prompt_version,
+            raw_output=json.dumps(v.get("raw"), ensure_ascii=False, default=str) if v.get("raw") else None,
+        ))
+    return records
 
 
 def issues_to_records(

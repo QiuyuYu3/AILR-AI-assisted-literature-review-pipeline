@@ -8,8 +8,9 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html, no_update
 
 from ailr.core.config import (
+    crosscheck_llm_blocked,
     resolve_stage_llm,
-    save_crosscheck_targets,
+    save_crosscheck_config,
     save_project_type,
     save_stage_llm_config,
 )
@@ -79,6 +80,7 @@ def layout() -> Any:
     ex = project.config.extraction.llm
     sc_eff = resolve_stage_llm(llm, sc)
     ex_eff = resolve_stage_llm(llm, ex)
+    cc_eff = resolve_stage_llm(llm, project.config.crosscheck.llm)
     providers_used = sorted({sc_eff.provider, ex_eff.provider})
     key_badges = [(p, _API_KEY_ENV.get(p, "ANTHROPIC_API_KEY")) for p in providers_used]
     db_url_set = bool(project.config.storage.database_url)
@@ -235,6 +237,28 @@ def layout() -> Any:
             value=list(project.config.crosscheck.targets),
             switch=True,
         ),
+        html.Hr(className="my-3"),
+        html.Small(
+            "The LLM layer additionally asks a second model whether each recorded value is supported by "
+            "its quote. It costs one call per paper and must not run on the same model that produced the "
+            "extraction: a model agrees with itself far more often than an independent one, which makes "
+            "the resulting agreement rate unreportable.",
+            className="text-muted d-block mb-2",
+        ),
+        dbc.Switch(id="settings-crosscheck-llm-enabled", label="Enable LLM cross-check",
+                   value=project.config.crosscheck.llm_enabled),
+        dbc.Row(
+            [
+                dbc.Col([dbc.Label("Checker provider", className="small"),
+                         dbc.Select(id="settings-crosscheck-provider", options=_PROVIDERS, value=cc_eff.provider)], width=3),
+                dbc.Col([dbc.Label("Checker model", className="small"),
+                         dbc.Input(id="settings-crosscheck-model", value=cc_eff.model or "", placeholder="not set")], width=5),
+            ],
+            className="g-2 mt-1",
+        ),
+        dbc.Switch(id="settings-crosscheck-same-model",
+                   label="Allow the same model as the extractor (not reportable)",
+                   value=project.config.crosscheck.allow_same_model, className="mt-2 small"),
         html.Div(dbc.Button("Save cross-check", id="settings-crosscheck-save", color="primary", size="sm", className="mt-2")),
         html.Div(id="settings-crosscheck-feedback", className="small mt-2"),
     ]
@@ -372,19 +396,30 @@ def register_callbacks(app: Any) -> None:
         Output("settings-crosscheck-feedback", "children"),
         Input("settings-crosscheck-save", "n_clicks"),
         State("settings-crosscheck-targets", "value"),
+        State("settings-crosscheck-llm-enabled", "value"),
+        State("settings-crosscheck-provider", "value"),
+        State("settings-crosscheck-model", "value"),
+        State("settings-crosscheck-same-model", "value"),
         prevent_initial_call=True,
     )
-    def _save_crosscheck(n, targets):
+    def _save_crosscheck(n, targets, llm_enabled, provider, model, same_model):
         if not n:
             return no_update
         project = get_project()
         try:
-            save_crosscheck_targets(project.root, list(targets or []))
+            save_crosscheck_config(project.root, list(targets or []), bool(llm_enabled),
+                                   provider or None, model, bool(same_model))
             reload_project()
         except Exception as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
+
         if not targets:
             return dbc.Alert("Saved. Nothing is selected, so cross-check has nothing to read.",
+                             color="warning", className="mb-0 py-1")
+        # Report the guard now rather than letting the run fail later with the same message.
+        blocked = crosscheck_llm_blocked(get_project().config) if llm_enabled else None
+        if blocked:
+            return dbc.Alert(f"Saved, but the LLM layer will not run: {blocked}",
                              color="warning", className="mb-0 py-1")
         return dbc.Alert(f"Saved. Cross-check reads: {', '.join(targets)}.", color="success", className="mb-0 py-1")
 

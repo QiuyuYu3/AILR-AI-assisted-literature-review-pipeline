@@ -110,6 +110,7 @@ class CrossCheckConfig(BaseModel):
     # there is no separate on/off for it — not pressing the button is the off switch.
     targets: list[Literal["ai", "human"]] = Field(default_factory=lambda: ["ai"])
     llm_enabled: bool = False
+    prompt: str = "prompts/crosscheck.txt"  # falls back to the built-in prompt when absent
     llm: Optional[StageLLMOverride] = None
     # A checker on the same model as the extractor agrees with itself far more often than an
     # independent one would, which makes the agreement rate it produces unreportable.
@@ -279,10 +280,28 @@ def _edit_config_block(project_dir: Path, key: str, mutate) -> None:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
 
 
-def save_crosscheck_targets(project_dir: Path, targets: list[str]) -> None:
-    """Update `crosscheck.targets` in lit_review.yaml: whose records the cross-check reads."""
-    allowed = [t for t in targets if t in ("ai", "human")]
-    _edit_config_block(project_dir, "crosscheck", lambda block: block.update({"targets": allowed}))
+def save_crosscheck_config(
+    project_dir: Path,
+    targets: list[str],
+    llm_enabled: bool,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    allow_same_model: bool = False,
+) -> None:
+    """Update the `crosscheck` block in lit_review.yaml."""
+    def mutate(block: dict) -> None:
+        block["targets"] = [t for t in targets if t in ("ai", "human")]
+        block["llm_enabled"] = bool(llm_enabled)
+        block["allow_same_model"] = bool(allow_same_model)
+        llm = block.get("llm")
+        if not isinstance(llm, dict):
+            llm = {}
+        if provider:
+            llm["provider"] = provider
+        llm["model"] = (model or "").strip() or None
+        block["llm"] = llm
+
+    _edit_config_block(project_dir, "crosscheck", mutate)
 
 
 def save_llm_config(
