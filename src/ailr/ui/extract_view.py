@@ -617,7 +617,7 @@ def register_callbacks(app: Any) -> None:
             return (_source_card(project.root, src),
                     html.Div([_claim_notice(workflow, display_ids),
                               _readonly_tables(db, src, display_ids, [f for f in fields if f.verify])]),
-                    _ai_panel(db, src, workflow, rid, ai_rows=ai_rows),
+                    _ai_panel(db, src, workflow, rid, ai_rows=ai_rows, fields=fields),
                     True, True, "", {}, hidden, *blank_useall)
 
         ai_data: dict[str, Any] | None = None
@@ -646,7 +646,7 @@ def register_callbacks(app: Any) -> None:
 
         return (_source_card(project.root, src),
                 _build_form(verify_fields, prefill_data=prefill_data, ai_data=ai_data),
-                _ai_panel(db, src, workflow, rid, ai_rows=ai_rows, superseded=superseded),
+                _ai_panel(db, src, workflow, rid, ai_rows=ai_rows, superseded=superseded, fields=fields),
                 False, False, "",
                 current.get("values", {}),
                 shown if can_release else hidden,
@@ -835,6 +835,25 @@ def register_callbacks(app: Any) -> None:
             return no_update
         value = (ai_values or {}).get(btn_id["field"])
         return no_update if value is None else value
+
+    # Same idea for a cross-check suggestion. Read live rather than cached in a Store: suggestions
+    # change whenever the check is re-run, and one click per field is not worth a page-wide payload.
+    @app.callback(
+        Output({"type": "ex-value", "field": MATCH}, "value", allow_duplicate=True),
+        Input({"type": "cc-use", "field": MATCH}, "n_clicks"),
+        State({"type": "cc-use", "field": MATCH}, "id"),
+        State("extract-store", "data"),
+        prevent_initial_call=True,
+    )
+    def _use_suggested_value(n, btn_id, store):
+        sid = (store or {}).get("sid")
+        if not n or not sid:
+            return no_update
+        findings = get_project().db.cross_checks_by_field(int(sid)).get(btn_id["field"]) or []
+        for f in findings:
+            if f.get("suggested_value"):
+                return f["suggested_value"]
+        return no_update
 
     @app.callback(
         Output("extract-useall", "message"),
@@ -1389,14 +1408,20 @@ def _finding_label(f: dict) -> str:
     return _ISSUE_LABEL.get(f.get("issue_code"), "flagged")
 
 
-def _finding_detail(f: dict) -> Any:
+def _finding_detail(f: dict, offer_fill: bool = False) -> Any:
     body: list[Any] = [html.Span(f.get("reason") or "")]
     if f.get("suggested_value"):
         body.append(html.Span([" Suggested: ", html.Code(str(f["suggested_value"]))]))
+        if offer_fill:
+            body.append(dbc.Button(
+                "Use this value",
+                id={"type": "cc-use", "field": f.get("field_name")},
+                size="sm", color="link", className="p-0 ms-2",
+            ))
     return html.Div(body, className="small text-muted ms-3")
 
 
-def _crosscheck_badge(findings: list[dict] | None) -> Any:
+def _crosscheck_badge(findings: list[dict] | None, fillable: bool = False) -> Any:
     """Advisory marker for one field. A cross-check never blocks anything, and quote misses in
     particular can come from PDF conversion artifacts, so this stays a prompt to look, not a verdict."""
     if not findings:
@@ -1407,6 +1432,8 @@ def _crosscheck_badge(findings: list[dict] | None) -> Any:
     labels = ", ".join(dict.fromkeys(_finding_label(f) for f in flagged))
     # 'uncertain' from the LLM layer is weaker than a real disagreement: the paper did not settle it.
     color = "warning" if any(f.get("verdict") == "disagree" for f in flagged) else "secondary"
+    # At most one fill button per field: two would collide on the same pattern-matching id.
+    fill_at = next((i for i, f in enumerate(flagged) if fillable and f.get("suggested_value")), None)
     return html.Details(
         [
             html.Summary(
@@ -1414,7 +1441,7 @@ def _crosscheck_badge(findings: list[dict] | None) -> Any:
                 style={"display": "inline", "cursor": "pointer", "listStyle": "none"},
             ),
         ]
-        + [_finding_detail(f) for f in flagged],
+        + [_finding_detail(f, offer_fill=(i == fill_at)) for i, f in enumerate(flagged)],
         style={"display": "inline"},
     )
 
@@ -1439,7 +1466,7 @@ def _crosscheck_summary(findings: dict[str, list[dict]]) -> Any:
     )
 
 
-def _ai_row_block(row: dict, findings: list[dict] | None = None) -> Any:
+def _ai_row_block(row: dict, findings: list[dict] | None = None, fillable: set[str] | None = None) -> Any:
     """One field of an AI extraction: value, its quote(s), and confidence."""
     quotes: list = []
     clean = _strip_nested_quotes(row["value"], quotes)
@@ -1449,7 +1476,7 @@ def _ai_row_block(row: dict, findings: list[dict] | None = None) -> Any:
         html.Div([
             html.Strong(f"{row['field_name']}: "),
             html.Code(json.dumps(clean, ensure_ascii=False), style={"whiteSpace": "pre-wrap", "wordBreak": "break-word"}),
-            _crosscheck_badge(findings),
+            _crosscheck_badge(findings, row["field_name"] in (fillable or set())),
         ]),
     ]
     if quotes:
@@ -1487,7 +1514,8 @@ def _superseded_ai_block(runs: list[dict]) -> Any:
 
 
 def _ai_panel(db: Any, src: Source, workflow: str, rid: str, *,
-              ai_rows: list[dict] | None = None, superseded: list[dict] | None = None) -> Any:
+              ai_rows: list[dict] | None = None, superseded: list[dict] | None = None,
+              fields: list[FieldSpec] | None = None) -> Any:
     if ai_rows is None:
         ai_rows = db.list_extractions(src.id, extractor_type="ai")
     flag_check = db.get_flag_check(src.id, extractor_type="ai")
@@ -1500,10 +1528,16 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str, *,
         return dbc.Alert("AI extraction hidden until you submit (workflow: independent).", color="secondary")
 
     findings = db.cross_checks_by_field(src.id, target_type="ai")
+    # A suggested value is a plain string, so it can only be dropped into a scalar widget; list and
+    # object fields show the suggestion but leave the edit to you.
+    fillable = {
+        f.name for f in (fields or [])
+        if f.verify and f.type in ("string", "integer", "number", "boolean")
+    }
     items: list[Any] = [html.H6("AI extraction")]
     if findings:
         items.append(_crosscheck_summary(findings))
-    items.extend(_ai_row_block(row, findings.get(row["field_name"])) for row in ai_rows)
+    items.extend(_ai_row_block(row, findings.get(row["field_name"]), fillable) for row in ai_rows)
     if flag_check:
         from ailr.ui._common import criterion_names
 

@@ -205,10 +205,22 @@ def layout(stage: str = "abstract") -> Any:
                     [
                         dbc.Col(dbc.Select(id=f"{p}-run-select", options=_run_options(_test_stage(stage)), size="sm"), width=6),
                         dbc.Col(dbc.Button("Clear test runs", id=f"{p}-clear", color="link", size="sm", className="text-danger p-0"), width="auto"),
-                    ],
+                    ]
+                    + (
+                        [dbc.Col(dbc.Button("Cross-check this run", id=f"{p}-cc-run", color="secondary",
+                                            outline=True, size="sm"), width="auto")]
+                        if stage == "extraction" else []
+                    ),
                     className="align-items-center",
                 ),
                 id=f"{p}-runs-bar",
+            ),
+            *(
+                [
+                    html.Div(id=f"{p}-cc-status", className="small mt-1"),
+                    dcc.Interval(id=f"{p}-cc-poll", interval=1500, disabled=True),
+                ]
+                if stage == "extraction" else []
             ),
             html.Div(id=f"{p}-results", className="mt-2"),
             dcc.Store(id=f"{p}-refresh", data={"ts": 0}),
@@ -326,6 +338,38 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
         if not n:
             return no_update
         return {"ts": time.time()}
+
+    # Cross-check only covers extraction so far, so the button exists on that stage only and its
+    # callbacks must not be registered for the abstract page (their ids would not resolve).
+    if stage != "extraction":
+        return
+
+    @app.callback(
+        Output(f"{p}-cc-poll", "disabled"),
+        Output(f"{p}-cc-status", "children"),
+        Input(f"{p}-cc-run", "n_clicks"),
+        State(f"{p}-run-select", "value"),
+        State(f"{p}-mock", "value"),
+        prevent_initial_call=True,
+    )
+    def _cc_run(n, run_id, mock):
+        if not n:
+            return no_update, no_update
+        if not run_id:
+            return True, dbc.Alert("Pick a test run first.", color="warning", className="py-1 mb-0")
+        if not ai_runner.start_quicktest_crosscheck(get_project(), int(run_id), bool(mock)):
+            return True, dbc.Alert("A cross-check run is already in progress.", color="warning", className="py-1 mb-0")
+        return False, dbc.Alert("Cross-checking this run…", color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output(f"{p}-cc-status", "children", allow_duplicate=True),
+        Output(f"{p}-cc-poll", "disabled", allow_duplicate=True),
+        Output(f"{p}-refresh", "data", allow_duplicate=True),
+        Input(f"{p}-cc-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def _cc_poll(_n):
+        return _poll_common("crosscheck-quicktest")
 
 
 def _poll_common(key: str):
@@ -481,7 +525,11 @@ def _render_quick_extraction(run_value: Any) -> Any:
     if not extractions:
         return dbc.Alert("This run produced no extractions (no papers with markdown available?).", color="warning")
 
-    cards = [_agreement_block(project, run_id, "extraction"), _quote_audit_block(project, extractions)]
+    cards = [
+        _agreement_block(project, run_id, "extraction"),
+        _quote_audit_block(project, extractions),
+        _crosscheck_block(project, run_id),
+    ]
     for ex in extractions:
         dec = ex.get("full_text_decision")
         field_rows = [
@@ -510,6 +558,50 @@ def _render_quick_extraction(run_value: Any) -> Any:
             )
         )
     return html.Div(cards)
+
+
+def _crosscheck_block(project: Any, run_id: int) -> Any:
+    """Cross-check findings for this run, broken down by field.
+
+    Per field rather than one headline number: a total flag rate says nothing actionable, whereas
+    'this field is flagged in 8 of 10 papers' points straight at the schema description to fix.
+    """
+    from ailr.tasks.crosscheck import quick_test_target_id
+
+    rows = project.db.cross_check_field_summary(quick_test_target_id(run_id))
+    if not rows:
+        return None
+
+    flagged_fields = [r for r in rows if r["flagged"]]
+    header = html.Thead(html.Tr([html.Th("Field"), html.Th("Flagged"), html.Th("Rate"), html.Th("Example reason")]))
+    body = html.Tbody([
+        html.Tr([
+            html.Td(r["field"], className="fw-bold small", style={"whiteSpace": "nowrap"}),
+            html.Td(f"{r['flagged']}/{r['checked']}", className="small"),
+            html.Td(f"{r['rate']:.0%}", className="small"),
+            html.Td(r["reasons"][0] if r["reasons"] else "", className="small text-muted"),
+        ])
+        for r in rows
+    ])
+    return dbc.Card(
+        dbc.CardBody([
+            html.Div([
+                html.Strong("Cross-check  ", className="me-1"),
+                html.Span(
+                    f"{len(flagged_fields)} of {len(rows)} field(s) flagged at least once"
+                    if flagged_fields else "nothing flagged",
+                ),
+            ], className="small"),
+            html.Small(
+                "This is a rehearsal of the check the real run will apply. The checker sees the "
+                "recorded value, so it leans towards agreeing: use these numbers to compare prompt "
+                "versions and to spot which fields need a clearer description, not as an accuracy rate.",
+                className="text-muted d-block mb-2",
+            ),
+            dbc.Table([header, body], bordered=False, hover=True, size="sm", className="mb-0"),
+        ]),
+        className="mb-2",
+    )
 
 
 def _quote_audit_block(project: Any, extractions: list[dict]) -> Any:

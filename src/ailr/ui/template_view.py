@@ -366,6 +366,97 @@ def _extraction_composed_pre(prompt: str, additional: str, mode: str = "plain") 
     return render_prompt_body(composed + "\n\n--- [THE PAPER'S FULL TEXT IS APPENDED HERE AUTOMATICALLY] ---", mode)
 
 
+def _crosscheck_prompt_text() -> str:
+    from ailr.crosschecker import load_prompt
+
+    project = get_project()
+    return load_prompt(project.root, project.config.crosscheck.prompt)
+
+
+def _crosscheck_additional_text() -> str:
+    project = get_project()
+    try:
+        return (project.root / project.config.crosscheck.additional).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _crosscheck_composed_pre(prompt: str, additional: str, mode: str = "plain") -> Any:
+    from ailr.crosschecker import compose_crosscheck_prompt
+
+    composed = compose_crosscheck_prompt(
+        prompt or "",
+        project_name=get_project().config.project.name,
+        schema_md=_field_list_text(),
+        additional=additional or "",
+    )
+    tail = "\n\n--- [THE RECORDED EXTRACTION AND THE PAPER'S FULL TEXT ARE APPENDED HERE AUTOMATICALLY] ---"
+    return render_prompt_body(composed + tail, mode)
+
+
+def crosscheck_prompt_panel() -> list[Any]:
+    """Cross-check's prompt, edited beside the extraction prompt because it judges that stage's output."""
+    return [
+        dbc.Alert(
+            [
+                html.Strong("This is the prompt for cross-check, not for extraction. "),
+                "It is given a record that already exists — each value with the quote offered as its "
+                "support — and asked whether the paper backs it up. ailr ships a default, so you only "
+                "need to touch this if your fields need domain-specific guidance.",
+            ],
+            color="light", className="small py-2 mt-2",
+        ),
+        with_help(
+            html.H6("Additional instructions (optional)", className="mb-0 me-1"),
+            "Appended to the cross-check prompt — e.g. domain conventions the checker should know, like what N refers to in your field.",
+            "cc-additional-help",
+        ),
+        dbc.Textarea(
+            id="cc-additional",
+            value=_crosscheck_additional_text(),
+            placeholder="e.g. In this literature N refers to the number of dyads, not individual participants.",
+            style=_mono(120, 0.88),
+        ),
+        html.Div(
+            dbc.Button("Save additional instructions", id="cc-additional-save", color="primary", size="sm"),
+            className="mt-2",
+        ),
+        html.Div(id="cc-additional-feedback", className="small mt-1"),
+        with_help(
+            html.H6("Full prompt preview", className="mb-0 me-1"),
+            "The exact prompt sent to the checker, with your variables and additional instructions filled in.",
+            "cc-preview-help",
+        ),
+        prompt_view_toggle("cc-prompt-render"),
+        html.Div(id="cc-prompt-composed",
+                 children=_crosscheck_composed_pre(_crosscheck_prompt_text(), _crosscheck_additional_text())),
+        html.Details(
+            [
+                html.Summary("Advanced: edit the full cross-check template"),
+                dbc.Alert(
+                    [
+                        html.Strong("Most users don't need this. "),
+                        "Keep the markers ", html.Code("{{project_name}}"), ", ", html.Code("{{schema_md}}"),
+                        " and ", html.Code("{{additional}}"), " so ailr can fill them in. Saving writes ",
+                        html.Code("prompts/crosscheck.txt"), "; delete that file to go back to the built-in prompt.",
+                    ],
+                    color="light", className="small py-2 mt-2",
+                ),
+                dbc.Textarea(id="cc-prompt", value=_crosscheck_prompt_text(), style=_mono(260, 0.88)),
+                html.Div(
+                    [
+                        dbc.Button("Save prompt", id="cc-prompt-save", color="primary", size="sm", className="me-2"),
+                        dbc.Button("Restore built-in prompt", id="cc-prompt-builtin", color="secondary", outline=True, size="sm"),
+                    ],
+                    className="mt-2",
+                ),
+                html.Div(id="cc-prompt-feedback", className="small mt-1"),
+            ],
+            className="mt-3",
+        ),
+    ]
+
+
 def variables_layout() -> Any:
     state = _initial_state()
     suggested = _suggested_names()
@@ -880,6 +971,66 @@ def register_callbacks(app: Any) -> None:
         except OSError as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
         return dbc.Alert(f"Saved to {p.name}.", color="success", className="mb-0 py-1")
+
+    def _write_project_file(rel: str, text: str) -> Any:
+        p = get_project().root / rel
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text or "", encoding="utf-8")
+        except OSError as e:
+            return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
+        return dbc.Alert(f"Saved to {p.name}.", color="success", className="mb-0 py-1")
+
+    @app.callback(
+        Output("cc-additional-feedback", "children"),
+        Input("cc-additional-save", "n_clicks"),
+        State("cc-additional", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_cc_additional(n, text):
+        if not n:
+            return no_update
+        return _write_project_file(get_project().config.crosscheck.additional, text)
+
+    @app.callback(
+        Output("cc-prompt-feedback", "children"),
+        Input("cc-prompt-save", "n_clicks"),
+        State("cc-prompt", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_cc_prompt(n, text):
+        if not n:
+            return no_update
+        if not str(text or "").strip():
+            return dbc.Alert("Prompt is empty. Delete prompts/crosscheck.txt to use the built-in one.",
+                             color="warning", className="mb-0 py-1")
+        return _write_project_file(get_project().config.crosscheck.prompt, text)
+
+    @app.callback(
+        Output("cc-prompt", "value"),
+        Output("cc-prompt-feedback", "children", allow_duplicate=True),
+        Input("cc-prompt-builtin", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _restore_builtin_cc_prompt(n):
+        if not n:
+            return no_update, no_update
+        from importlib.resources import files
+
+        from ailr.crosschecker import BUILT_IN_PROMPT
+
+        text = (files("ailr") / BUILT_IN_PROMPT).read_text(encoding="utf-8")
+        return text, dbc.Alert("Built-in prompt loaded into the editor. Save to write it to the project.",
+                               color="info", className="mb-0 py-1")
+
+    @app.callback(
+        Output("cc-prompt-composed", "children"),
+        Input("cc-prompt", "value"),
+        Input("cc-additional", "value"),
+        Input("cc-prompt-render", "value"),
+    )
+    def _cc_preview(prompt, additional, mode):
+        return _crosscheck_composed_pre(prompt, additional, mode or "plain")
 
     @app.callback(
         Output("tmpl-prompt-composed", "children"),

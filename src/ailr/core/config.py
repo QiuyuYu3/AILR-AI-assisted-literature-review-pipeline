@@ -111,6 +111,7 @@ class CrossCheckConfig(BaseModel):
     targets: list[Literal["ai", "human"]] = Field(default_factory=lambda: ["ai"])
     llm_enabled: bool = False
     prompt: str = "prompts/crosscheck.txt"  # falls back to the built-in prompt when absent
+    additional: str = "prompts/crosscheck_additional.txt"
     llm: Optional[StageLLMOverride] = None
     # A checker on the same model as the extractor agrees with itself far more often than an
     # independent one would, which makes the agreement rate it produces unreportable.

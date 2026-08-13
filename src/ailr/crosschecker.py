@@ -33,8 +33,22 @@ def load_prompt(project_root: Path, rel_path: str = "prompts/crosscheck.txt") ->
     return (files("ailr") / BUILT_IN_PROMPT).read_text(encoding="utf-8")
 
 
-def compose_crosscheck_prompt(template: str, *, schema_md: str = "") -> str:
-    return compose_prompt(template, schema_md=schema_md)
+def compose_crosscheck_prompt(
+    template: str,
+    *,
+    project_name: str = "",
+    schema_md: str = "",
+    additional: str = "",
+) -> str:
+    """Same {{additional}} handling as the other stages: appended when a hand-written template
+    has no marker, so a project prompt written before this existed still picks it up."""
+    has_marker = "{{additional}}" in (template or "")
+    composed = compose_prompt(
+        template, project_name=project_name, schema_md=schema_md, additional=additional
+    )
+    if additional and additional.strip() and not has_marker:
+        composed = composed.rstrip() + "\n\n# ADDITIONAL INSTRUCTIONS\n\n" + additional.strip()
+    return composed
 
 
 def build_tool_schema(field_names: list[str]) -> ToolSchema:
@@ -131,6 +145,9 @@ class LLMCrossChecker:
         rows: list[dict],
         fields: list[FieldSpec],
         prompt_template: str,
+        *,
+        project_name: str = "",
+        additional: str = "",
     ) -> dict[str, dict]:
         """Verdicts keyed by field name, for the fields present in `rows`."""
         field_names = [r["field_name"] for r in rows]
@@ -138,7 +155,10 @@ class LLMCrossChecker:
             return {}
 
         system_prompt = compose_crosscheck_prompt(
-            prompt_template, schema_md=schema_to_markdown(fields)
+            prompt_template,
+            project_name=project_name,
+            schema_md=schema_to_markdown(fields),
+            additional=additional,
         )
         output, metadata = self._client.complete_structured(
             system=system_prompt,

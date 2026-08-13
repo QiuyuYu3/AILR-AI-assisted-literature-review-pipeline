@@ -137,39 +137,71 @@ def _crosscheck_source_ids(project: Any, source_ids) -> list[int]:
     return [s.id for s in project.db.list_sources_with_markdown(project.project_id)]
 
 
+def _crosscheck_client(project: Any, mock: bool):
+    """The checker's client, or a blocking reason. A mock run exercises the wiring without an API
+    call, so the same-model guard (which is about the credibility of a real agreement rate) does
+    not apply to it."""
+    from ailr.core.config import crosscheck_llm_blocked
+
+    if mock:
+        from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
+
+        return MockLLMClient(
+            model="mock-crosscheck",
+            response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts),
+        ), None
+
+    blocked = crosscheck_llm_blocked(project.config)
+    if blocked:
+        return None, blocked
+    llm = resolve_stage_llm(project.config.llm, project.config.crosscheck.llm)
+    return make_llm_client(
+        provider=llm.provider, model=llm.model, temperature=llm.temperature,
+        seed=llm.seed, max_retries=llm.max_retries,
+    ), None
+
+
 def _run_llm_crosscheck(key: str, project: Any, mock: bool, source_ids) -> None:
     try:
-        from ailr.core.config import crosscheck_llm_blocked
         from ailr.crosschecker import LLMCrossChecker
         from ailr.tasks.crosscheck import LLMCrossCheckTask
 
-        # A mock run exercises the wiring without an API call, so the same-model guard (which is
-        # about the credibility of a real agreement rate) does not apply to it.
-        blocked = None if mock else crosscheck_llm_blocked(project.config)
+        client, blocked = _crosscheck_client(project, mock)
         if blocked:
             with _lock:
                 _jobs[key].update({"running": False, "error": blocked})
             return
-
-        if mock:
-            from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
-
-            client = MockLLMClient(
-                model="mock-crosscheck",
-                response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts),
-            )
-        else:
-            llm = resolve_stage_llm(project.config.llm, project.config.crosscheck.llm)
-            client = make_llm_client(
-                provider=llm.provider, model=llm.model, temperature=llm.temperature,
-                seed=llm.seed, max_retries=llm.max_retries,
-            )
 
         summary = LLMCrossCheckTask(project, LLMCrossChecker(client)).run(
             _crosscheck_source_ids(project, source_ids), on_progress=_progress_cb(key)
         )
         with _lock:
             _jobs[key].update({"running": False, "summary": summary.text()})
+    except Exception as e:
+        with _lock:
+            _jobs[key].update({"running": False, "error": str(e)})
+
+
+def start_quicktest_crosscheck(project: Any, run_id: int, mock: bool = False) -> bool:
+    """Cross-check one quick-test run: the rehearsal of what the real run will do."""
+    return _start("crosscheck-quicktest", _run_quicktest_crosscheck, project, run_id, mock)
+
+
+def _run_quicktest_crosscheck(key: str, project: Any, run_id: int, mock: bool) -> None:
+    try:
+        from ailr.crosschecker import LLMCrossChecker
+        from ailr.tasks.crosscheck import QuickTestCrossCheckTask
+
+        client, blocked = _crosscheck_client(project, mock)
+        if blocked:
+            with _lock:
+                _jobs[key].update({"running": False, "error": blocked})
+            return
+
+        task = QuickTestCrossCheckTask(project, LLMCrossChecker(client), int(run_id))
+        summary = task.run_for_run(on_progress=_progress_cb(key))
+        with _lock:
+            _jobs[key].update({"running": False, "summary": summary.text(), "result": {"run_id": run_id}})
     except Exception as e:
         with _lock:
             _jobs[key].update({"running": False, "error": str(e)})

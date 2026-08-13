@@ -63,6 +63,8 @@ def test_project_prompt_overrides_the_built_in_one(tmp_path):
 def test_built_in_prompt_is_used_when_the_project_has_none(tmp_path):
     text = load_prompt(tmp_path)
     assert "{{schema_md}}" in text
+    assert "{{additional}}" in text
+    assert "{{project_name}}" in text
     assert "verifying a structured data extraction" in text
 
 
@@ -113,6 +115,28 @@ def test_the_schema_is_rendered_into_the_system_prompt():
     LLMCrossChecker(client).check(Source(title="P", id=1), "body", _rows(), FIELDS, "HEAD\n{{schema_md}}")
     system = client.calls[0]["system"]
     assert "HEAD" in system and "design" in system and "{{schema_md}}" not in system
+
+
+def test_project_name_and_additional_instructions_reach_the_prompt():
+    client = _StubClient({"design": _verdict(), "sample_size": _verdict()})
+    LLMCrossChecker(client).check(
+        Source(title="P", id=1), "body", _rows(), FIELDS,
+        "review: {{project_name}}\n{{schema_md}}\n{{additional}}",
+        project_name="Dyadic gaze", additional="N means dyads, not participants.",
+    )
+    system = client.calls[0]["system"]
+    assert "Dyadic gaze" in system
+    assert "N means dyads, not participants." in system
+
+
+def test_additional_instructions_survive_a_template_with_no_marker():
+    """A hand-written project prompt predating {{additional}} still picks it up."""
+    client = _StubClient({"design": _verdict(), "sample_size": _verdict()})
+    LLMCrossChecker(client).check(
+        Source(title="P", id=1), "body", _rows(), FIELDS, "just the rules",
+        additional="count dyads",
+    )
+    assert "count dyads" in client.calls[0]["system"]
 
 
 def test_an_unknown_verdict_is_rejected():
@@ -177,6 +201,99 @@ def test_llm_verdicts_become_llm_kind_rows():
     assert rec.suggested_value == "between"
     assert rec.target_row_id == 7
     assert rec.confidence == 8
+
+
+# ----- Calibration: the same check over a quick-test run -----
+
+def _seed_quick_test(project, fields, paper="a within-subjects design in the paper"):
+    sid = project.db.insert_source(Source(title="A paper", project_id=project.project_id))
+    md = project.root / "data" / "markdown" / f"{sid}.md"
+    md.parent.mkdir(parents=True, exist_ok=True)
+    md.write_text(paper, encoding="utf-8")
+    run_id = project.db.create_test_run(project.project_id, "extraction", 1, "prompt", "criteria")
+    project.db.insert_test_extraction(run_id, sid, "include", fields, None)
+    return sid, run_id
+
+
+def test_quick_test_fields_unpack_into_checker_rows():
+    from ailr.tasks.crosscheck import _quick_test_rows
+
+    rows = _quick_test_rows({
+        "id": 3,
+        "fields": [
+            {"field": "design", "value": "within", "quote": "q1"},
+            {"field": "_flag_check", "value": "x", "quote": None},
+        ],
+    })
+    assert [r["field_name"] for r in rows] == ["design"]   # reserved fields skipped
+    assert rows[0] == {"id": 3, "field_name": "design", "value": "within", "source_quote": "q1"}
+
+
+def test_cross_checking_a_quick_test_run_stores_against_that_run(tmp_project):
+    from ailr.crosschecker import LLMCrossChecker
+    from ailr.tasks.crosscheck import QuickTestCrossCheckTask, quick_test_target_id
+
+    sid, run_id = _seed_quick_test(tmp_project, [{"field": "design", "value": "within", "quote": "q"}])
+    client = _StubClient({"design": _verdict("disagree", "quote does not support it")})
+    summary = QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run_id).run_for_run()
+
+    assert summary.checked == 1 and summary.findings == 1
+    stored = tmp_project.db.get_cross_checks(sid)
+    assert len(stored) == 1
+    assert stored[0]["stage"] == "quick_test"
+    assert stored[0]["target_id"] == quick_test_target_id(run_id)
+    # Staleness is an extraction-stage notion; a quick-test finding must never be hidden by it.
+    assert stored[0]["stale"] is False
+
+
+def test_quick_test_findings_do_not_leak_into_the_extraction_badges(tmp_project):
+    from ailr.crosschecker import LLMCrossChecker
+    from ailr.tasks.crosscheck import QuickTestCrossCheckTask
+
+    sid, run_id = _seed_quick_test(tmp_project, [{"field": "design", "value": "within", "quote": "q"}])
+    client = _StubClient({"design": _verdict("disagree", "nope")})
+    QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run_id).run_for_run()
+
+    assert tmp_project.db.cross_checks_by_field(sid) == {}
+    assert tmp_project.db.cross_check_counts([sid]) == {}
+
+
+def test_field_summary_ranks_the_worst_field_first(tmp_project):
+    from ailr.crosschecker import LLMCrossChecker
+    from ailr.tasks.crosscheck import QuickTestCrossCheckTask, quick_test_target_id
+
+    _, run_id = _seed_quick_test(tmp_project, [
+        {"field": "design", "value": "within", "quote": "q"},
+        {"field": "sample_size", "value": 48, "quote": "q2"},
+    ])
+    client = _StubClient({
+        "design": _verdict("agree"),
+        "sample_size": _verdict("disagree", "paper says 52", "52"),
+    })
+    QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run_id).run_for_run()
+
+    rows = tmp_project.db.cross_check_field_summary(quick_test_target_id(run_id))
+    assert rows[0]["field"] == "sample_size"
+    assert rows[0]["flagged"] == 1 and rows[0]["rate"] == 1.0
+    assert rows[0]["reasons"] == ["paper says 52"]
+    assert rows[1]["field"] == "design" and rows[1]["flagged"] == 0
+
+
+def test_two_quick_test_runs_keep_separate_findings(tmp_project):
+    from ailr.crosschecker import LLMCrossChecker
+    from ailr.tasks.crosscheck import QuickTestCrossCheckTask, quick_test_target_id
+
+    sid, run_a = _seed_quick_test(tmp_project, [{"field": "design", "value": "within", "quote": "q"}])
+    run_b = tmp_project.db.create_test_run(tmp_project.project_id, "extraction", 1, "p2", "c")
+    tmp_project.db.insert_test_extraction(run_b, sid, "include",
+                                          [{"field": "design", "value": "between", "quote": "q"}], None)
+
+    for run in (run_a, run_b):
+        client = _StubClient({"design": _verdict("disagree", f"run {run}")})
+        QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run).run_for_run()
+
+    assert len(tmp_project.db.cross_checks_for_target(quick_test_target_id(run_a))) == 1
+    assert len(tmp_project.db.cross_checks_for_target(quick_test_target_id(run_b))) == 1
 
 
 def test_the_two_layers_are_stored_side_by_side(db, tmp_project):

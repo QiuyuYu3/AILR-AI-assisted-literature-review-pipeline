@@ -186,6 +186,7 @@ def llm_verdicts_to_records(
     checker_id: str,
     llm_params: Optional[dict] = None,
     prompt_version: Optional[str] = None,
+    stage: str = "extraction",
 ) -> list["CrossCheckRecord"]:
     """LLM verdicts (keyed by field) as rows. Unlike the deterministic layer these carry no
     issue_code: the model's reason is the finding."""
@@ -194,7 +195,7 @@ def llm_verdicts_to_records(
         suggested = v.get("suggested_value")
         records.append(CrossCheckRecord(
             source_id=source_id,
-            stage="extraction",
+            stage=stage,
             target_type=target_type,
             target_id=target_id,
             target_row_id=row_ids.get(field_name),
@@ -221,6 +222,7 @@ def issues_to_records(
     target_id: str,
     row_ids: dict[str, int],
     checked_fields: list[str],
+    stage: str = "extraction",
 ) -> list[CrossCheckRecord]:
     """Findings become 'disagree' rows; every other checked field gets an explicit 'agree' row so
     a clean field is distinguishable from one that was never checked."""
@@ -231,7 +233,7 @@ def issues_to_records(
     def _make(field_name: str, verdict: str, issue: Optional[Issue]) -> CrossCheckRecord:
         return CrossCheckRecord(
             source_id=source_id,
-            stage="extraction",
+            stage=stage,
             target_type=target_type,
             target_id=target_id,
             target_row_id=row_ids.get(field_name),

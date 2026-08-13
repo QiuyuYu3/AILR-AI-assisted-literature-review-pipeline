@@ -59,6 +59,7 @@ class _CrossCheckTask:
     """Shared walk over (source, extractor) pairs. Subclasses supply the check itself."""
 
     check_kind = ""
+    stage = "extraction"
 
     def __init__(self, project: Project) -> None:
         self.project = project
@@ -124,7 +125,7 @@ class _CrossCheckTask:
 
     def _store(self, source_id, target_type, target_id, records) -> None:
         self.project.db.replace_cross_checks(
-            source_id, "extraction", target_type, target_id, self.check_kind, records
+            source_id, self.stage, target_type, target_id, self.check_kind, records
         )
 
     def _check_one(self, source, target_type, target_id, rows, fields, paper_text, summary) -> None:
@@ -148,6 +149,7 @@ class DeterministicCrossCheckTask(_CrossCheckTask):
             target_id=target_id,
             row_ids=row_ids,
             checked_fields=list(row_ids),
+            stage=self.stage,
         )
         self._store(source.id, target_type, target_id, records)
         summary.checked += 1
@@ -165,6 +167,7 @@ class LLMCrossCheckTask(_CrossCheckTask):
         super().__init__(project)
         self.checker = checker
         self._prompt_template: Optional[str] = None
+        self._additional: Optional[str] = None
 
     def _prompt(self) -> str:
         if self._prompt_template is None:
@@ -173,12 +176,22 @@ class LLMCrossCheckTask(_CrossCheckTask):
             )
         return self._prompt_template
 
+    def _additional_text(self) -> str:
+        if self._additional is None:
+            path = self.project.root / self.project.config.crosscheck.additional
+            self._additional = path.read_text(encoding="utf-8") if path.exists() else ""
+        return self._additional
+
     def _check_one(self, source, target_type, target_id, rows, fields, paper_text, summary) -> None:
         # One row per field, newest first, so the model judges the live record and not a superseded one.
         latest = {r["field_name"]: r for r in rows}
         live_rows = list(latest.values())
 
-        verdicts = self.checker.check(source, paper_text, live_rows, fields, self._prompt())
+        verdicts = self.checker.check(
+            source, paper_text, live_rows, fields, self._prompt(),
+            project_name=self.project.config.project.name,
+            additional=self._additional_text(),
+        )
         metadata = self.checker.last_metadata
         if metadata is not None:
             self.project.db.insert_api_call(self.project.project_id, metadata)
@@ -194,7 +207,52 @@ class LLMCrossCheckTask(_CrossCheckTask):
             checker_id=self.checker.checker_id,
             llm_params=self.checker.llm_params(),
             prompt_version=self.checker.prompt_version,
+            stage=self.stage,
         )
         self._store(source.id, target_type, target_id, records)
         summary.checked += 1
         summary.findings += sum(1 for v in verdicts.values() if v.get("verdict") != "agree")
+
+
+def quick_test_target_id(run_id: int) -> str:
+    """cross_checks has no run column, so the run is carried in target_id. That keeps the replace
+    key distinct per run, so re-checking one run never clears another's findings."""
+    return f"run:{run_id}"
+
+
+def _quick_test_rows(test_extraction: dict) -> list[dict]:
+    """A quick-test paper stores its fields as one JSON blob; unpack it into the per-field row
+    shape the checker reads. Every row points back at the same test_extractions id."""
+    return [
+        {
+            "id": test_extraction["id"],
+            "field_name": f.get("field"),
+            "value": f.get("value"),
+            "source_quote": f.get("quote"),
+        }
+        for f in test_extraction.get("fields", [])
+        if f.get("field") and not str(f["field"]).startswith("_")
+    ]
+
+
+class QuickTestCrossCheckTask(LLMCrossCheckTask):
+    """The same cross-check, run over a quick-test run's output instead of the project's own
+    extractions. Calibration is the rehearsal: same checker, same prompt, smaller sample."""
+
+    stage = "quick_test"
+
+    def __init__(self, project: Project, checker: LLMCrossChecker, run_id: int) -> None:
+        super().__init__(project, checker)
+        self.run_id = run_id
+        self._rows_by_source: dict[int, list[dict]] = {}
+
+    def run_for_run(self, on_progress: Optional[ProgressCallback] = None) -> CrossCheckSummary:
+        self._rows_by_source = {
+            r["source_id"]: _quick_test_rows(r)
+            for r in self.project.db.list_test_extractions(self.run_id)
+        }
+        return self.run(list(self._rows_by_source), targets=["ai"], on_progress=on_progress)
+
+    def _extractor_groups(self, source_id, targets):
+        rows = self._rows_by_source.get(source_id) or []
+        return {("ai", quick_test_target_id(self.run_id)): rows} if rows else {}

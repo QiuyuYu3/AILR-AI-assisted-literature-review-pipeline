@@ -90,7 +90,15 @@ def layout(section: str = "abstract") -> Any:
                 "extraction variables are shared definitions — edit them on the Protocol page.",
                 className="text-muted small",
             ),
-            template_view.prompt_layout(),
+            dbc.Tabs(
+                [
+                    dbc.Tab(html.Div(template_view.prompt_layout(), className="pt-2"),
+                            label="Extraction", tab_id="wf-prompt-extract"),
+                    dbc.Tab(html.Div(template_view.crosscheck_prompt_panel(), className="pt-2"),
+                            label="Cross-check", tab_id="wf-prompt-crosscheck"),
+                ],
+                active_tab="wf-prompt-extract",
+            ),
         ]
         extraction_tab = [
             html.P("Run AI extraction on included papers, or import results you ran externally (use 'Run externally' under Import to copy the prompt and download the JSON template).", className="text-muted small"),

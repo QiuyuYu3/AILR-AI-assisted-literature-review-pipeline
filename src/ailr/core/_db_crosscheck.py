@@ -120,6 +120,33 @@ class CrossCheckMixin:
             grouped.setdefault(row.get("field_name") or "", []).append(row)
         return grouped
 
+    def cross_checks_for_target(self, target_id: str, stage: str = "quick_test") -> list[dict]:
+        """Every finding stored against one target, across sources. Used for the quick-test run
+        summary, where the run id is what target_id carries."""
+        rows = self._conn.execute(
+            "SELECT * FROM cross_checks WHERE stage = ? AND target_id = ? ORDER BY id",
+            (stage, target_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def cross_check_field_summary(self, target_id: str, stage: str = "quick_test") -> list[dict]:
+        """Per-field tallies, worst first. The total flag rate says nothing actionable; which
+        fields carry the flags points straight at the schema description to fix."""
+        by_field: dict[str, dict] = {}
+        for row in self.cross_checks_for_target(target_id, stage):
+            name = row.get("field_name") or ""
+            entry = by_field.setdefault(name, {"field": name, "checked": 0, "flagged": 0, "reasons": []})
+            entry["checked"] += 1
+            if (row.get("verdict") or "") != "agree":
+                entry["flagged"] += 1
+                if row.get("reason"):
+                    entry["reasons"].append(row["reason"])
+        out = list(by_field.values())
+        for e in out:
+            e["rate"] = e["flagged"] / e["checked"] if e["checked"] else 0.0
+        out.sort(key=lambda e: (-e["flagged"], e["field"]))
+        return out
+
     def cross_check_counts(
         self, source_ids: list[int], stage: str = "extraction", target_type: str = "ai"
     ) -> dict[int, int]:

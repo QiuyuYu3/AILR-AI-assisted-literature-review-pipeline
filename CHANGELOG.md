@@ -3,9 +3,6 @@
 ---
 ## [Unreleased]
 
-### Added
-- Cross-check gained its LLM layer: a second model is given each recorded value with the quote offered as its support, plus the paper and the schema, and returns agree / disagree / uncertain per field with a one-sentence reason and an optional suggested value. It refuses to run on the same model that produced the extraction (`crosscheck.allow_same_model` overrides), costs one call per paper, and is off until enabled under Settings -> Cross-check. The prompt ships with the package; a project can override it with `prompts/crosscheck.txt`. The checker is deliberately not shown the extractor's confidence or reasoning, which would anchor it onto the answer it is meant to test. Verdicts store as `check_kind = llm` alongside the deterministic findings rather than replacing them, and stay out of agreement statistics.
-
 ---
 ## [0.35.0] – 2026-08-12
 
@@ -14,8 +11,17 @@
 
 - Cross-check can run over the whole project at once (AI extraction page), and `crosscheck.targets` now decides whose extractions are read — AI, humans, or both — with a switch for it under Settings -> Cross-check. Each extractor's findings are stored separately, so checking one human's rows no longer clears another's. The full-text queue gains a "Cross-check flagged" filter and the dashboard's extraction card counts flagged papers; both ignore findings that went stale.
 
+- Cross-check gained its LLM layer: a second model is given each recorded value with the quote offered as its support, plus the paper and the schema, and returns agree / disagree / uncertain per field with a one-sentence reason and an optional suggested value. It refuses to run on the same model that produced the extraction (`crosscheck.allow_same_model` overrides), costs one call per paper, and is off until enabled under Settings -> Cross-check. The prompt ships with the package; a project can override it with `prompts/crosscheck.txt`. The checker is deliberately not shown the extractor's confidence or reasoning, which would anchor it onto the answer it is meant to test. Verdicts store as `check_kind = llm` alongside the deterministic findings rather than replacing them, and stay out of agreement statistics.
+
+- The cross-check prompt and its additional instructions are edited on the full-text Workflow page, under Prompt -> Cross-check, beside the extraction prompt it judges. Includes a live preview of the composed prompt and a button to restore the built-in one.
+
+- A cross-check that suggests a different value now offers a one-click "Use this value" that drops it into the extraction form, the same way the per-field "Use" button works for AI's own values. Nothing is written until Save/Submit. Offered for scalar fields only, since a suggestion is a plain string.
+
+- Calibration can rehearse the cross-check: run it over a quick-test run's output and get a per-field breakdown of what got flagged, so a prompt or a schema description can be fixed before the full run. Same checker, same prompt, smaller sample — findings are stored against the run (`stage = quick_test`) and never mix into the real extraction badges or counts. The per-field table is deliberately the headline rather than one overall rate: "this field is flagged in 8 of 10 papers" points at something to fix, a percentage does not.
+
 ### Removed
 - `crosscheck.deterministic`. The deterministic layer runs on demand and costs nothing, so not pressing the button was already the off switch.
+
 ---
 ## [0.34.0] – 2026-08-12
 
