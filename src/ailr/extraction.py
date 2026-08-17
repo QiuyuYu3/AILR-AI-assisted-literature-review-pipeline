@@ -329,10 +329,11 @@ def _field_to_json_schema(field: FieldSpec, *, with_quotes: bool, top_level: boo
             return {"type": "object", "properties": props, "required": req}
         return arr
 
-    # Leaf
-    leaf: dict[str, Any] = dict(_BASIC_TYPES.get(field.type, {"type": "string"}))
+    # Leaf. Nullable: otherwise the model still owes the slot a string and writes the word "null".
+    base = _BASIC_TYPES.get(field.type, {"type": "string"})["type"]
+    leaf: dict[str, Any] = {"type": [base, "null"]}
     if field.enum:
-        leaf["enum"] = field.enum
+        leaf["enum"] = [*field.enum, None]  # null must be listed to clear the enum gate too
     if field.description:
         leaf["description"] = field.description
 

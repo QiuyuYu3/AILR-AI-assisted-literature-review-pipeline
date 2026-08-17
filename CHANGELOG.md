@@ -13,6 +13,9 @@
 - The Prompt tab on both Workflow pages uses an accordion (stage prompt open, cross-check prompt collapsed) instead of a second row of tabs inside the first.
 - AI screening now requires `evidence_quotes` in its output, so the quote check has something to verify.
 
+### Fixed
+- Extraction: a field the paper does not report can now come back as null. `value` was typed non-nullable while being required, so a model with nothing to record had to put something in the slot and wrote the string `"null"` — which then counted as a value in exports and in the quote-coverage denominator. Enum fields list null as an option alongside their own. Existing rows are untouched; this affects future runs.
+
 ---
 ## [0.35.0] – 2026-08-12
 
