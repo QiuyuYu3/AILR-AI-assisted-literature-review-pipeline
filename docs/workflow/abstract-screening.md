@@ -8,7 +8,7 @@ Who screens this stage, `assisted` (AI + 1 human) or `independent` (2 humans), i
 
 The **Workflow** page (abstract) has three tabs:
 
-- **Prompt.** Edit the screening prompt and optional **additional instructions** (stage-specific guidance). Your **criteria** are *not* here: they are shared with extraction and defined once on the [Protocol](../protocol.md) page; the prompt references them via `{{criteria}}`, filled in when the AI runs. A **Full prompt preview** below the editor shows the finished prompt exactly as sent, with the criteria already filled in.
+- **Prompt.** Edit the screening prompt and optional **additional instructions** (stage-specific guidance). Your **criteria** are *not* here: they are shared with extraction and defined once on the [Protocol](../protocol.md) page; the prompt references them via `{{criteria}}`, filled in when the AI runs. A **Full prompt preview** below the editor shows the finished prompt exactly as sent, with the criteria already filled in. A second, collapsed section holds the optional [cross-check](#cross-check) prompt.
 - **Calibration.** Test the prompt on a sample before committing to it (see below).
 - **AI screening.** Run the AI, or import results you ran externally.
 
@@ -72,3 +72,20 @@ A paper leaves this stage only once it is **settled**: everyone the workflow cal
 :::
 
 ![abstract conflicts](../figures/abstract_conflicts.png)
+
+## 5. Cross-check (optional)
+
+:::{warning}
+Not yet tested in production.
+:::
+
+Optional, and off the critical path: a cross-check **audits decisions that already exist** rather than making any of its own. It never overrides a decision, never enters conflict resolution or agreement statistics, and nothing it finds blocks anything. See [Cross-check](../concepts.md#cross-check) for why it is kept out of those. This is the same feature the [full-text stage](extraction.md#cross-check) uses, pointed at screening records.
+
+Both layers run from the **AI screening** tab, over the whole project:
+
+- **Deterministic** (free, no API call). Every evidence quote must appear verbatim in the title or abstract; every cited criterion ID must exist; every criterion must carry a PASS / FAIL / UNCERTAIN verdict; and the decision must not contradict those verdicts — *include* while a criterion is marked FAIL, or *exclude* while every criterion passes. UNCERTAIN verdicts are deliberately not flagged in either direction: leaving a doubtful abstract for full text is the correct call at this stage, not an inconsistency.
+- **LLM** (costs tokens). A second model is given the recorded decision, its reason and quotes, plus the title and abstract, and returns agree / disagree / uncertain with a one-sentence reason. It is not shown the screener's confidence, which would anchor it. One call per screened paper, so at this stage that is the whole corpus. Off until enabled under **Settings → Cross-check**, where the checker's model is set; it refuses to run on the model that did the screening.
+
+Findings surface once you have voted on a paper — before that they would leak that the AI has acted, which the blinding exists to prevent. A flagged card shows a **Cross-check flagged** badge and a **Cross-check** link that opens the findings; the queue has a **Cross-check flagged** status filter. A finding goes stale, and drops out of both, when the decision it judged is re-screened.
+
+A quote that fails to match is a prompt to look, not a verdict: models trim and lightly reword quotes, and that alone is enough to miss a substring match.

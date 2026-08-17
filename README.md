@@ -98,7 +98,7 @@ Bibliographic metadata (title, authors, year, journal, DOI) comes from the impor
 
 > **Not yet tested in production.**
 
-An optional pass that audits an extraction that already exists, rather than producing one: each recorded value is checked against the quote offered as its support. The **deterministic** layer (verbatim quotes, enum values, empty required fields) makes no API calls; the **LLM** layer asks a second model — which must differ from the one that extracted — for a verdict per field.
+An optional pass that audits a record that already exists, rather than producing one. At full text each extracted value is checked against the quote offered as its support; at title/abstract each screening decision is checked against the abstract it was made from — evidence quotes matched verbatim, criterion IDs, and the decision against its own per-criterion verdicts. The **deterministic** layer makes no API calls; the **LLM** layer asks a second model — which must differ from the one that produced the record — for a verdict.
 
 Findings are advisory: they never block a submission and stay out of κ, conflict resolution, and the PRISMA counts.
 

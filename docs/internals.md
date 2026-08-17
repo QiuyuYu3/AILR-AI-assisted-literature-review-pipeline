@@ -16,6 +16,7 @@ ailr/
   quote_audit.py    matches stored quotes against the paper markdown (coverage / verbatim)
   crosschecker.py   LLM cross-checker: judges an existing record (not a Reviewer — it extracts nothing)
   crosscheck_prompt.txt  the built-in cross-check prompt; a project may override it
+  crosscheck_screening_prompt.txt  the same, for the screening cross-check
   tasks/            screen / extract / calibrate / crosscheck / preprocess: the pipeline steps
   llm/              provider-agnostic client: base, factory, retry, mock, providers/
   modes/            built-in config presets (strict.yaml, assisted.yaml)
@@ -27,7 +28,7 @@ ailr/
 
 `core/database.py` is a **facade**: the `Database` class is assembled from per-domain mixins that each hold their own SQL, `_db_sources.py`, `_db_screening.py` (+ `_db_screening_aux.py`), `_db_extraction.py`, `_db_crosscheck.py`, `_db_calibration.py`, `_db_admin.py`, with the table definitions in `_db_schema.py`. Call sites only ever see `project.db`.
 
-The deterministic cross-check lives in `core/crosscheck.py` and reuses `quote_audit.py` for the matching itself rather than reimplementing it; `tasks/crosscheck.py` walks (source, extractor) pairs once and subclasses supply either the free checks or the LLM call, which is also how the calibration rehearsal reuses the same code against the quick-test tables.
+The deterministic cross-check lives in `core/crosscheck.py` (extraction) and `core/crosscheck_screening.py` (screening), both reusing `quote_audit.py` for the matching itself rather than reimplementing it; `tasks/crosscheck.py` walks (source, record-owner) pairs once and subclasses supply what the records are, what text they are judged against, and whether the check is the free one or the LLM call. That is how the same walk serves both stages, and how the calibration rehearsal reuses it against the quick-test tables. Screening findings share the `cross_checks` table, distinguished by `stage` and pointing at a `screening_decisions` row rather than an `extractions` row — which is why staleness is resolved per stage.
 
 The `ui/` package is the same idea. Each sidebar page is a `*_view.py`, and the parts more than one page needs live beside them: `modals.py` (shared dialogs), `_cards.py` (the record card), `_actions.py`, `_common.py`, `_project.py` (project loading), `version_ui.py` (the version/diff widgets), and `ai_runner.py`.
 
@@ -115,7 +116,7 @@ Everything below is also doable from the UI. The CLI is the power-user bypass, u
 
 Add `--mock` to `screen` / `extract` / `calibrate` to run with no API call. Run `ailr <command> --help` for all options.
 
-**Cross-check is UI-only** and has no command here. It is deliberate: the CLI covers the pipeline steps that predate the UI, and new features are added to the UI rather than to both. Both cross-check layers run from **Full text → Workflow → AI extraction** (and their mock mode from the same place).
+**Cross-check is UI-only** and has no command here. It is deliberate: the CLI covers the pipeline steps that predate the UI, and new features are added to the UI rather than to both. Both cross-check layers run from **Full text → Workflow → AI extraction** and, for screening records, from **Abstract → Workflow → AI screening** (mock mode from the same places).
 
 ## Pipeline diagram
 

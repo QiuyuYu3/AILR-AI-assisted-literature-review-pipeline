@@ -6,7 +6,7 @@ Pull structured data out of the included full texts. This is the step that turns
 
 **The variables** (the fields to pull out) are defined on the [**Protocol → Variables**](../protocol.md#variables) page, not here. They are shared definitions: each field carries its type, description, options, whether it's **required**, and whether a **human must verify** it. Set them up before you run extraction (see [Set up your protocol](../protocol.md)).
 
-**The prompt** (how to read the paper) lives on the **Prompt** tab of this Workflow page, which is split into **Extraction** and **Cross-check**. On the Extraction side, only two parts are worth editing: your **criteria** (shown here, but edited on Protocol) and free-form **additional instructions** (`{{additional}}`, stage-specific guidance). The rest is a fixed scaffold ailr fills in, tucked under *Advanced*, and a live preview shows the full prompt exactly as sent. The Cross-check side works the same way and is described under [Cross-check](#cross-check).
+**The prompt** (how to read the paper) lives on the **Prompt** tab of this Workflow page, which holds two sections: **Extraction prompt**, open, and the optional **Cross-check prompt**, collapsed. In the extraction prompt only two parts are worth editing: your **criteria** (shown here, but edited on Protocol) and free-form **additional instructions** (`{{additional}}`, stage-specific guidance). The rest is a fixed scaffold ailr fills in, tucked under *Advanced*, and a live preview shows the full prompt exactly as sent. The cross-check section works the same way and is described under [Cross-check](#cross-check).
 
 ![extraction prompt tab, with the full prompt preview](../figures/ft_prompt.png)
 
@@ -107,7 +107,7 @@ The LLM layer's agreement rate is **not** an accuracy measure — the checker se
 
 ### Its prompt
 
-The cross-check prompt is on the **Prompt → Cross-check** tab, beside the extraction prompt it judges. ailr ships a default, so you only need to touch it if your variables need domain-specific guidance — for example, that N in your literature means dyads rather than individual participants, which belongs in **additional instructions**. Under *Advanced* you can edit the whole scaffold; keep the `{{project_name}}`, `{{schema_md}}` and `{{additional}}` markers so ailr can fill them in. Saving writes `prompts/crosscheck.txt` into your project; delete that file to fall back to the built-in prompt, or use **Restore built-in prompt**.
+The cross-check prompt is in the collapsed **Cross-check prompt** section of the **Prompt** tab, beside the extraction prompt it judges. ailr ships a default, so you only need to touch it if your variables need domain-specific guidance — for example, that N in your literature means dyads rather than individual participants, which belongs in **additional instructions**. Under *Advanced* you can edit the whole scaffold; keep the `{{project_name}}`, `{{schema_md}}` and `{{additional}}` markers so ailr can fill them in. Saving writes `prompts/crosscheck.txt` into your project; delete that file to fall back to the built-in prompt, or use **Restore built-in prompt**.
 
 ## 5. Verify and edit
 

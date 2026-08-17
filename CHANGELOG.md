@@ -5,9 +5,13 @@
 
 ### Added
 - Full-text queue: an "In progress (mine)" status filter for papers you have saved but not submitted. It is a subset of "To extract", which keeps listing drafts.
+- Cross-check now covers title/abstract screening on the same principle as extraction: the deterministic layer matches evidence quotes against the abstract and checks the record's own consistency (criterion IDs, per-criterion verdicts, decision against those verdicts), and the LLM layer asks a second model whether the abstract supports the recorded decision. Runs from the AI screening page; findings appear as a badge and a Cross-check link on the card, and as a "Cross-check flagged" queue filter.
+- Screening cross-check ships its own built-in prompt, overridable with `prompts/crosscheck_screening.txt` and editable under Abstract → Workflow → Prompt.
 
 ### Changed
 - Full-text queue: the Status filter is grouped into Review / Extraction / Checks / All instead of one flat list of seven.
+- The Prompt tab on both Workflow pages uses an accordion (stage prompt open, cross-check prompt collapsed) instead of a second row of tabs inside the first.
+- AI screening now requires `evidence_quotes` in its output, so the quote check has something to verify.
 
 ---
 ## [0.35.0] – 2026-08-12

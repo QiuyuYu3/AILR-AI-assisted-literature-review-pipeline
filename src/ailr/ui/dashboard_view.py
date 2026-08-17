@@ -72,6 +72,11 @@ def _build_content(reviewer: Optional[str]) -> Any:
         if cfg.extraction.workflow == "independent" else 0
     )
     crosscheck_flagged = len(db.cross_check_counts(eligible_ext_ids))
+    abstract_crosscheck_flagged = len(
+        db.cross_check_counts(
+            db.source_ids_with_decisions(pid, "abstract", ["ai"]), stage="abstract", target_type="ai"
+        )
+    )
 
     my_done = db.count_reviewer_decisions(pid, rid) if rid else 0
 
@@ -90,7 +95,8 @@ def _build_content(reviewer: Optional[str]) -> Any:
                 ("include", human_counts["include"], "success"),
                 ("exclude", human_counts["exclude"], "danger"),
                 ("uncertain", human_counts["uncertain"], "warning"),
-            ],
+            ]
+            + ([("cross-check flagged", abstract_crosscheck_flagged, "warning")] if abstract_crosscheck_flagged else []),
             extra=html.Small(
                 f"across {abstract_sources_screened} unique source(s)  •  "
                 f"AI: {sum(ai_counts.values())} decisions  •  "

@@ -85,8 +85,8 @@ SCREENING_CHECK_TOOL = ToolSchema(
             "reason": {"type": "string", "description": "One sentence."},
             "suggested_value": {
                 "type": ["string", "null"],
-                "enum": ["include", "exclude", "uncertain", None],
-                "description": "Only when the verdict is disagree: the decision the abstract supports.",
+                "description": "Only when the verdict is disagree: the decision the abstract supports "
+                               "(include, exclude or uncertain). Null otherwise.",
             },
             "confidence": {"type": "integer", "minimum": 1, "maximum": 10},
         },
