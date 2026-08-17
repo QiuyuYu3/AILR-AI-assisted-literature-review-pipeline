@@ -1,4 +1,9 @@
-"""Deterministic cross-checks over a screening decision."""
+"""Cross-checks over a screening decision: the checks, their storage, and the task walk."""
+
+import json
+from pathlib import Path
+
+import pytest
 
 from ailr.core.crosscheck import EMPTY_REQUIRED, INVALID_ENUM, QUOTE_NOT_FOUND
 from ailr.core.crosscheck_screening import (
@@ -8,6 +13,12 @@ from ailr.core.crosscheck_screening import (
     checked_fields,
     screening_text,
 )
+from ailr.core.source import Source
+from ailr.criteria import save_criteria
+from ailr.crosschecker import BUILT_IN_SCREENING_PROMPT, ScreeningCrossChecker, load_prompt
+from ailr.exceptions import LLMError
+from ailr.llm.base import CallMetadata
+from ailr.reviewers import ScreeningDecision
 
 
 ABSTRACT = (
@@ -20,9 +31,10 @@ CRITERIA = ["C1", "C2", "C3"]
 
 
 class _Src:
-    def __init__(self, title="Dyadic gaze during joint attention", abstract=ABSTRACT):
+    def __init__(self, title="Dyadic gaze during joint attention", abstract=ABSTRACT, year=2021):
         self.title = title
         self.abstract = abstract
+        self.year = year
 
 
 def _decision(**over):
@@ -140,3 +152,256 @@ def test_uncertain_verdicts_do_not_contradict_either_decision():
 def test_criteria_join_the_checked_fields_only_when_flag_check_exists():
     assert "C1" not in checked_fields(CRITERIA, [])
     assert "C1" in checked_fields(CRITERIA, _flags(("C1", "PASS")))
+
+
+# ----- Reading the record back out of the database -----
+
+AI_ID = "anthropic:x"
+
+
+def _seed_criteria(project, ids=("C1", "C2")):
+    save_criteria(
+        project.root / project.config.screening.criteria_structured,
+        [{"id": cid, "name": f"Criterion {cid}", "pass_if": "yes", "fail_if": "no"} for cid in ids],
+    )
+
+
+def _seed_source(project, title="Dyadic gaze", abstract=ABSTRACT):
+    return project.db.insert_source(
+        Source(title=title, abstract=abstract, project_id=project.project_id)
+    )
+
+
+def _decide(project, sid, decision="include", quotes=None, flag_check=None,
+            reviewer_type="ai", reviewer_id=AI_ID, stage="abstract"):
+    raw = json.dumps({"_flag_check": flag_check}) if flag_check else None
+    return project.db.insert_screening_decision(ScreeningDecision(
+        decision=decision, reasoning="because", reviewer_type=reviewer_type, reviewer_id=reviewer_id,
+        source_id=sid, stage=stage,
+        evidence_quotes=quotes if quotes is not None else ["Thirty-two dyads"],
+        matched_criteria=["C1"], raw_output=raw,
+    ))
+
+
+def test_only_the_newest_decision_per_reviewer_is_read_back(tmp_project):
+    """Re-screening appends, so the cross-check must judge the live record and not a superseded one."""
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, decision="exclude")
+    latest = _decide(tmp_project, sid, decision="include")
+    _decide(tmp_project, sid, reviewer_type="human", reviewer_id="amber")
+
+    rows = tmp_project.db.latest_screening_decisions(sid, "abstract")
+    assert len(rows) == 2
+    ai_row = next(r for r in rows if r["reviewer_type"] == "ai")
+    assert (ai_row["id"], ai_row["decision"]) == (latest, "include")
+
+
+def test_flag_check_is_decoded_out_of_raw_output(tmp_project):
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, flag_check={"C1": {"verdict": "PASS", "reason": "r"}})
+    row = tmp_project.db.latest_screening_decisions(sid, "abstract")[0]
+    assert row["flag_check"] == [{"criterion_id": "C1", "verdict": "PASS", "reason": "r"}]
+
+
+def test_reviewer_types_filter_what_is_read_back(tmp_project):
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid)
+    _decide(tmp_project, sid, reviewer_type="human", reviewer_id="amber")
+    rows = tmp_project.db.latest_screening_decisions(sid, "abstract", ["ai"])
+    assert [r["reviewer_type"] for r in rows] == ["ai"]
+
+
+def test_candidate_sources_are_the_ones_carrying_a_decision(tmp_project):
+    decided = _seed_source(tmp_project)
+    _seed_source(tmp_project, title="Never screened")
+    _decide(tmp_project, decided)
+    assert tmp_project.db.source_ids_with_decisions(tmp_project.project_id, "abstract") == [decided]
+
+
+# ----- The task -----
+
+def _run(project, source_ids=None, targets=("ai",)):
+    from ailr.tasks.crosscheck import ScreeningCrossCheckTask
+
+    ids = source_ids if source_ids is not None else project.db.source_ids_with_decisions(
+        project.project_id, "abstract"
+    )
+    return ScreeningCrossCheckTask(project).run(ids, targets=list(targets))
+
+
+def test_task_stores_a_finding_for_a_quote_that_is_not_in_the_abstract(tmp_project):
+    _seed_criteria(tmp_project)
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, quotes=["participants completed an fMRI scan"])
+
+    summary = _run(tmp_project)
+    assert (summary.checked, summary.sources, summary.findings) == (1, 1, 1)
+    assert summary.per_issue == {QUOTE_NOT_FOUND: 1}
+
+    stored = tmp_project.db.get_cross_checks(sid, stage="abstract")
+    flagged = [r for r in stored if r["verdict"] == "disagree"]
+    assert [r["field_name"] for r in flagged] == ["evidence_quotes"]
+    # Clean parts still get an explicit agree row, so "checked and fine" is distinguishable
+    # from "never checked" — same contract as the extraction layer.
+    assert {r["field_name"] for r in stored if r["verdict"] == "agree"} >= {"decision", "reasoning"}
+
+
+def test_task_skips_a_source_with_no_abstract(tmp_project):
+    sid = tmp_project.db.insert_source(Source(title="", abstract="", project_id=tmp_project.project_id))
+    _decide(tmp_project, sid)
+    summary = _run(tmp_project, [sid])
+    assert (summary.skipped_no_markdown, summary.checked) == (1, 0)
+    assert tmp_project.db.get_cross_checks(sid) == []
+
+
+def test_targets_decides_whose_decision_is_checked(tmp_project):
+    _seed_criteria(tmp_project)
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid)
+    _decide(tmp_project, sid, reviewer_type="human", reviewer_id="amber")
+
+    _run(tmp_project, [sid], targets=("ai", "human"))
+    assert {r["target_type"] for r in tmp_project.db.get_cross_checks(sid)} == {"ai", "human"}
+
+    tmp_project.db.delete_cross_checks(sid)
+    _run(tmp_project, [sid], targets=("ai",))
+    assert {r["target_type"] for r in tmp_project.db.get_cross_checks(sid)} == {"ai"}
+
+
+def test_a_human_decision_is_not_flagged_for_having_no_quotes(tmp_project):
+    """Humans record a verdict and a reason, not quotes; flagging that would flag every one of them."""
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, quotes=[], reviewer_type="human", reviewer_id="amber")
+    summary = _run(tmp_project, [sid], targets=("human",))
+    assert (summary.checked, summary.findings) == (1, 0)
+
+
+def test_mock_decisions_are_not_flagged_for_having_no_quotes(tmp_project):
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, quotes=[], reviewer_id="mock:mock-screen")
+    summary = _run(tmp_project, [sid])
+    assert summary.findings == 0
+
+
+# ----- Staleness and the queue filter -----
+
+def test_a_finding_goes_stale_when_the_decision_it_judged_is_re_screened(tmp_project):
+    """The screening stage resolves staleness against screening_decisions, not extractions."""
+    db = tmp_project.db
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, quotes=["participants completed an fMRI scan"])
+    _run(tmp_project, [sid])
+    assert db.get_cross_checks(sid, stage="abstract")[0]["stale"] is False
+    assert db.cross_check_counts([sid], stage="abstract") == {sid: 1}
+
+    _decide(tmp_project, sid)  # re-screened: the record the findings judged is gone
+    assert all(r["stale"] for r in db.get_cross_checks(sid, stage="abstract"))
+    assert db.cross_check_counts([sid], stage="abstract") == {}
+
+
+def test_the_queue_filter_lists_flagged_papers_and_drops_them_once_re_screened(tmp_project):
+    db = tmp_project.db
+    flagged = _seed_source(tmp_project)
+    clean = _seed_source(tmp_project, title="Nothing wrong here")
+    _decide(tmp_project, flagged, quotes=["participants completed an fMRI scan"])
+    _decide(tmp_project, clean)
+    _run(tmp_project)
+
+    def _listed():
+        rows, _, _ = db.list_sources_page(
+            tmp_project.project_id, "amber", stage="abstract", status="crosscheck_flagged"
+        )
+        return [s.id for s in rows]
+
+    assert _listed() == [flagged]
+    _decide(tmp_project, flagged)
+    assert _listed() == []
+
+
+def test_screening_and_extraction_findings_do_not_leak_into_each_other(tmp_project):
+    """Both stages share the cross_checks table; only `stage` keeps them apart."""
+    from ailr.core.crosscheck import CrossCheckRecord
+
+    db = tmp_project.db
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, quotes=["participants completed an fMRI scan"])
+    _run(tmp_project, [sid])
+    db.replace_cross_checks(sid, "extraction", "ai", AI_ID, "deterministic", [
+        CrossCheckRecord(
+            source_id=sid, stage="extraction", target_type="ai", target_id=AI_ID,
+            target_row_id=1, field_name="design", checker_type="ai",
+            checker_id="ailr:deterministic", check_kind="deterministic", verdict="disagree",
+            issue_code=QUOTE_NOT_FOUND, reason="because",
+        )
+    ])
+
+    assert db.cross_check_counts([sid], stage="abstract") == {sid: 1}
+    assert db.cross_check_counts([sid]) == {sid: 1}
+    # The extraction badges read by field name; the screening pseudo-fields must not appear there.
+    assert list(db.cross_checks_by_field(sid)) == ["design"]
+
+
+# ----- The LLM layer -----
+
+class _StubClient:
+    provider_name = "stub"
+    model_name = "checker-1"
+    temperature = 0.0
+    effective_seed = None
+
+    def __init__(self, output):
+        self.output = output
+        self.calls: list[dict] = []
+
+    def complete_structured(self, *, system, user_message, tool_schema, max_tokens, cache_system=False):
+        self.calls.append({"system": system, "user": user_message, "schema": tool_schema})
+        return self.output, CallMetadata(provider="stub", model="checker-1", input_tokens=10, output_tokens=5)
+
+
+def _checked(output=None, decision=None, **kwargs):
+    client = _StubClient(output or {"verdict": "agree", "reason": "fine", "suggested_value": None, "confidence": 8})
+    prompt = load_prompt(Path("no-such-project"), "prompts/absent.txt", BUILT_IN_SCREENING_PROMPT)
+    verdicts = ScreeningCrossChecker(client).check(
+        _Src(), decision or _decision(), prompt, **kwargs
+    )
+    return client, verdicts
+
+
+def test_the_decision_gets_one_verdict_not_one_per_criterion():
+    _, verdicts = _checked()
+    assert list(verdicts) == ["decision"]
+    assert verdicts["decision"]["verdict"] == "agree"
+
+
+def test_an_unknown_verdict_is_rejected():
+    with pytest.raises(LLMError):
+        _checked({"verdict": "probably", "reason": "", "suggested_value": None, "confidence": 5})
+
+
+def test_the_checker_is_not_shown_the_screeners_confidence():
+    """Same rule as the extraction checker: the screener's own confidence anchors the judgement."""
+    client, _ = _checked(decision=_decision(confidence=9))
+    assert "confidence" not in client.calls[0]["user"].lower()
+
+
+def test_the_message_carries_the_decision_its_quotes_and_the_abstract():
+    client, _ = _checked()
+    message = client.calls[0]["user"]
+    assert "decision: include" in message
+    assert "Thirty-two dyads completed a joint attention task" in message
+    assert ABSTRACT in message
+
+
+def test_criteria_and_additional_instructions_reach_the_prompt():
+    client, _ = _checked(criteria="C1: dyadic interaction", additional="be lenient at this stage")
+    system = client.calls[0]["system"]
+    assert "C1: dyadic interaction" in system
+    assert "be lenient at this stage" in system
+
+
+def test_the_project_can_override_the_built_in_screening_prompt(tmp_path):
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "crosscheck_screening.txt").write_text("my own prompt", encoding="utf-8")
+    rel = "prompts/crosscheck_screening.txt"
+    assert load_prompt(tmp_path, rel, BUILT_IN_SCREENING_PROMPT) == "my own prompt"
+    assert "abstract" in load_prompt(tmp_path, "prompts/absent.txt", BUILT_IN_SCREENING_PROMPT).lower()
