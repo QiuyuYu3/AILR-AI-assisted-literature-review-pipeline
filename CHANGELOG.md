@@ -3,6 +3,9 @@
 ---
 ## [Unreleased]
 
+### Added
+- Full-text queue: an "In progress (mine)" status filter for papers you have saved but not submitted. It is a subset of "To extract", which keeps listing drafts.
+
 ### Changed
 - Full-text queue: the Status filter is grouped into Review / Extraction / Checks / All instead of one flat list of seven.
 

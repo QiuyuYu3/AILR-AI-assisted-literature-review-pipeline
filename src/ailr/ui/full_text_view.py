@@ -36,6 +36,7 @@ _STATUS_FILTERS = [
     {"label": "To review", "value": "to_review"},
     {"label": "Reviewed by me", "value": "reviewed"},
     {"label": "To extract", "value": "to_extract"},
+    {"label": "In progress (mine)", "value": "my_draft"},
     {"label": "Extracted by me", "value": "extracted_mine"},
     {"label": "Cross-check flagged", "value": "crosscheck_flagged"},
     {"label": "Last quick test", "value": "quick_test"},
@@ -50,7 +51,8 @@ _RECONCILE_FILTER = {"label": "To reconcile", "value": "to_reconcile"}
 def _status_filters(project: Any) -> list[dict]:
     if project.config.extraction.workflow != "independent":
         return _STATUS_FILTERS
-    return _STATUS_FILTERS[:4] + [_RECONCILE_FILTER] + _STATUS_FILTERS[4:]
+    at = [o["value"] for o in _STATUS_FILTERS].index("extracted_mine") + 1
+    return _STATUS_FILTERS[:at] + [_RECONCILE_FILTER] + _STATUS_FILTERS[at:]
 
 
 _REVIEW_VALUES = {"to_review", "reviewed"}
@@ -650,7 +652,7 @@ def register_callbacks(app: Any) -> None:
         page_sources, total, page = db.list_full_text_page(
             pid, rid, status=status, keyword=search or "", within=within or "title_and_abstract",
             tag_id=tag_id, ft_avail=ft_avail, id_whitelist=id_whitelist,
-            exclude_ids=ft_conflict_ids if status == "to_extract" else None,
+            exclude_ids=ft_conflict_ids if status in ("to_extract", "my_draft") else None,
             team_size=team_size, extractors_required=extractors_for(project.config.extraction.workflow),
             abstract_workflow=abstract_workflow, abstract_conflict_ids=abs_conflict_ids,
             sort_by=sort_by or "id", page=req_page, page_size=psize,
@@ -850,8 +852,13 @@ def _ft_card(
         )
     elif can_extract:
         # A saved draft claims a paper under `verify` just as a submission does, so the queue has to
-        # show it — otherwise a paper someone is mid-way through still reads "To extract".
-        drafted_by = claimed_by if extracted_by is None and extract_verify else None
+        # show it — otherwise a paper someone is mid-way through still reads "To extract". Your own
+        # draft is shown under every workflow; someone else's only under `verify`, where it locks.
+        drafted_by = (
+            claimed_by
+            if extracted_by is None and (extract_verify or claimed_by == reviewer_id)
+            else None
+        )
         locked = (
             (extracted_by is not None and extracted_by != reviewer_id)
             or (drafted_by is not None and drafted_by != reviewer_id)

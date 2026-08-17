@@ -692,6 +692,17 @@ class ScreeningMixin:
                              "AND e.extractor_type = 'human' AND e.extractor_id != ? "
                              "AND e.field_name != '_flag_check')")
                 params.append(reviewer_id)
+        elif status == "my_draft":
+            # Saved but not submitted by me. Deliberately a subset of `to_extract`, which keeps
+            # showing drafts: this filter locates work in progress, it does not move it off the queue.
+            where.append(ft_final_include_md_sql(team_size))
+            where.append("EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
+                         "AND e.extractor_type = 'human' AND e.extractor_id = ? "
+                         "AND e.field_name NOT IN ('_submitted', '_flag_check'))")
+            params.append(reviewer_id)
+            where.append("NOT EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
+                         "AND e.extractor_type = 'human' AND e.extractor_id = ? AND e.field_name = '_submitted')")
+            params.append(reviewer_id)
         elif status == "extracted_mine":
             where.append("(SELECT extractor_id FROM extractions e WHERE e.source_id = s.id "
                          "AND e.extractor_type = 'human' AND e.field_name = '_submitted' "
