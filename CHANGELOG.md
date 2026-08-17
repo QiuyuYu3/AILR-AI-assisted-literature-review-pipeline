@@ -3,6 +3,9 @@
 ---
 ## [Unreleased]
 
+### Changed
+- Full-text queue: the Status filter is grouped into Review / Extraction / Checks / All instead of one flat list of seven.
+
 ---
 ## [0.35.0] – 2026-08-12
 

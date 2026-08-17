@@ -53,19 +53,75 @@ def _status_filters(project: Any) -> list[dict]:
     return _STATUS_FILTERS[:4] + [_RECONCILE_FILTER] + _STATUS_FILTERS[4:]
 
 
+_REVIEW_VALUES = {"to_review", "reviewed"}
+# Results of an automated run, not a position in the extraction queue.
+_CHECK_VALUES = {"crosscheck_flagged", "quick_test"}
+
+
+def _status_groups(project: Any) -> tuple[list[dict], list[dict], list[dict]]:
+    """Status options split into review / extraction-queue / check-result groups ('All' excluded)."""
+    opts = _status_filters(project)
+    review = [o for o in opts if o["value"] in _REVIEW_VALUES]
+    checks = [o for o in opts if o["value"] in _CHECK_VALUES]
+    extraction = [
+        o for o in opts
+        if o["value"] not in _REVIEW_VALUES and o["value"] not in _CHECK_VALUES and o["value"] != "all"
+    ]
+    return review, extraction, checks
+
+
+def _status_group_of(value: str) -> str:
+    if value in _REVIEW_VALUES:
+        return "review"
+    if value in _CHECK_VALUES:
+        return "checks"
+    if value == "all":
+        return "all"
+    return "extract"
+
+
 
 
 def layout() -> Any:
     project = get_project()
+    review_opts, extract_opts, check_opts = _status_groups(project)
     return dbc.Row(
         [
             dbc.Col(
                 [
+                    # One logical filter, four radio groups: the merged value lives in the store and
+                    # `_sync_status` keeps only one group selected at a time.
+                    dcc.Store(id="ft-filter-status", data="to_review"),
                     dbc.Label("Status", className="fw-bold"),
+                    html.Div("Review", className="small text-muted text-uppercase mt-1"),
                     dbc.RadioItems(
-                        id="ft-filter-status",
-                        options=_status_filters(get_project()),
+                        id="ft-status-review",
+                        options=review_opts,
                         value="to_review",
+                        persistence=True,
+                        persistence_type="session",
+                    ),
+                    html.Div("Extraction", className="small text-muted text-uppercase mt-2"),
+                    dbc.RadioItems(
+                        id="ft-status-extract",
+                        options=extract_opts,
+                        value=None,
+                        persistence=True,
+                        persistence_type="session",
+                    ),
+                    html.Div("Checks", className="small text-muted text-uppercase mt-2"),
+                    dbc.RadioItems(
+                        id="ft-status-checks",
+                        options=check_opts,
+                        value=None,
+                        persistence=True,
+                        persistence_type="session",
+                    ),
+                    dbc.RadioItems(
+                        id="ft-status-all",
+                        options=[{"label": "All", "value": "all"}],
+                        value=None,
+                        className="mt-2",
                         persistence=True,
                         persistence_type="session",
                     ),
@@ -422,7 +478,7 @@ def register_callbacks(app: Any) -> None:
         Output("ft-page", "data"),
         Input("ft-page-prev", "n_clicks"),
         Input("ft-page-next", "n_clicks"),
-        Input("ft-filter-status", "value"),
+        Input("ft-filter-status", "data"),
         Input("ft-search", "value"),
         Input("ft-tags-filter", "value"),
         Input("ft-sort", "value"),
@@ -441,15 +497,52 @@ def register_callbacks(app: Any) -> None:
         return {"page": 0}
 
     @app.callback(
+        Output("ft-filter-status", "data"),
+        Output("ft-status-review", "value"),
+        Output("ft-status-extract", "value"),
+        Output("ft-status-checks", "value"),
+        Output("ft-status-all", "value"),
+        Input("ft-status-review", "value"),
+        Input("ft-status-extract", "value"),
+        Input("ft-status-checks", "value"),
+        Input("ft-status-all", "value"),
+    )
+    def _sync_status(review, extract, checks, all_v):
+        """Keep the four status groups mutually exclusive and publish the single active value."""
+        trigger = ctx.triggered_id
+        if trigger == "ft-status-review" and review:
+            value = review
+        elif trigger == "ft-status-extract" and extract:
+            value = extract
+        elif trigger == "ft-status-checks" and checks:
+            value = checks
+        elif trigger == "ft-status-all" and all_v:
+            value = all_v
+        else:
+            # Initial load (persistence restore) or a group cleared by its own click.
+            value = review or extract or checks or all_v or "to_review"
+        group = _status_group_of(value)
+        return (
+            value,
+            value if group == "review" else None,
+            value if group == "extract" else None,
+            value if group == "checks" else None,
+            value if group == "all" else None,
+        )
+
+    @app.callback(
         Output("ft-search", "value"),
         Output("ft-within", "value"),
         Output("ft-ftavail-filter", "value"),
-        Output("ft-filter-status", "value"),
+        Output("ft-status-review", "value", allow_duplicate=True),
+        Output("ft-status-extract", "value", allow_duplicate=True),
+        Output("ft-status-checks", "value", allow_duplicate=True),
+        Output("ft-status-all", "value", allow_duplicate=True),
         Input("ft-reset-filters", "n_clicks"),
         prevent_initial_call=True,
     )
     def _ft_reset_filters(_clicks):
-        return "", "title_and_abstract", ["has"], "to_review"
+        return "", "title_and_abstract", ["has"], "to_review", None, None, None
 
     @app.callback(
         Output("ft-cards", "children"),
@@ -457,7 +550,7 @@ def register_callbacks(app: Any) -> None:
         Output("ft-page-prev", "disabled"),
         Output("ft-page-next", "disabled"),
         Output("ft-page-info", "children"),
-        Input("ft-filter-status", "value"),
+        Input("ft-filter-status", "data"),
         Input("ft-refresh", "data"),
         Input("shared-reviewer", "value"),
         Input("tags-refresh", "data"),
