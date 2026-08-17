@@ -13,6 +13,8 @@ from ailr.ui.full_text_view import (
     _ft_avail_filter,
     _low_text_md,
     _status_filters,
+    _status_group_of,
+    _status_groups,
 )
 
 
@@ -47,6 +49,32 @@ def test_to_reconcile_is_offered_only_for_independent_extraction():
 def test_to_reconcile_sits_before_the_quick_test_and_all_entries():
     values = [o["value"] for o in _status_filters(_project("independent"))]
     assert values.index("to_reconcile") < values.index("quick_test") < values.index("all")
+
+
+@pytest.mark.parametrize("workflow", ["verify", "assisted", "independent"])
+def test_every_status_reaches_exactly_one_group(workflow):
+    # The sidebar renders the three groups plus a standalone 'All'. A status that falls out of that
+    # partition is silently unreachable in the UI, which is how a filter goes missing unnoticed.
+    project = _project(workflow)
+    review, extraction, checks = _status_groups(project)
+    grouped = [o["value"] for o in review + extraction + checks]
+    assert len(grouped) == len(set(grouped))
+    assert set(grouped) | {"all"} == {o["value"] for o in _status_filters(project)}
+
+
+def test_the_groups_hold_what_their_headings_say():
+    review, extraction, checks = _status_groups(_project("independent"))
+    assert [o["value"] for o in review] == ["to_review", "reviewed"]
+    assert [o["value"] for o in extraction] == ["to_extract", "my_draft", "extracted_mine", "to_reconcile"]
+    assert [o["value"] for o in checks] == ["crosscheck_flagged", "quick_test"]
+
+
+@pytest.mark.parametrize(
+    "value,group",
+    [("to_review", "review"), ("my_draft", "extract"), ("quick_test", "checks"), ("all", "all")],
+)
+def test_status_group_of(value, group):
+    assert _status_group_of(value) == group
 
 
 def _write_md(root, sid, text):

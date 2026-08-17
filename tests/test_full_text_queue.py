@@ -28,12 +28,25 @@ def _vote(db, sid, decision, reviewer_id, stage="abstract", reviewer_type="human
     ))
 
 
-def _submit(db, sid, extractor_id):
+def _draft(db, sid, extractor_id, field_name="design"):
+    """Save without submitting — what the extraction form's Save button writes."""
     db.insert_extraction(ExtractionResult(
         extractor_type="human", extractor_id=extractor_id,
-        field_name="design", value="observational", source_id=sid,
+        field_name=field_name, value="observational", source_id=sid,
     ))
+
+
+def _submit(db, sid, extractor_id):
+    _draft(db, sid, extractor_id)
     db.mark_extraction_submitted(sid, extractor_id)
+
+
+def _extraction_ready(project):
+    """A paper settled as an include at both stages, with markdown — extraction-ready."""
+    sid = _add_source(project, with_md=True)
+    _vote(project.db, sid, "include", "amber")
+    _vote(project.db, sid, "include", "amber", stage="full_text")
+    return sid
 
 
 def _candidates(db, pid, workflow):
@@ -126,11 +139,7 @@ class TestToExtractQueue:
     open to the second one after the first submits."""
 
     def _eligible_paper(self, project):
-        """A paper settled as an include at both stages, with markdown — extraction-ready."""
-        sid = _add_source(project, with_md=True)
-        _vote(project.db, sid, "include", "amber")
-        _vote(project.db, sid, "include", "amber", stage="full_text")
-        return sid
+        return _extraction_ready(project)
 
     def test_unstarted_paper_is_queued_for_everyone(self, tmp_project):
         db, pid = tmp_project.db, tmp_project.project_id
@@ -179,6 +188,56 @@ class TestToExtractQueue:
         queued = self._eligible_paper(tmp_project)   # same route, but with markdown
         assert _page(db, pid, "amber", status="to_extract", workflow="assisted",
                      team_size=1, extractors_required=2) == {queued}
+
+
+class TestMyDraftFilter:
+    """`my_draft` = saved by me, not submitted yet. It is deliberately a SUBSET of `to_extract`:
+    saving must not make a paper vanish from the queue it is still owed on."""
+
+    def test_a_saved_draft_shows_up(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _draft(db, sid, "amber")
+        assert _page(db, pid, "amber", status="my_draft", workflow="assisted", team_size=1) == {sid}
+
+    def test_an_untouched_paper_does_not(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        _extraction_ready(tmp_project)
+        assert _page(db, pid, "amber", status="my_draft", workflow="assisted", team_size=1) == set()
+
+    def test_a_draft_is_still_in_the_to_extract_queue(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _draft(db, sid, "amber")
+        assert _page(db, pid, "amber", status="to_extract", workflow="assisted", team_size=1) == {sid}
+
+    def test_submitting_clears_it(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _submit(db, sid, "amber")
+        assert _page(db, pid, "amber", status="my_draft", workflow="assisted", team_size=1) == set()
+        assert _page(db, pid, "amber", status="extracted_mine", workflow="assisted", team_size=1) == {sid}
+
+    def test_someone_elses_draft_is_not_mine(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _draft(db, sid, "bob")
+        assert _page(db, pid, "amber", status="my_draft", workflow="assisted", team_size=1) == set()
+        assert _page(db, pid, "bob", status="my_draft", workflow="assisted", team_size=1) == {sid}
+
+    def test_a_flag_check_row_alone_is_not_a_draft(self, tmp_project):
+        # '_flag_check' is a screening verdict written into the extractions table, not extracted data.
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _draft(db, sid, "amber", field_name="_flag_check")
+        assert _page(db, pid, "amber", status="my_draft", workflow="assisted", team_size=1) == set()
+
+    def test_an_unresolved_full_text_conflict_is_held_back(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _draft(db, sid, "amber")
+        assert _page(db, pid, "amber", status="my_draft", workflow="assisted", team_size=1,
+                     exclude_ids={sid}) == set()
 
 
 class TestQueueMatchesPrisma:
