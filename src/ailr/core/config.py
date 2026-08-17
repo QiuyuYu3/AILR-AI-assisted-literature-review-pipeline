@@ -112,6 +112,10 @@ class CrossCheckConfig(BaseModel):
     llm_enabled: bool = False
     prompt: str = "prompts/crosscheck.txt"  # falls back to the built-in prompt when absent
     additional: str = "prompts/crosscheck_additional.txt"
+    # The screening layer judges a decision against an abstract, not a value against a paper, so it
+    # gets its own prompt rather than a stage marker inside the extraction one.
+    screening_prompt: str = "prompts/crosscheck_screening.txt"
+    screening_additional: str = "prompts/crosscheck_screening_additional.txt"
     llm: Optional[StageLLMOverride] = None
     # A checker on the same model as the extractor agrees with itself far more often than an
     # independent one would, which makes the agreement rate it produces unreportable.

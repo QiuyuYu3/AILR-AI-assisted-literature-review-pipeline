@@ -70,6 +70,20 @@ def protocol_layout() -> Any:
     )
 
 
+def _prompt_accordion(*sections: tuple[str, Any]) -> Any:
+    """The stage prompt and the cross-check prompt that judges it, on one page. An accordion rather
+    than nested tabs: the stage's own prompt is the one people edit, the checker's is rarely touched."""
+    return dbc.Accordion(
+        [
+            dbc.AccordionItem(html.Div(body, className="pt-1"), title=title, item_id=f"wf-prompt-{i}")
+            for i, (title, body) in enumerate(sections)
+        ],
+        active_item="wf-prompt-0",
+        flush=True,
+        className="mt-2",
+    )
+
+
 def layout(section: str = "abstract") -> Any:
     if section == "full_text":
         from ailr.ui import template_view
@@ -90,14 +104,9 @@ def layout(section: str = "abstract") -> Any:
                 "extraction variables are shared definitions — edit them on the Protocol page.",
                 className="text-muted small",
             ),
-            dbc.Tabs(
-                [
-                    dbc.Tab(html.Div(template_view.prompt_layout(), className="pt-2"),
-                            label="Extraction", tab_id="wf-prompt-extract"),
-                    dbc.Tab(html.Div(template_view.crosscheck_prompt_panel(), className="pt-2"),
-                            label="Cross-check", tab_id="wf-prompt-crosscheck"),
-                ],
-                active_tab="wf-prompt-extract",
+            _prompt_accordion(
+                ("Extraction prompt", template_view.prompt_layout()),
+                ("Cross-check prompt (optional)", template_view.crosscheck_prompt_panel()),
             ),
         ]
         extraction_tab = [
@@ -114,11 +123,18 @@ def layout(section: str = "abstract") -> Any:
             active_tab="wf-prep",
         )
 
-    from ailr.ui.screen_view import ai_screening_panel, screening_prompt_panel
+    from ailr.ui.screen_view import (
+        ai_screening_panel,
+        screening_crosscheck_prompt_panel,
+        screening_prompt_panel,
+    )
 
     prompt_tab = [
         html.P("Edit the screening prompt and additional instructions. The criteria are shared with extraction and edited on the Protocol page; who screens this stage is set on Protocol → Workflow.", className="text-muted small"),
-        *screening_prompt_panel(),
+        _prompt_accordion(
+            ("Screening prompt", screening_prompt_panel()),
+            ("Cross-check prompt (optional)", screening_crosscheck_prompt_panel()),
+        ),
     ]
     ai_tab = [
         html.P("Run AI on the abstracts, or import results you ran yourself.", className="text-muted small"),

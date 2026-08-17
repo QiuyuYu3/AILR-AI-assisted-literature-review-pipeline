@@ -17,7 +17,7 @@ from ailr.exceptions import DuplicateError
 from ailr.ui._common import triggered_click_id
 from ailr.ui._project import get_project
 
-from ailr.ui.screen_view import _history_block
+from ailr.ui.screen_view import _history_block, crosscheck_findings_block
 from ailr.ui.tags_view import TAG_COLOR_OPTIONS
 
 
@@ -29,6 +29,16 @@ def layout() -> list[Any]:
                 dbc.ModalBody(id="history-modal-body"),
             ],
             id="history-modal",
+            is_open=False,
+            size="lg",
+            scrollable=True,
+        ),
+        dbc.Modal(
+            [
+                dbc.ModalHeader(dbc.ModalTitle(id="crosscheck-modal-title")),
+                dbc.ModalBody(id="crosscheck-modal-body"),
+            ],
+            id="crosscheck-modal",
             is_open=False,
             size="lg",
             scrollable=True,
@@ -230,6 +240,21 @@ def register_callbacks(app: Any) -> None:
 
         body = _history_block(actions, src, show_reviewer=show_reviewer)
         return True, title, body
+
+    @app.callback(
+        Output("crosscheck-modal", "is_open"),
+        Output("crosscheck-modal-title", "children"),
+        Output("crosscheck-modal-body", "children"),
+        Input({"type": "screen-crosscheck-btn", "source": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _open_crosscheck(_clicks):
+        triggered = triggered_click_id()
+        if triggered is None:
+            return no_update, no_update, no_update
+        sid = int(triggered["source"])
+        findings = get_project().db.get_cross_checks(sid, stage="abstract", target_type="ai")
+        return True, f"Cross-check — #{sid} (AI screening decision)", crosscheck_findings_block(findings)
 
     @app.callback(
         Output("tag-modal", "is_open"),

@@ -222,27 +222,31 @@ def layout() -> Any:
 
     crosscheck_block = [
         html.Small(
-            "Cross-check verifies extractions that already exist against the paper text (quotes matched "
-            "verbatim, enum values, empty required fields). It makes no API calls, produces advisory "
-            "findings only, and never feeds conflict resolution or agreement statistics. Run it from the "
-            "AI extraction page.",
+            "Cross-check verifies records that already exist against the text they came from. At title/"
+            "abstract that is a screening decision against its abstract (evidence quotes matched verbatim, "
+            "criterion IDs, decision against its own per-criterion verdicts); at full text it is an "
+            "extraction against the paper (quotes, enum values, empty required fields). It makes no API "
+            "calls, produces advisory findings only, and never feeds conflict resolution or agreement "
+            "statistics. Run it from the AI screening or AI extraction page. The settings below apply to "
+            "both stages.",
             className="text-muted d-block mt-3 mb-2",
         ),
         dbc.Checklist(
             id="settings-crosscheck-targets",
             options=[
-                {"label": "Check AI extractions", "value": "ai"},
-                {"label": "Check human extractions", "value": "human"},
+                {"label": "Check AI records", "value": "ai"},
+                {"label": "Check human records", "value": "human"},
             ],
             value=list(project.config.crosscheck.targets),
             switch=True,
         ),
         html.Hr(className="my-3"),
         html.Small(
-            "The LLM layer additionally asks a second model whether each recorded value is supported by "
-            "its quote. It costs one call per paper and must not run on the same model that produced the "
-            "extraction: a model agrees with itself far more often than an independent one, which makes "
-            "the resulting agreement rate unreportable.",
+            "The LLM layer additionally asks a second model whether the record is supported: each value by "
+            "its quote at full text, the decision by the abstract at title/abstract. It costs one call per "
+            "paper and must not run on the same model that produced the record: a model agrees with itself "
+            "far more often than an independent one, which makes the resulting agreement rate unreportable. "
+            "At title/abstract every screened paper is a call, so it is the expensive place to turn this on.",
             className="text-muted d-block mb-2",
         ),
         dbc.Switch(id="settings-crosscheck-llm-enabled", label="Enable LLM cross-check",
@@ -257,7 +261,7 @@ def layout() -> Any:
             className="g-2 mt-1",
         ),
         dbc.Switch(id="settings-crosscheck-same-model",
-                   label="Allow the same model as the extractor (not reportable)",
+                   label="Allow the same model as the screener/extractor (not reportable)",
                    value=project.config.crosscheck.allow_same_model, className="mt-2 small"),
         html.Div(dbc.Button("Save cross-check", id="settings-crosscheck-save", color="primary", size="sm", className="mt-2")),
         html.Div(id="settings-crosscheck-feedback", className="small mt-2"),

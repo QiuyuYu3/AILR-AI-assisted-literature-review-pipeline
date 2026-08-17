@@ -14,6 +14,20 @@ if TYPE_CHECKING:
     from ailr.reviewers import ScreeningDecision
 
 
+def _flag_check_from_raw(raw_output: Optional[str]) -> list[dict]:
+    """The per-criterion verdicts live inside raw_output as _flag_check, in either the named-slot
+    object shape or the legacy array. Returns the canonical list, empty when there is none."""
+    if not raw_output:
+        return []
+    try:
+        raw = json.loads(raw_output).get("_flag_check")
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return []
+    if isinstance(raw, dict):
+        return [{"criterion_id": cid, **v} for cid, v in raw.items() if isinstance(v, dict)]
+    return raw if isinstance(raw, list) else []
+
+
 def reconcile_stage_for(stage: str) -> str:
     """reconciliations.stage uses its own vocabulary, not screening_decisions.stage. The third
     set of names lives in CALIBRATION_STAGE."""
@@ -548,20 +562,60 @@ class ScreeningMixin:
         """
         out: dict[int, list[dict]] = {}
         for r in self._conn.execute(sql, [stage, *source_ids]).fetchall():
-            if not r["raw_output"]:
-                continue
-            try:
-                raw = json.loads(r["raw_output"]).get("_flag_check")
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if isinstance(raw, dict):
-                fc = [{"criterion_id": cid, **v} for cid, v in raw.items() if isinstance(v, dict)]
-            elif isinstance(raw, list):
-                fc = raw
-            else:
-                fc = []
+            fc = _flag_check_from_raw(r["raw_output"])
             if fc:
                 out[r["source_id"]] = fc
+        return out
+
+    def source_ids_with_decisions(
+        self, project_id: int, stage: str = "abstract", reviewer_types: Optional[list[str]] = None
+    ) -> list[int]:
+        """Sources carrying at least one decision at this stage — the candidate set for a
+        cross-check run, so the walk skips papers nobody has screened yet."""
+        sql = """
+            SELECT DISTINCT d.source_id FROM screening_decisions d
+            JOIN sources s ON s.id = d.source_id
+            WHERE s.project_id = ? AND d.stage = ?
+        """
+        params: list = [project_id, stage]
+        if reviewer_types:
+            sql += f" AND d.reviewer_type IN ({','.join('?' for _ in reviewer_types)})"
+            params.extend(reviewer_types)
+        sql += " ORDER BY d.source_id"
+        return [r["source_id"] for r in self._conn.execute(sql, params).fetchall()]
+
+    def latest_screening_decisions(
+        self, source_id: int, stage: str = "abstract", reviewer_types: Optional[list[str]] = None
+    ) -> list[dict]:
+        """The live decision per (reviewer_type, reviewer_id) for one source, with evidence_quotes,
+        matched_criteria and flag_check decoded. Re-screening appends rather than replaces, so only
+        the newest row per reviewer is the one a cross-check should judge."""
+        sql = """
+            SELECT * FROM screening_decisions
+            WHERE source_id = ? AND stage = ?
+              AND id IN (
+                  SELECT MAX(id) FROM screening_decisions
+                  WHERE source_id = ? AND stage = ?
+                  GROUP BY reviewer_type, reviewer_id
+              )
+        """
+        params: list = [source_id, stage, source_id, stage]
+        if reviewer_types:
+            sql += f" AND reviewer_type IN ({','.join('?' for _ in reviewer_types)})"
+            params.extend(reviewer_types)
+        sql += " ORDER BY id"
+
+        out = []
+        for r in self._conn.execute(sql, params).fetchall():
+            d = dict(r)
+            for key in ("evidence_quotes", "matched_criteria"):
+                if d.get(key):
+                    try:
+                        d[key] = json.loads(d[key])
+                    except json.JSONDecodeError:
+                        d[key] = []
+            d["flag_check"] = _flag_check_from_raw(d.get("raw_output"))
+            out.append(d)
         return out
 
     def get_human_decisions_for_sources(self, source_ids: list[int], stage: str = "abstract") -> dict[int, list[dict]]:
@@ -622,6 +676,17 @@ class ScreeningMixin:
             sql, test_stage = _last_quick_test_sql(stage)
             where.append(sql)
             params += [project_id, test_stage]
+        elif status == "crosscheck_flagged":
+            # Findings whose decision has since been re-screened judge a record that is no longer
+            # live, so they are left out here exactly as they are in cross_check_counts.
+            where.append(
+                "EXISTS (SELECT 1 FROM cross_checks c WHERE c.source_id = s.id AND c.stage = ? "
+                "AND c.verdict != 'agree' AND NOT EXISTS ("
+                "  SELECT 1 FROM screening_decisions d WHERE d.source_id = c.source_id "
+                "  AND d.stage = c.stage AND d.reviewer_type = c.target_type "
+                "  AND d.reviewer_id = c.target_id AND d.id > c.target_row_id))"
+            )
+            params.append(stage)
 
         kw_sql, kw_params = _keyword_filter(keyword, within)
         if kw_sql:

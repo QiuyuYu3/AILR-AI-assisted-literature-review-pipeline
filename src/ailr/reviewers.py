@@ -140,7 +140,7 @@ SCREENING_TOOL = ToolSchema(
             "evidence_quotes": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Short verbatim quotes from the abstract supporting the decision.",
+                "description": "Short verbatim quotes from the title or abstract supporting the decision.",
             },
             "confidence": {
                 "type": "integer",
@@ -149,7 +149,9 @@ SCREENING_TOOL = ToolSchema(
                 "description": "Confidence 1-10.",
             },
         },
-        "required": ["decision", "reasoning", "confidence"],
+        # evidence_quotes is required so the cross-check has something to verify: an unsupported
+        # decision is exactly the case the quote check exists to catch.
+        "required": ["decision", "reasoning", "confidence", "evidence_quotes"],
     },
 )
 

@@ -13,6 +13,10 @@ from ailr.core.crosscheck import CrossCheckRecord
 from ailr.exceptions import DatabaseError
 
 
+# Stages whose target is a screening_decisions row rather than an extractions row. They share the
+# table but not the staleness question: "has this record been re-run" is a different query.
+SCREENING_STAGES = ("abstract", "full_text")
+
 _COLUMNS = (
     "source_id", "stage", "target_type", "target_id", "target_row_id", "field_name",
     "checker_type", "checker_id", "check_kind", "verdict", "issue_code", "reason",
@@ -79,7 +83,13 @@ class CrossCheckMixin:
                   AND e.field_name = c.field_name
                   AND e.extractor_type = c.target_type
                   AND (c.target_type = 'ai' OR e.extractor_id = c.target_id)
-            ) AS latest_row_id
+            ) AS latest_row_id, (
+                SELECT MAX(d.id) FROM screening_decisions d
+                WHERE d.source_id = c.source_id
+                  AND d.stage = c.stage
+                  AND d.reviewer_type = c.target_type
+                  AND d.reviewer_id = c.target_id
+            ) AS latest_decision_id
             FROM cross_checks c
             WHERE c.source_id = ?
         """
@@ -94,9 +104,11 @@ class CrossCheckMixin:
         out = []
         for r in self._conn.execute(sql, params).fetchall():
             d = dict(r)
-            latest = d.pop("latest_row_id", None)
+            latest_row = d.pop("latest_row_id", None)
+            latest_decision = d.pop("latest_decision_id", None)
+            latest = latest_decision if d.get("stage") in SCREENING_STAGES else latest_row
             d["stale"] = bool(
-                d.get("stage") == "extraction"
+                d.get("stage") in ("extraction", *SCREENING_STAGES)
                 and latest is not None
                 and d.get("target_row_id") is not None
                 and latest > d["target_row_id"]
@@ -155,19 +167,31 @@ class CrossCheckMixin:
         if not source_ids:
             return {}
         placeholders = ",".join("?" for _ in source_ids)
-        rows = self._conn.execute(
-            f"""
-            SELECT c.source_id, COUNT(*) AS n FROM cross_checks c
-            WHERE c.stage = ? AND c.target_type = ? AND c.verdict != 'agree'
-              AND c.source_id IN ({placeholders})
-              AND NOT EXISTS (
+        superseded = (
+            """
+                  SELECT 1 FROM screening_decisions d
+                  WHERE d.source_id = c.source_id
+                    AND d.stage = c.stage
+                    AND d.reviewer_type = c.target_type
+                    AND d.reviewer_id = c.target_id
+                    AND d.id > c.target_row_id
+            """
+            if stage in SCREENING_STAGES
+            else """
                   SELECT 1 FROM extractions e
                   WHERE e.source_id = c.source_id
                     AND e.field_name = c.field_name
                     AND e.extractor_type = c.target_type
                     AND (c.target_type = 'ai' OR e.extractor_id = c.target_id)
                     AND e.id > c.target_row_id
-              )
+            """
+        )
+        rows = self._conn.execute(
+            f"""
+            SELECT c.source_id, COUNT(*) AS n FROM cross_checks c
+            WHERE c.stage = ? AND c.target_type = ? AND c.verdict != 'agree'
+              AND c.source_id IN ({placeholders})
+              AND NOT EXISTS ({superseded})
             GROUP BY c.source_id
             """,
             [stage, target_type, *source_ids],

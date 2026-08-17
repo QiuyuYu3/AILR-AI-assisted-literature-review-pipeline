@@ -24,7 +24,13 @@ from ailr.ui._cards import (
 )
 from ailr.ui._common import help_icon, prompt_view_toggle, render_prompt_body, triggered_click_id, with_help
 
-from ailr.ui._project import get_project, read_criteria, read_screening_additional, read_screening_prompt
+from ailr.ui._project import (
+    get_project,
+    read_criteria,
+    read_screening_additional,
+    read_screening_prompt,
+    read_text_or,
+)
 
 
 def _screen_prompt_text() -> str:
@@ -78,6 +84,7 @@ def _prompt_version_options() -> list[Any]:
 _STATUS_FILTERS = [
     {"label": "To screen", "value": "to_screen"},
     {"label": "Reviewed by me", "value": "reviewed"},
+    {"label": "Cross-check flagged", "value": "crosscheck_flagged"},
     {"label": "Last quick test", "value": "quick_test"},
     {"label": "All", "value": "all"},
 ]
@@ -180,6 +187,96 @@ def screening_prompt_panel() -> list[Any]:
     ]
 
 
+def _screening_cc_prompt_text() -> str:
+    from ailr.crosschecker import BUILT_IN_SCREENING_PROMPT, load_prompt
+
+    project = get_project()
+    return load_prompt(project.root, project.config.crosscheck.screening_prompt, BUILT_IN_SCREENING_PROMPT)
+
+
+def _screening_cc_additional_text() -> str:
+    project = get_project()
+    return read_text_or(project.root / project.config.crosscheck.screening_additional, "")
+
+
+def _screening_cc_composed_pre(prompt: str, additional: str, mode: str = "plain") -> Any:
+    from ailr.crosschecker import compose_screening_crosscheck_prompt
+
+    composed = compose_screening_crosscheck_prompt(
+        prompt or "",
+        project_name=get_project().config.project.name,
+        criteria=read_criteria(),
+        additional=additional or "",
+    )
+    tail = "\n\n--- [THE RECORDED DECISION AND THE TITLE/ABSTRACT ARE APPENDED HERE AUTOMATICALLY] ---"
+    return render_prompt_body(composed + tail, mode)
+
+
+def screening_crosscheck_prompt_panel() -> list[Any]:
+    """The checker's prompt, edited beside the screening prompt because it judges that stage's output."""
+    return [
+        dbc.Alert(
+            [
+                html.Strong("This is the prompt for cross-check, not for screening. "),
+                "It is given a decision that already exists — the verdict, its reason and the quotes "
+                "offered as support — plus the title and abstract, and asked whether the abstract backs "
+                "it up. ailr ships a default, so you only need to touch this if your criteria need "
+                "domain-specific guidance.",
+            ],
+            color="light", className="small py-2 mt-2",
+        ),
+        with_help(
+            html.H6("Additional instructions (optional)", className="mb-0 me-1"),
+            "Appended to the cross-check prompt — e.g. how strict to be about a criterion the abstract rarely states outright.",
+            "screen-cc-additional-help",
+        ),
+        dbc.Textarea(
+            id="screen-cc-additional",
+            value=_screening_cc_additional_text(),
+            placeholder="e.g. Treat a study described only as 'pilot' as uncertain rather than exclude.",
+            style={"height": "120px", "fontFamily": "monospace", "fontSize": "0.88rem"},
+        ),
+        html.Div(
+            dbc.Button("Save additional instructions", id="screen-cc-additional-save", color="primary", size="sm"),
+            className="mt-2",
+        ),
+        html.Div(id="screen-cc-additional-feedback", className="small mt-1"),
+        with_help(
+            html.H6("Full prompt preview", className="mb-0 me-1"),
+            "The exact prompt sent to the checker, with your criteria and additional instructions filled in.",
+            "screen-cc-preview-help",
+        ),
+        prompt_view_toggle("screen-cc-prompt-render"),
+        html.Div(id="screen-cc-prompt-composed",
+                 children=_screening_cc_composed_pre(_screening_cc_prompt_text(), _screening_cc_additional_text())),
+        html.Details(
+            [
+                html.Summary("Advanced: edit the full cross-check template"),
+                dbc.Alert(
+                    [
+                        html.Strong("Most users don't need this. "),
+                        "Keep the markers ", html.Code("{{project_name}}"), ", ", html.Code("{{criteria}}"),
+                        " and ", html.Code("{{additional}}"), " so ailr can fill them in. Saving writes ",
+                        html.Code("prompts/crosscheck_screening.txt"), "; delete that file to go back to the built-in prompt.",
+                    ],
+                    color="light", className="small py-2 mt-2",
+                ),
+                dbc.Textarea(id="screen-cc-prompt", value=_screening_cc_prompt_text(),
+                             style={"height": "260px", "fontFamily": "monospace", "fontSize": "0.88rem"}),
+                html.Div(
+                    [
+                        dbc.Button("Save prompt", id="screen-cc-prompt-save", color="primary", size="sm", className="me-2"),
+                        dbc.Button("Restore built-in prompt", id="screen-cc-prompt-builtin", color="secondary", outline=True, size="sm"),
+                    ],
+                    className="mt-2",
+                ),
+                html.Div(id="screen-cc-prompt-feedback", className="small mt-1"),
+            ],
+            className="mt-3",
+        ),
+    ]
+
+
 def ai_screening_panel() -> list[Any]:
     """Run AI screening + import externally-run results. Rendered on the abstract AI screening tab."""
     return [
@@ -206,6 +303,24 @@ def ai_screening_panel() -> list[Any]:
             message="Delete all MOCK AI screening decisions in this project? Real AI and human decisions are kept.",
         ),
         html.Div(id="screen-clear-mock-status", className="small mt-1"),
+        html.Hr(className="my-3"),
+        dbc.Label("Cross-check", className="fw-bold"),
+        html.P("Checks decisions already recorded against the title and abstract: evidence quotes matched "
+               "verbatim, criterion IDs that exist, and whether the decision squares with its own "
+               "per-criterion verdicts. No API calls. Findings are advisory and never change a decision "
+               "or enter agreement statistics.",
+               className="text-muted small mb-1"),
+        dbc.Button("Cross-check all decisions", id="screen-crosscheck-all", color="secondary", outline=True, size="sm"),
+        html.Div(id="screen-crosscheck-all-status", className="small mt-2"),
+        dcc.Interval(id="screen-crosscheck-all-poll", interval=1200, disabled=True),
+        html.P("A second model can also re-judge each decision against the abstract. This one costs tokens, "
+               "needs a different model from the one that screened (Settings -> Cross-check), and is one call "
+               "per paper — at this stage that is the whole corpus, so it is the expensive button on the page.",
+               className="text-muted small mb-1 mt-3"),
+        dbc.Switch(id="screen-crosscheck-llm-mock", label="Mock (no API calls)", value=True, className="small"),
+        dbc.Button("LLM cross-check all decisions", id="screen-crosscheck-llm", color="secondary", outline=True, size="sm"),
+        html.Div(id="screen-crosscheck-llm-status", className="small mt-2"),
+        dcc.Interval(id="screen-crosscheck-llm-poll", interval=1500, disabled=True),
         html.Hr(className="my-3"),
         html.Details(
             [
@@ -430,6 +545,126 @@ def register_callbacks(app: Any) -> None:
             opts = _prompt_version_options()
             return dbc.Alert(st["summary"], color="success", className="py-1 mb-0"), True, {"ts": time.time()}, opts, opts
         return no_update, True, no_update, no_update, no_update
+
+    def _write_project_file(rel: str, text: str) -> Any:
+        p = get_project().root / rel
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text or "", encoding="utf-8")
+        except OSError as e:
+            return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
+        return dbc.Alert(f"Saved to {p.name}.", color="success", className="mb-0 py-1")
+
+    @app.callback(
+        Output("screen-cc-additional-feedback", "children"),
+        Input("screen-cc-additional-save", "n_clicks"),
+        State("screen-cc-additional", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_screen_cc_additional(n, text):
+        if not n:
+            return no_update
+        return _write_project_file(get_project().config.crosscheck.screening_additional, text)
+
+    @app.callback(
+        Output("screen-cc-prompt-feedback", "children"),
+        Input("screen-cc-prompt-save", "n_clicks"),
+        State("screen-cc-prompt", "value"),
+        prevent_initial_call=True,
+    )
+    def _save_screen_cc_prompt(n, text):
+        if not n:
+            return no_update
+        if not str(text or "").strip():
+            return dbc.Alert("Prompt is empty. Delete prompts/crosscheck_screening.txt to use the built-in one.",
+                             color="warning", className="mb-0 py-1")
+        return _write_project_file(get_project().config.crosscheck.screening_prompt, text)
+
+    @app.callback(
+        Output("screen-cc-prompt", "value"),
+        Output("screen-cc-prompt-feedback", "children", allow_duplicate=True),
+        Input("screen-cc-prompt-builtin", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _restore_builtin_screen_cc_prompt(n):
+        if not n:
+            return no_update, no_update
+        from importlib.resources import files
+
+        from ailr.crosschecker import BUILT_IN_SCREENING_PROMPT
+
+        text = (files("ailr") / BUILT_IN_SCREENING_PROMPT).read_text(encoding="utf-8")
+        return text, dbc.Alert("Built-in prompt loaded into the editor. Save to write it to the project.",
+                               color="info", className="mb-0 py-1")
+
+    @app.callback(
+        Output("screen-cc-prompt-composed", "children"),
+        Input("screen-cc-prompt", "value"),
+        Input("screen-cc-additional", "value"),
+        Input("screen-cc-prompt-render", "value"),
+    )
+    def _screen_cc_preview(prompt, additional, mode):
+        return _screening_cc_composed_pre(prompt, additional, mode or "plain")
+
+    def _crosscheck_poll_result(job_key: str):
+        st = ai_runner.get_status(job_key)
+        if st.get("running"):
+            done, total = st.get("done", 0), st.get("total", 0)
+            label = f"Cross-checking… {done}/{total}" if total else "Cross-checking…"
+            return html.Small(label, className="text-muted"), False, no_update
+        if st.get("error"):
+            return dbc.Alert(f"Cross-check failed: {st['error']}", color="danger", className="py-1 mb-0"), True, no_update
+        if st.get("summary"):
+            return dbc.Alert(st["summary"], color="info", className="py-1 mb-0"), True, {"ts": time.time()}
+        return no_update, True, no_update
+
+    @app.callback(
+        Output("screen-crosscheck-all-poll", "disabled"),
+        Output("screen-crosscheck-all-status", "children"),
+        Input("screen-crosscheck-all", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_all(n):
+        if not n:
+            return no_update, no_update
+        if not ai_runner.start_screening_crosscheck(get_project(), stage="abstract"):
+            return True, dbc.Alert("A cross-check run is already in progress.", color="warning", className="py-1 mb-0")
+        return False, dbc.Alert("Cross-checking every screening decision…", color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output("screen-crosscheck-all-status", "children", allow_duplicate=True),
+        Output("screen-crosscheck-all-poll", "disabled", allow_duplicate=True),
+        Output("screen-refresh", "data", allow_duplicate=True),
+        Input("screen-crosscheck-all-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_all_poll(_n):
+        return _crosscheck_poll_result("crosscheck-screening-abstract")
+
+    @app.callback(
+        Output("screen-crosscheck-llm-poll", "disabled"),
+        Output("screen-crosscheck-llm-status", "children"),
+        Input("screen-crosscheck-llm", "n_clicks"),
+        State("screen-crosscheck-llm-mock", "value"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_llm(n, mock):
+        if not n:
+            return no_update, no_update
+        if not ai_runner.start_screening_llm_crosscheck(get_project(), "abstract", bool(mock)):
+            return True, dbc.Alert("An LLM cross-check run is already in progress.", color="warning", className="py-1 mb-0")
+        note = " (mock)" if mock else ""
+        return False, dbc.Alert(f"LLM cross-check started{note}…", color="info", className="py-1 mb-0")
+
+    @app.callback(
+        Output("screen-crosscheck-llm-status", "children", allow_duplicate=True),
+        Output("screen-crosscheck-llm-poll", "disabled", allow_duplicate=True),
+        Output("screen-refresh", "data", allow_duplicate=True),
+        Input("screen-crosscheck-llm-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    def _crosscheck_llm_poll(_n):
+        return _crosscheck_poll_result("crosscheck-screening-llm-abstract")
 
     @app.callback(
         Output("screen-importai-status", "children"),
@@ -786,6 +1021,7 @@ def register_callbacks(app: Any) -> None:
         note_counts = db.count_notes(visible_ids)
         from ailr.ui.ai_runner import current_screening_composed
         stale_ids = db.stale_ai_screening_source_ids(pid, current_screening_composed(project), stage="abstract")
+        cc_counts = db.cross_check_counts(visible_ids, stage="abstract", target_type="ai")
 
         cards = [
             _source_card(
@@ -794,6 +1030,7 @@ def register_callbacks(app: Any) -> None:
                 tags=tags_per_source.get(s.id, []),
                 note_count=note_counts.get(s.id, 0),
                 stale=s.id in stale_ids,
+                crosscheck_flagged=cc_counts.get(s.id, 0),
             )
             for s in page_sources
         ]
@@ -821,8 +1058,12 @@ def _source_card(
     tags: Optional[list[dict]] = None,
     note_count: int = 0,
     stale: bool = False,
+    crosscheck_flagged: int = 0,
 ) -> Any:
     sid = src.id
+    # Findings describe the AI's record, so they stay hidden until this reviewer has voted — the
+    # same blinding rule that keeps the AI decision itself off this card.
+    show_crosscheck = bool(crosscheck_flagged and my_decision)
     right = decision_controls(sid, my_decision, prefix="screen")
     peer_indicator = peer_note(workflow, peer_count)
     doi_el = doi_link(src)
@@ -868,6 +1109,13 @@ def _source_card(
                 className="p-0 me-3",
             ),
             dbc.Button(
+                f"Cross-check ({crosscheck_flagged})",
+                id={"type": "screen-crosscheck-btn", "source": sid},
+                size="sm",
+                color="link",
+                className="p-0 me-3 text-warning",
+            ) if show_crosscheck else None,
+            dbc.Button(
                 "Duplicate",
                 id={"type": "screen-duplicate", "source": sid},
                 size="sm",
@@ -882,7 +1130,11 @@ def _source_card(
         "AI screening outdated", color="warning", className="ms-1",
         title="Criteria or the screening prompt changed since this paper was AI-screened.",
     ) if stale else None
-    left_top = header_line(src, badges=[stale_badge])
+    cc_badge = dbc.Badge(
+        "Cross-check flagged", color="warning", className="ms-1",
+        title="A deterministic check flagged the AI's record for this paper. Advisory only.",
+    ) if show_crosscheck else None
+    left_top = header_line(src, badges=[stale_badge, cc_badge])
     title_el = html.H6(src.title, className="mb-1")
     meta_el = meta_line(src, include_database=True)
     tag_chips_el = tag_chips(tags)
@@ -905,6 +1157,45 @@ def _source_card(
             ]
         ),
         className="mb-3",
+    )
+
+
+_CC_FIELD_LABEL = {
+    "decision": "Decision",
+    "reasoning": "Reason",
+    "evidence_quotes": "Evidence quotes",
+    "matched_criteria": "Cited criteria",
+}
+
+
+def crosscheck_findings_block(findings: list[dict]) -> Any:
+    """Open findings for one screening decision. Advisory: nothing here changes a decision, and a
+    quote the checker could not match is often a formatting difference, not a fabrication."""
+    open_findings = [f for f in findings if (f.get("verdict") or "") != "agree" and not f.get("stale")]
+    if not open_findings:
+        return html.P("Cross-checked, nothing flagged.", className="text-muted small mb-0")
+
+    items = []
+    for f in open_findings:
+        name = f.get("field_name") or ""
+        label = _CC_FIELD_LABEL.get(name, name)
+        code = f.get("issue_code") or f.get("check_kind") or ""
+        items.append(
+            html.Li(
+                [
+                    html.Strong(f"{label}: ", className="me-1"),
+                    html.Span(f.get("reason") or "", className="me-1"),
+                    dbc.Badge(code, color="light", text_color="secondary", className="ms-1") if code else None,
+                ],
+                className="small mb-1",
+            )
+        )
+    return html.Div(
+        [
+            html.P(f"{len(open_findings)} finding(s). These are advisory and never change a decision.",
+                   className="text-muted small"),
+            html.Ul(items, className="mb-0"),
+        ]
     )
 
 

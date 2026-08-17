@@ -125,6 +125,63 @@ def _run_crosscheck(key: str, project: Any, source_ids) -> None:
             _jobs[key].update({"running": False, "error": str(e)})
 
 
+def start_screening_crosscheck(project: Any, stage: str = "abstract", source_ids=None) -> bool:
+    """The same deterministic layer at a screening stage: quotes against the abstract, criterion
+    IDs, and the decision against its own flag_check verdicts."""
+    return _start(f"crosscheck-screening-{stage}", _run_screening_crosscheck, project, stage, source_ids)
+
+
+def _screening_crosscheck_source_ids(project: Any, stage: str, source_ids) -> list[int]:
+    if source_ids is not None:
+        return list(source_ids)
+    targets = list(project.config.crosscheck.targets)
+    return project.db.source_ids_with_decisions(project.project_id, stage, targets)
+
+
+def _run_screening_crosscheck(key: str, project: Any, stage: str, source_ids) -> None:
+    try:
+        from ailr.tasks.crosscheck import ScreeningCrossCheckTask
+
+        summary = ScreeningCrossCheckTask(project, stage=stage).run(
+            _screening_crosscheck_source_ids(project, stage, source_ids),
+            on_progress=_progress_cb(key),
+        )
+        with _lock:
+            _jobs[key].update({"running": False, "summary": summary.text()})
+    except Exception as e:
+        with _lock:
+            _jobs[key].update({"running": False, "error": str(e)})
+
+
+def start_screening_llm_crosscheck(project: Any, stage: str = "abstract", mock: bool = False, source_ids=None) -> bool:
+    return _start(
+        f"crosscheck-screening-llm-{stage}", _run_screening_llm_crosscheck, project, stage, mock, source_ids
+    )
+
+
+def _run_screening_llm_crosscheck(key: str, project: Any, stage: str, mock: bool, source_ids) -> None:
+    try:
+        from ailr.crosschecker import ScreeningCrossChecker
+        from ailr.tasks.crosscheck import ScreeningLLMCrossCheckTask
+
+        client, blocked = _crosscheck_client(project, mock, stage)
+        if blocked:
+            with _lock:
+                _jobs[key].update({"running": False, "error": blocked})
+            return
+
+        task = ScreeningLLMCrossCheckTask(project, ScreeningCrossChecker(client), stage=stage)
+        summary = task.run(
+            _screening_crosscheck_source_ids(project, stage, source_ids),
+            on_progress=_progress_cb(key),
+        )
+        with _lock:
+            _jobs[key].update({"running": False, "summary": summary.text()})
+    except Exception as e:
+        with _lock:
+            _jobs[key].update({"running": False, "error": str(e)})
+
+
 def start_llm_crosscheck(project: Any, mock: bool = False, source_ids=None) -> bool:
     """The paid cross-check layer. Its own job key: it is far slower than the deterministic one
     and the two write different check_kind rows, so they may run independently."""
@@ -137,7 +194,7 @@ def _crosscheck_source_ids(project: Any, source_ids) -> list[int]:
     return [s.id for s in project.db.list_sources_with_markdown(project.project_id)]
 
 
-def _crosscheck_client(project: Any, mock: bool):
+def _crosscheck_client(project: Any, mock: bool, stage: str = "extraction"):
     """The checker's client, or a blocking reason. A mock run exercises the wiring without an API
     call, so the same-model guard (which is about the credibility of a real agreement rate) does
     not apply to it."""
@@ -151,7 +208,7 @@ def _crosscheck_client(project: Any, mock: bool):
             response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts),
         ), None
 
-    blocked = crosscheck_llm_blocked(project.config)
+    blocked = crosscheck_llm_blocked(project.config, stage)
     if blocked:
         return None, blocked
     llm = resolve_stage_llm(project.config.llm, project.config.crosscheck.llm)
