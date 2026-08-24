@@ -10,6 +10,7 @@
 
 ### Changed
 - Full-text queue: the Status filter is grouped into Review / Extraction / Checks / All instead of one flat list of seven.
+- Abstract screening sidebar: Status grouped into Review / Checks / All to match the full-text queue, and all its filters now persist for the session.
 - The Prompt tab on both Workflow pages uses an accordion (stage prompt open, cross-check prompt collapsed) instead of a second row of tabs inside the first.
 - AI screening now requires `evidence_quotes` in its output, so the quote check has something to verify.
 

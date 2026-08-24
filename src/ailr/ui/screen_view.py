@@ -89,6 +89,25 @@ _STATUS_FILTERS = [
     {"label": "All", "value": "all"},
 ]
 
+_REVIEW_VALUES = {"to_screen", "reviewed"}
+# Results of an automated run, not a position in the review queue.
+_CHECK_VALUES = {"crosscheck_flagged", "quick_test"}
+
+
+def _status_groups() -> tuple[list[dict], list[dict]]:
+    """Status options split into review / check-result groups ('All' excluded)."""
+    review = [o for o in _STATUS_FILTERS if o["value"] in _REVIEW_VALUES]
+    checks = [o for o in _STATUS_FILTERS if o["value"] in _CHECK_VALUES]
+    return review, checks
+
+
+def _status_group_of(value: str) -> str:
+    if value in _CHECK_VALUES:
+        return "checks"
+    if value == "all":
+        return "all"
+    return "review"
+
 _SORT_OPTIONS = [
     {"label": "ID", "value": "id"},
     {"label": "Author", "value": "author"},
@@ -369,24 +388,47 @@ def ai_screening_panel() -> list[Any]:
 
 def layout() -> Any:
     project = get_project()
+    review_opts, check_opts = _status_groups()
     return dbc.Row(
         [
             dbc.Col(
                 [
+                    # One logical filter, three radio groups: the merged value lives in the store and
+                    # `_sync_status` keeps only one group selected at a time.
+                    dcc.Store(id="screen-filter-status", data="to_screen"),
                     dbc.Label("Status", className="fw-bold"),
+                    html.Div("Review", className="small text-muted text-uppercase mt-1"),
                     dbc.RadioItems(
-                        id="screen-filter-status",
-                        options=_STATUS_FILTERS,
+                        id="screen-status-review",
+                        options=review_opts,
                         value="to_screen",
+                        persistence=True,
+                        persistence_type="session",
+                    ),
+                    html.Div("Checks", className="small text-muted text-uppercase mt-2"),
+                    dbc.RadioItems(
+                        id="screen-status-checks",
+                        options=check_opts,
+                        value=None,
+                        persistence=True,
+                        persistence_type="session",
+                    ),
+                    dbc.RadioItems(
+                        id="screen-status-all",
+                        options=[{"label": "All", "value": "all"}],
+                        value=None,
+                        className="mt-2",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     html.Hr(),
 
                     dbc.Label("Sort", className="fw-bold"),
-                    dbc.Select(id="screen-sort", options=_SORT_OPTIONS, value="id"),
+                    dbc.Select(id="screen-sort", options=_SORT_OPTIONS, value="id", persistence=True, persistence_type="session"),
 
                     dbc.Label("Display", className="fw-bold mt-2"),
-                    dbc.Select(id="screen-pagesize", options=_PAGE_SIZES, value="25"),
+                    dbc.Select(id="screen-pagesize", options=_PAGE_SIZES, value="25", persistence=True, persistence_type="session"),
 
                     dbc.Switch(
                         id="screen-expand-all",
@@ -394,6 +436,8 @@ def layout() -> Any:
                         value=True,
                         className="mt-2",
                         label_class_name="fw-bold",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     html.Hr(),
@@ -406,6 +450,8 @@ def layout() -> Any:
                         options=[{"label": "(any)", "value": ""}],
                         value="",
                         className="mb-2",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Label("Keyword search", className="small"),
@@ -414,6 +460,8 @@ def layout() -> Any:
                         placeholder="Text or #123, press Enter",
                         debounce=True,
                         className="mb-2",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Label("Within", className="small"),
@@ -422,6 +470,8 @@ def layout() -> Any:
                         options=_WITHIN_OPTIONS,
                         value="title_and_abstract",
                         className="mb-2",
+                        persistence=True,
+                        persistence_type="session",
                     ),
 
                     dbc.Button(
@@ -828,14 +878,45 @@ def register_callbacks(app: Any) -> None:
         return _screening_composed_pre(text, additional, mode or "plain")
 
     @app.callback(
+        Output("screen-filter-status", "data"),
+        Output("screen-status-review", "value"),
+        Output("screen-status-checks", "value"),
+        Output("screen-status-all", "value"),
+        Input("screen-status-review", "value"),
+        Input("screen-status-checks", "value"),
+        Input("screen-status-all", "value"),
+    )
+    def _sync_status(review, checks, all_v):
+        """Keep the three status groups mutually exclusive and publish the single active value."""
+        trigger = ctx.triggered_id
+        if trigger == "screen-status-review" and review:
+            value = review
+        elif trigger == "screen-status-checks" and checks:
+            value = checks
+        elif trigger == "screen-status-all" and all_v:
+            value = all_v
+        else:
+            # Initial load (persistence restore) or a group cleared by its own click.
+            value = review or checks or all_v or "to_screen"
+        group = _status_group_of(value)
+        return (
+            value,
+            value if group == "review" else None,
+            value if group == "checks" else None,
+            value if group == "all" else None,
+        )
+
+    @app.callback(
         Output("screen-search", "value"),
         Output("screen-within", "value"),
-        Output("screen-filter-status", "value"),
+        Output("screen-status-review", "value", allow_duplicate=True),
+        Output("screen-status-checks", "value", allow_duplicate=True),
+        Output("screen-status-all", "value", allow_duplicate=True),
         Input("screen-reset-filters", "n_clicks"),
         prevent_initial_call=True,
     )
     def _reset_filters(_clicks):
-        return "", "title_and_abstract", "to_screen"
+        return "", "title_and_abstract", "to_screen", None, None
 
     @app.callback(
         Output("screen-tags-filter", "options"),
@@ -855,7 +936,7 @@ def register_callbacks(app: Any) -> None:
         Output("screen-page", "data"),
         Input("screen-page-prev", "n_clicks"),
         Input("screen-page-next", "n_clicks"),
-        Input("screen-filter-status", "value"),
+        Input("screen-filter-status", "data"),
         Input("screen-search", "value"),
         Input("screen-within", "value"),
         Input("screen-tags-filter", "value"),
@@ -971,7 +1052,7 @@ def register_callbacks(app: Any) -> None:
         Output("screen-page-next", "disabled"),
         Output("screen-page-info", "children"),
         Output("screen-counts", "children"),
-        Input("screen-filter-status", "value"),
+        Input("screen-filter-status", "data"),
         Input("screen-search", "value"),
         Input("screen-within", "value"),
         Input("screen-tags-filter", "value"),
