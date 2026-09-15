@@ -11,11 +11,10 @@ Two halves:
 import json
 from contextvars import copy_context
 
+import pytest
 from dash import no_update
 from dash._callback_context import context_value
 from dash._utils import AttributeDict
-
-import pytest
 
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision

@@ -5,7 +5,6 @@ Shares workflow (assisted/independent) with abstract screening.
 AI's verdict at this stage is derived from extraction.flag_check.
 """
 
-import json
 import time
 from typing import Any, Optional
 
@@ -14,7 +13,6 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.core.config import extractors_for, team_size_for
 from ailr.core.source import Source
-from ailr.ui import ai_runner
 from ailr.ui._actions import _apply_reset, _apply_resolve, _apply_vote
 from ailr.ui._cards import (
     DECISION_COLORS,
@@ -27,10 +25,9 @@ from ailr.ui._cards import (
     tag_chips,
 )
 from ailr.ui._common import triggered_click_id, value_for_source
-from ailr.ui._project import get_project, reload_project
-
+from ailr.ui._project import get_project
 from ailr.ui.preprocess_view import _low_text_md
-from ailr.ui.screen_view import _SORT_OPTIONS, _WITHIN_OPTIONS, _history_block
+from ailr.ui.screen_view import _SORT_OPTIONS, _WITHIN_OPTIONS
 
 _STATUS_FILTERS = [
     {"label": "To review", "value": "to_review"},

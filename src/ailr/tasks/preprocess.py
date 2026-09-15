@@ -2,10 +2,11 @@
 
 import os
 import shutil
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from ailr.core.pdf_paths import portable_path, resolve_pdf_path
 from ailr.core.project import Project

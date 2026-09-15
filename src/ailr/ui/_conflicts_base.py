@@ -19,9 +19,6 @@ from ailr.ui._cards import doi_link, header_line, meta_line, tag_chips
 from ailr.ui._common import flag_check_block, triggered_click_id, value_for_source
 from ailr.ui._project import get_project
 
-
-
-
 _STALE_BADGE = {
     "abstract": (
         "AI screening outdated",

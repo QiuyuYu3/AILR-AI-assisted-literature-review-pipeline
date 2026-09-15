@@ -19,7 +19,6 @@ from ailr.extraction import (
 )
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 
-
 # Several quotes can end up in one `source_quote` cell (a list field whose items each got their
 # own quote). A blank line separates them: extracted quotes are contiguous sentences from the
 # paper, so they never contain one themselves.

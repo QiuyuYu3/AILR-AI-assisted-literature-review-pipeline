@@ -33,7 +33,7 @@ def parse_criteria_import(raw: str) -> tuple[list[dict], ValidationReport]:
             report.add("error", f"criterion #{i + 1} is not an object")
             continue
         cf = {k: r.get(k, "") for k in _KEYS}
-        for k, v in r.items():
+        for k in r:
             if k not in _KEYS:
                 report.add("warning", f"ignored unknown key {k!r}", field=str(cf.get("name") or i + 1))
         try:

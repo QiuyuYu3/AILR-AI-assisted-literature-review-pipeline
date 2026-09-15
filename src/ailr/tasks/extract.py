@@ -1,8 +1,9 @@
 """ExtractionTask: iterate include'd sources with markdown, call reviewer.extract, persist results."""
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Optional
 
 from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.core.project import Project
@@ -10,8 +11,12 @@ from ailr.core.source import Source
 from ailr.criteria import resolve_criteria
 from ailr.extraction import compose_schema
 from ailr.quote_audit import audit_fields
-from ailr.reviewers import ExtractionResult, Reviewer, ScreeningDecision, SourceExtraction
-from ailr.reviewers import LLMReviewer
+from ailr.reviewers import (
+    ExtractionResult,
+    LLMReviewer,
+    Reviewer,
+    ScreeningDecision,
+)
 
 ProgressCallback = Callable[[int, int, Optional[Source], Optional[Exception]], None]
 

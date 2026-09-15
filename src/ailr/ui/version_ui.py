@@ -1,13 +1,13 @@
 """Version history + diff UI shared by the criteria, variables, and prompt editors."""
 
 import difflib
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html, no_update
 
 from ailr.ui._project import get_project
-
 
 _LINE = {"fontFamily": "monospace", "fontSize": "0.75rem", "whiteSpace": "pre-wrap", "padding": "0 6px"}
 

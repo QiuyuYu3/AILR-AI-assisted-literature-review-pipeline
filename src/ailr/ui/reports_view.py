@@ -20,7 +20,6 @@ from ailr.metrics import (
 )
 from ailr.ui._project import get_project
 
-
 _IRR_STAGE_OPTIONS = [
     {"label": "Abstract screening", "value": "abstract"},
     {"label": "Full-text review", "value": "full_text"},
@@ -509,7 +508,11 @@ def register_callbacks(app: Any) -> None:
         from ailr.exports.prisma import build_prisma_report, build_prisma_svg
         from ailr.exports.reliability import screening_decisions_csv
         from ailr.exports.ris import export_includes_ris
-        from ailr.exports.tables import extraction_table_csv, extraction_table_json, extraction_per_paper_zip
+        from ailr.exports.tables import (
+            extraction_per_paper_zip,
+            extraction_table_csv,
+            extraction_table_json,
+        )
 
         proj = get_project()
         name = (proj.config.project.name or "review").replace(" ", "_")

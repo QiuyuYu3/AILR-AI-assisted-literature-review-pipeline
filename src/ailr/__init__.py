@@ -15,8 +15,6 @@ from ailr.exceptions import (
     UnsupportedFormatError,
     ValidationError,
 )
-from ailr.llm import CallMetadata, LLMClient, ToolSchema, make_llm_client
-from ailr.llm.mock import MockLLMClient
 from ailr.extraction import (
     FieldSpec,
     UserSchema,
@@ -24,6 +22,8 @@ from ailr.extraction import (
     compose_schema,
     schema_to_markdown,
 )
+from ailr.llm import CallMetadata, LLMClient, ToolSchema, make_llm_client
+from ailr.llm.mock import MockLLMClient
 from ailr.metrics import cohen_kappa, confusion_matrix, percent_agreement
 from ailr.reviewers import (
     ExtractionResult,

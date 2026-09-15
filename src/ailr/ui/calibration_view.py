@@ -24,7 +24,6 @@ from ailr.ui import ai_runner
 from ailr.ui._common import flag_check_block
 from ailr.ui._project import get_project
 
-
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
 # Full calibration is retired: it wrote real AI decisions, which then blocked the corpus run from

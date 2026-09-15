@@ -6,7 +6,8 @@ human-vs-human, and any further reviewer combination.
 """
 
 import math
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any, Optional
 
 BINARY_CATEGORIES = ["include", "exclude"]
 THREE_WAY_CATEGORIES = ["include", "exclude", "uncertain"]

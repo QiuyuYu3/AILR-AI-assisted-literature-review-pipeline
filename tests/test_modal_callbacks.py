@@ -6,6 +6,8 @@ after its write had already landed: the change was saved but nothing on screen m
 page was reopened. Nothing else in the module touches the name, which is why it survived.
 """
 
+import json
+
 import dash
 import pytest
 from dash._callback_context import context_value
@@ -51,7 +53,7 @@ def test_adding_and_deleting_a_note_stamps_the_notes_refresh(callbacks, tmp_proj
     assert "ts" in stamp and cleared == ""
 
     note_id = tmp_project.db.list_notes(source)[0]["id"]
-    _trigger('{"note_id":%d,"type":"note-delete"}.n_clicks' % note_id)
+    _trigger(json.dumps({"note_id": note_id, "type": "note-delete"}, separators=(",", ":")) + ".n_clicks")
     stamp, _ = callbacks["_mutate_notes"](1, [1], None, {"sid": source}, "amber")
     assert "ts" in stamp
     assert tmp_project.db.list_notes(source) == []

@@ -12,7 +12,6 @@ from ailr.exceptions import DuplicateError
 from ailr.ui._common import format_authors
 from ailr.ui._project import get_project
 
-
 _INGEST_COLS = [
     {"field": "id", "headerName": "ID", "width": 80},
     {"field": "title", "headerName": "Title", "flex": 3, "tooltipField": "title"},

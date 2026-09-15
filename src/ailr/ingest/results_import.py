@@ -6,7 +6,6 @@ with a "decision" (include/exclude/uncertain) recorded as the AI's full-text scr
 """
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from ailr.core.project import Project
 from ailr.reviewers import ExtractionResult, ScreeningDecision

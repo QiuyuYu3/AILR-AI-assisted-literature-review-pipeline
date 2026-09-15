@@ -22,8 +22,12 @@ from ailr.ui._cards import (
     peer_note,
     tag_chips,
 )
-from ailr.ui._common import help_icon, prompt_view_toggle, render_prompt_body, triggered_click_id, with_help
-
+from ailr.ui._common import (
+    prompt_view_toggle,
+    render_prompt_body,
+    triggered_click_id,
+    with_help,
+)
 from ailr.ui._project import (
     get_project,
     read_criteria,
@@ -387,7 +391,6 @@ def ai_screening_panel() -> list[Any]:
 
 
 def layout() -> Any:
-    project = get_project()
     review_opts, check_opts = _status_groups()
     return dbc.Row(
         [

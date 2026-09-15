@@ -20,7 +20,6 @@ from sqlalchemy import (
     text,
 )
 
-
 # ── SQLAlchemy schema (dialect-agnostic DDL) ────────────────────────────────
 # Timestamps are typed as Text on purpose: SQLite already stores CURRENT_TIMESTAMP
 # as an ISO-ish string and the code reads them as strings; keeping Text makes the

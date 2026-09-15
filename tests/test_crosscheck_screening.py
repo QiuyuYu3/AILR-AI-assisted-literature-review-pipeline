@@ -20,7 +20,6 @@ from ailr.exceptions import LLMError
 from ailr.llm.base import CallMetadata
 from ailr.reviewers import ScreeningDecision
 
-
 ABSTRACT = (
     "Thirty-two dyads completed a joint attention task while gaze was recorded with a mobile "
     "eye-tracker. Participants were undergraduates recruited from a subject pool. We report "

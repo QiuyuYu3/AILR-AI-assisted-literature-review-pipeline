@@ -65,7 +65,7 @@ def init(
         typer.echo(f"  cd {name}")
         typer.echo("  # Drop your RIS / BibTeX exports into data/raw/")
         typer.echo("  # Edit criteria.yaml, schema.yaml, prompts/")
-        typer.echo(f"  ailr ingest . data/raw/<your-file>.ris")
+        typer.echo("  ailr ingest . data/raw/<your-file>.ris")
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -90,7 +90,7 @@ def ingest(
                 typer.echo(f"  - {f['title'][:80]}: {f['error']}", err=True)
         if result.title_matches:
             typer.echo("")
-            typer.echo(f"Fuzzy title matches (skipped, please verify manually):")
+            typer.echo("Fuzzy title matches (skipped, please verify manually):")
             for m in result.title_matches:
                 typer.echo(f"  - NEW:  {m['new_title'][:80]}")
                 typer.echo(f"    DB:   {m['existing_title'][:80]} (id={m['existing_id']})")

@@ -1,18 +1,16 @@
 """CalibrationTask: sample N sources, run AI on them, report agreement vs human decisions."""
 
-import math
 import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Optional
 
-from ailr.core.config import resolve_stage_llm
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.criteria import load_screening_inputs, resolve_criteria
 from ailr.exceptions import AILRError
 from ailr.metrics import cohen_kappa, cohen_kappa_ci, percent_agreement
-from ailr.reviewers import Reviewer, ScreeningDecision
-from ailr.reviewers import LLMReviewer
+from ailr.reviewers import LLMReviewer, Reviewer, ScreeningDecision
 
 ProgressCallback = Callable[[int, int, Optional[ScreeningDecision], Optional[Exception]], None]
 

@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 import yaml
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import ValidationError as PydanticValidationError
 
 from ailr.exceptions import ConfigError, InputNotFoundError, ProjectNotFoundError
 

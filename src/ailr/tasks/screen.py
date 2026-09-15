@@ -1,13 +1,13 @@
 """ScreeningTask: iterate un-screened sources, call reviewer, persist decisions."""
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Optional
 
 from ailr.core.project import Project
 from ailr.criteria import load_screening_inputs
-from ailr.reviewers import Reviewer, ScreeningDecision
-from ailr.reviewers import LLMReviewer
+from ailr.reviewers import LLMReviewer, Reviewer, ScreeningDecision
 
 
 @dataclass

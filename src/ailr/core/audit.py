@@ -5,7 +5,7 @@ store). Writing here must never break a primary DB write, so log_event swallows 
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,7 @@ def log_event(
 
     Best-effort: a failure here is swallowed so the primary write is never compromised."""
     record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "event_type": event_type,
         "payload": payload,
     }

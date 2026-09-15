@@ -4,7 +4,8 @@ A single-user desktop app, so one global job per kind is enough. Progress is pol
 """
 
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ailr.core.config import resolve_stage_llm
 from ailr.llm.factory import make_llm_client

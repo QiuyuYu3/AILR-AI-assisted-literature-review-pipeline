@@ -14,13 +14,12 @@ from typing import Any, Optional
 
 from ailr.extraction import FieldSpec
 from ailr.quote_audit import (
-    _PaperText,
     _collect_nested_quotes,
     _has_value,
     _normalize,
+    _PaperText,
     _split_quote_cell,
 )
-
 
 QUOTE_NOT_FOUND = "quote_not_found"
 VALUE_NOT_IN_QUOTE = "value_not_in_quote"

@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ValidationError as PydanticValidationError
 
 from ailr.exceptions import ConfigError, InputNotFoundError
 from ailr.llm.base import ToolSchema

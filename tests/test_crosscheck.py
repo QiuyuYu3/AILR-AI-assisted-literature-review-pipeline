@@ -13,7 +13,6 @@ from ailr.core.source import Source
 from ailr.extraction import FieldSpec
 from ailr.reviewers import ExtractionResult
 
-
 PAPER = """
 # Method
 

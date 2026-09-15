@@ -15,7 +15,6 @@ from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 from ailr.exceptions import AILRError
 from ailr.ui._project import get_project
 
-
 _SUPPORTED = (".ris", ".bib", ".csv", ".tsv", ".txt")
 
 _DB_OPTIONS = [

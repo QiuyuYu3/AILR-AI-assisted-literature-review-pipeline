@@ -19,7 +19,6 @@ from sqlalchemy.exc import TimeoutError as _SAPoolTimeout
 from ailr.core._db_schema import metadata
 from ailr.core.source import Source
 
-
 # ── Connection facade ───────────────────────────────────────────────────────
 _QMARK = re.compile(r"\?")
 

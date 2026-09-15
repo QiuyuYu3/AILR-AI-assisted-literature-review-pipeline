@@ -2,13 +2,12 @@
 
 import os
 import socket
-import time
-from pathlib import Path
 
 import dash_bootstrap_components as dbc
-from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
+from dash import ALL, Dash, Input, Output, State, dcc, html, no_update
 from flask import abort, send_file
 
+from ailr.core._db_facade import release_thread_connections
 from ailr.ui import (
     calibration_view,
     conflicts_view,
@@ -32,10 +31,8 @@ from ailr.ui import (
     template_view,
     workflow_view,
 )
-from ailr.core._db_facade import release_thread_connections
 from ailr.ui._common import triggered_click_id, workflow_summary
 from ailr.ui._project import get_project, has_project, resolve_pdf_path
-
 
 
 def _nav_section(label: str):

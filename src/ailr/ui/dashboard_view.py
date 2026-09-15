@@ -9,7 +9,6 @@ from ailr.core.config import team_size_for
 from ailr.ui._project import get_project
 
 
-
 def layout(reviewer: str = "") -> Any:
     # Rendered by the main tab router (app._render_tab), which passes the current
     # reviewer as State. No global-Input callback here — that would fire cross-tab

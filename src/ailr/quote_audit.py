@@ -7,13 +7,13 @@ and verbatim (quotes actually found in the text). "Not found" is a list for huma
 spot-checking, not a hallucination verdict — PDF-to-markdown artifacts cause some misses.
 """
 
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional
-
-from ailr.reviewers import QUOTE_SEPARATOR
-
 import re
 import unicodedata
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from ailr.reviewers import QUOTE_SEPARATOR
 
 # PDF text and model output disagree on typography, not words: unify quotes/dashes,
 # fold diacritics (PDF often mangles them), and drop markdown emphasis characters

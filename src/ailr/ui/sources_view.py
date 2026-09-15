@@ -10,7 +10,6 @@ from ailr.reviewers import ScreeningDecision
 from ailr.ui._common import format_authors
 from ailr.ui._project import get_project
 
-
 _TAG_ACTIONS = [
     {"label": "Apply (add) tag", "value": "add"},
     {"label": "Remove tag", "value": "remove"},

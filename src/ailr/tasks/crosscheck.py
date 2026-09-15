@@ -1,8 +1,8 @@
 """Run cross-checks over records that already exist and store the findings."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from ailr.core.crosscheck import check_extraction, issues_to_records, llm_verdicts_to_records
 from ailr.core.crosscheck_screening import check_screening_decision, checked_fields, screening_text
@@ -16,7 +16,6 @@ from ailr.crosschecker import (
     load_prompt,
 )
 from ailr.extraction import compose_schema
-
 
 ProgressCallback = Callable[[int, int], None]
 

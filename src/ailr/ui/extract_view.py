@@ -13,12 +13,11 @@ from dash import ALL, MATCH, Input, Output, State, ctx, dcc, html, no_update
 from ailr.core.config import save_stage_workflow
 from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.core.source import Source
-from ailr.ui import ai_runner
 from ailr.extraction import FieldSpec, compose_schema
 from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult
+from ailr.ui import ai_runner
 from ailr.ui._common import format_authors
 from ailr.ui._project import get_project, reload_project
-
 
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
@@ -1539,9 +1538,8 @@ def _ai_panel(db: Any, src: Source, workflow: str, rid: str, *,
         items.append(_crosscheck_summary(findings))
     items.extend(_ai_row_block(row, findings.get(row["field_name"]), fillable) for row in ai_rows)
     if flag_check:
-        from ailr.ui._common import criterion_names
-
         from ailr.tasks.extract import _derive_ft_decision
+        from ailr.ui._common import criterion_names
 
         names = criterion_names()
         ft_decision = _derive_ft_decision(flag_check)

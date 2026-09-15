@@ -11,13 +11,12 @@ import json
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
+from dash import ALL, Input, Output, State, ctx, html, no_update
 
 from ailr.extraction import FieldSpec, compose_schema
 from ailr.reviewers import ExtractionResult
 from ailr.ui._common import format_authors
 from ailr.ui._project import get_project
-
 from ailr.ui.extract_view import reader_body
 
 _APP_CHROME_PX = 115

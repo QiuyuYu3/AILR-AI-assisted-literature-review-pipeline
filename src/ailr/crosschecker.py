@@ -16,7 +16,6 @@ from ailr.exceptions import LLMError
 from ailr.extraction import FieldSpec, compose_prompt, schema_to_markdown
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 
-
 VERDICTS = ("agree", "disagree", "uncertain")
 
 BUILT_IN_PROMPT = "crosscheck_prompt.txt"

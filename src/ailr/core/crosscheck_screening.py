@@ -17,7 +17,6 @@ from ailr.core.crosscheck import (
 )
 from ailr.quote_audit import _PaperText
 
-
 DECISIONS = ("include", "exclude", "uncertain")
 FLAG_VERDICTS = ("PASS", "FAIL", "UNCERTAIN")
 

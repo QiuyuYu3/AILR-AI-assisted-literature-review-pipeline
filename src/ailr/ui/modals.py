@@ -17,7 +17,6 @@ from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.exceptions import DuplicateError
 from ailr.ui._common import triggered_click_id
 from ailr.ui._project import get_project
-
 from ailr.ui.screen_view import _history_block, crosscheck_findings_block
 from ailr.ui.tags_view import TAG_COLOR_OPTIONS
 

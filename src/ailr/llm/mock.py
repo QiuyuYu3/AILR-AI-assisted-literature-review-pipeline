@@ -1,6 +1,7 @@
 """MockLLMClient: deterministic, no-API client for development and CI."""
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 

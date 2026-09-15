@@ -12,7 +12,6 @@ from typing import Optional
 from ailr.core.crosscheck import CrossCheckRecord
 from ailr.exceptions import DatabaseError
 
-
 # Stages whose target is a screening_decisions row rather than an extractions row. They share the
 # table but not the staleness question: "has this record been re-run" is a different query.
 SCREENING_STAGES = ("abstract", "full_text")

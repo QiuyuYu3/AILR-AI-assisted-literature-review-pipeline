@@ -12,7 +12,6 @@ from ailr.exceptions import LLMError
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 from ailr.llm.retry import with_retries
 
-
 # Errors that will fail identically on every attempt: a wrong key or a schema the API rejects
 # does not become valid by waiting. Anything else is assumed transient and still gets retried,
 # so an error this list has not seen behaves as it did before rather than failing fast.

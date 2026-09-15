@@ -18,6 +18,7 @@ from ailr.ingest import csv as csv_ingest
 from ailr.ingest import dedup
 from ailr.ingest import ris as ris_ingest
 
+
 def _authors_str(src: Source) -> Optional[str]:
     return json.dumps(src.authors) if src.authors else None
 

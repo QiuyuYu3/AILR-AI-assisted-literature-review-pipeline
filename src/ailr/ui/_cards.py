@@ -14,7 +14,6 @@ from dash import html
 
 from ailr.ui._common import _short_author_year
 
-
 DECISION_COLORS = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
 

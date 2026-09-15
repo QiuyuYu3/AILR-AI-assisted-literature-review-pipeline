@@ -8,7 +8,6 @@ from dash import Input, Output, html, no_update
 
 from ailr.ui._project import get_project
 
-
 _TABLE_OPTIONS = [
     {"label": "sources", "value": "sources"},
     {"label": "screening_decisions", "value": "screening_decisions"},

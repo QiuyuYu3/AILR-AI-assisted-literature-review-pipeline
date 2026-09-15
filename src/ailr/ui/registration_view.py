@@ -13,7 +13,6 @@ from ailr.core.config import save_registration
 from ailr.ui._project import get_project, reload_project
 
 
-
 def _field(label: str, cid: str, value: str, placeholder: str, help_text: str) -> Any:
     return html.Div(
         [

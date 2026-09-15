@@ -9,7 +9,6 @@ from ailr.core.config import save_stage_workflow
 from ailr.ui import calibration_view
 from ailr.ui._project import get_project, reload_project
 
-
 _OPTIONS = [
     {"label": "assisted — AI + 1 human, both blinded (PRISMA-trAIce)", "value": "assisted"},
     {"label": "independent — 2 humans, both blinded (Cochrane)", "value": "independent"},

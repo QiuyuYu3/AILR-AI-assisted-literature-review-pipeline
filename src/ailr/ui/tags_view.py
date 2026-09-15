@@ -10,7 +10,6 @@ from ailr.exceptions import DuplicateError
 from ailr.ui._common import triggered_click_id
 from ailr.ui._project import get_project
 
-
 TAG_COLOR_OPTIONS = [
     {"label": "Gray", "value": "secondary"},
     {"label": "Blue", "value": "primary"},

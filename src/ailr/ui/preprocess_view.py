@@ -17,7 +17,6 @@ from ailr.ui import ai_runner
 from ailr.ui._project import get_project, reload_project
 
 
-
 def pdf_tools_panel() -> list[Any]:
     """Full-text data-prep as clear steps: 1) link PDFs → 2) convert to markdown (or 3) import).
     Rendered on the full-text Workflow tab."""
@@ -106,7 +105,11 @@ def register_callbacks(app: Any) -> None:
         if not n:
             return no_update, no_update
         project = get_project()
-        from ailr.core.config import save_preprocess_backend, save_preprocess_threshold, save_preprocess_workers
+        from ailr.core.config import (
+            save_preprocess_backend,
+            save_preprocess_threshold,
+            save_preprocess_workers,
+        )
         changed = False
         if threshold is not None and int(threshold) != project.config.preprocess.low_text_threshold:
             save_preprocess_threshold(project.root, int(threshold))
