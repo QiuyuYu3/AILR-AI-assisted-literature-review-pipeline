@@ -15,6 +15,7 @@
 - AI screening now requires `evidence_quotes` in its output, so the quote check has something to verify.
 
 ### Fixed
+- Cohen's κ confidence interval: a table where one reviewer used a single category has zero variance, but the subtraction that computes it left float noise, so the interval read as a hair-wide band instead of collapsing onto κ. The interval is now pinned against R's `vcd::Kappa` on three tables.
 - Extraction: a field the paper does not report can now come back as null. `value` was typed non-nullable while being required, so a model with nothing to record had to put something in the slot and wrote the string `"null"` — which then counted as a value in exports and in the quote-coverage denominator. Enum fields list null as an option alongside their own. Existing rows are untouched; this affects future runs.
 
 ---

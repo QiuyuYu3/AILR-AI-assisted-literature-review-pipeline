@@ -28,6 +28,14 @@ from ailr.tasks.calibrate import (
 )
 
 
+def _pairs(matrix, categories):
+    """Rows are rater 1, columns rater 2, so the R matrices below transcribe one-for-one."""
+    return [(categories[i], categories[j])
+            for i, row in enumerate(matrix)
+            for j, count in enumerate(row)
+            for _ in range(count)]
+
+
 class TestMetrics:
     def test_kappa_perfect_agreement(self):
         pairs = [("include", "include")] * 3 + [("exclude", "exclude")] * 3
@@ -59,6 +67,43 @@ class TestMetrics:
         estimate says undefined too rather than claiming perfect agreement."""
         assert math.isnan(cohen_kappa([("include", "include")] * 5, categories=BINARY_CATEGORIES))
         assert math.isnan(cohen_kappa_ci([("include", "include")] * 5, categories=BINARY_CATEGORIES)[0])
+
+    def test_kappa_ci_is_undefined_when_there_are_no_pairs(self):
+        lo, hi = cohen_kappa_ci([])
+        assert math.isnan(lo) and math.isnan(hi)
+
+    def test_perfect_agreement_over_two_categories_has_a_zero_width_interval(self):
+        """Distinct from the degenerate one-category table above: with both categories present
+        the variance is exactly 0, so the interval collapses onto κ instead of being undefined."""
+        pairs = [("include", "include")] * 3 + [("exclude", "exclude")] * 3
+        assert cohen_kappa_ci(pairs, categories=BINARY_CATEGORIES) == (1.0, 1.0)
+
+    def test_kappa_ci_matches_r_vcd_on_an_unbalanced_table(self):
+        """Golden values from R 4.5.2 / vcd 1.4-14, whose asymptotic variance the docstring claims:
+        Kappa(matrix(c(8,2,3,7), nrow=2, byrow=TRUE))$Unweighted gives ASE 0.192678488679977,
+        and confint() on it is exactly the kappa +- 1.959964 * ASE built here."""
+        lo, hi = cohen_kappa_ci(_pairs([[8, 2], [3, 7]], BINARY_CATEGORIES),
+                                categories=BINARY_CATEGORIES)
+        assert round(lo, 12) == round(0.122357098612838, 12)
+        assert round(hi, 12) == round(0.877642901387162, 12)
+
+    def test_kappa_ci_matches_r_vcd_on_three_categories(self):
+        """Same source, matrix(c(10,2,1, 3,15,2, 1,4,5), nrow=3, byrow=TRUE) in THREE_WAY order:
+        kappa 0.520994001713796, ASE 0.109835499788421. Two categories leave the k-category sums
+        in the variance untested."""
+        pairs = _pairs([[10, 2, 1], [3, 15, 2], [1, 4, 5]], THREE_WAY_CATEGORIES)
+        assert round(cohen_kappa(pairs, categories=THREE_WAY_CATEGORIES), 12) == round(0.520994001713796, 12)
+        lo, hi = cohen_kappa_ci(pairs, categories=THREE_WAY_CATEGORIES)
+        assert round(lo, 12) == round(0.305720376206482, 12)
+        assert round(hi, 12) == round(0.736267627221110, 12)
+
+    def test_a_degenerate_marginal_gives_a_zero_width_interval_not_float_noise(self):
+        """19 agreed excludes + 1 disagreement, the realistic screening shape: one rater used a
+        single category, so the variance cancels to exactly 0. The subtraction leaves noise on
+        either side of 0 (R reports ASE = NaN on this table), which must not become an interval."""
+        pairs = [("exclude", "exclude")] * 19 + [("include", "exclude")]
+        assert cohen_kappa(pairs, categories=BINARY_CATEGORIES) == 0.0
+        assert cohen_kappa_ci(pairs, categories=BINARY_CATEGORIES) == (0.0, 0.0)
 
     def test_percent_agreement(self):
         assert percent_agreement([("a", "a"), ("a", "b")]) == 0.5
