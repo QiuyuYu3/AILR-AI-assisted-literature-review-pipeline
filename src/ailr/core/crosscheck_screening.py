@@ -6,7 +6,7 @@ evidence, the criterion IDs it cites, and whether the decision squares with its 
 flag_check verdicts. Same Issue shape, same storage, same advisory status.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from ailr.core.crosscheck import (
     EMPTY_REQUIRED,
@@ -39,7 +39,7 @@ def screening_text(source: Any) -> str:
     return "\n\n".join(str(p) for p in (getattr(source, "title", ""), getattr(source, "abstract", "")) if p)
 
 
-def checked_fields(criteria_ids: list[str], flag_check: Optional[list[dict]]) -> list[str]:
+def checked_fields(criteria_ids: list[str], flag_check: list[dict] | None) -> list[str]:
     """Every field a check could have fired on, so a clean one is distinguishable from an unchecked
     one. Criterion IDs join the list only when the record carries flag_check verdicts at all."""
     fields = list(_BASE_FIELDS)
@@ -48,7 +48,7 @@ def checked_fields(criteria_ids: list[str], flag_check: Optional[list[dict]]) ->
     return fields
 
 
-def _flag_by_criterion(flag_check: Optional[list[dict]]) -> dict[str, dict]:
+def _flag_by_criterion(flag_check: list[dict] | None) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for item in flag_check or []:
         cid = str(item.get("criterion_id") or "").strip()
@@ -89,7 +89,7 @@ def _check_flag_check(
     return issues
 
 
-def _check_decision_against_flags(decision: str, flag_check: list[dict]) -> Optional[Issue]:
+def _check_decision_against_flags(decision: str, flag_check: list[dict]) -> Issue | None:
     """Only the contradictions, not every divergence. At the abstract stage a reviewer is commonly
     told to be lenient and leave doubt for full text, so UNCERTAIN mapping to include or to exclude
     is a legitimate reading. A criterion the record itself marks FAIL is not."""

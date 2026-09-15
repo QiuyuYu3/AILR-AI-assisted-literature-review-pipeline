@@ -5,7 +5,7 @@ testable; each view's callback stays a thin shell: parse the click, call one of 
 """
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 from dash import no_update
 
@@ -18,7 +18,7 @@ _VOTE_REASONING = {"abstract": "(inline screening)", "full_text": "(full-text re
 
 def _apply_vote(
     db: Any, source_id: int, decision: str, rid: str, workflow: str,
-    stage: str = "abstract", reasoning: Optional[str] = None,
+    stage: str = "abstract", reasoning: str | None = None,
 ) -> tuple:
     """Record one human vote behind the vote lock. Returns (refresh, last_action) for the callback.
     Lock in one query: skip if I already decided this paper (rapid double-click), and cap the
@@ -66,8 +66,8 @@ def _apply_reset(db: Any, source_id: int, rid: str, stage: str = "abstract") -> 
 
 
 def _apply_resolve(
-    db: Any, source_id: int, decision: str, rid: str, rationale: Optional[str], stage: str,
-    audit_rationale: Optional[str] = None,
+    db: Any, source_id: int, decision: str, rid: str, rationale: str | None, stage: str,
+    audit_rationale: str | None = None,
 ) -> dict:
     """Adjudicate a conflict: record the final decision (+ audit row). Returns the refresh payload.
 

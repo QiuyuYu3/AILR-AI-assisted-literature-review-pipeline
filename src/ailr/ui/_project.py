@@ -8,12 +8,11 @@ must call reload_project() afterwards, or the running app keeps the stale config
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 from ailr.core import pdf_paths
 from ailr.core.project import Project
 
-_project: Optional[Project] = None
+_project: Project | None = None
 
 
 _RECENT_FILE = Path.home() / ".ailr" / "recent.json"
@@ -115,7 +114,7 @@ def create_project(
     parent: Path,
     name: str,
     mode: str = "assisted",
-    database_url: Optional[str] = None,
+    database_url: str | None = None,
     project_type: str = "scoping",
 ) -> Project:
     """Scaffold a new project under parent/name and switch the app to it.
@@ -142,7 +141,7 @@ def create_project(
     return _project
 
 
-def resolve_pdf_path(src) -> Optional[Path]:
+def resolve_pdf_path(src) -> Path | None:
     """Resolve a source's stored PDF path (absolute, or relative to the project root)."""
     return pdf_paths.resolve_pdf_path(getattr(src, "pdf_path", None), get_project().root)
 

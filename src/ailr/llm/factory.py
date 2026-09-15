@@ -5,7 +5,6 @@ API keys are read from the process environment by each provider's SDK
 before launching; nothing is read from or written to disk.
 """
 
-from typing import Optional
 
 from ailr.exceptions import ConfigError
 from ailr.llm.base import LLMClient
@@ -14,11 +13,11 @@ from ailr.llm.base import LLMClient
 def make_llm_client(
     provider: str,
     *,
-    model: Optional[str],
+    model: str | None,
     temperature: float = 0.0,
-    seed: Optional[int] = None,      # honoured only by providers whose API takes one; see llm/base
+    seed: int | None = None,      # honoured only by providers whose API takes one; see llm/base
     max_retries: int = 3,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> LLMClient:
     if provider == "mock":
         from ailr.llm.mock import MockLLMClient

@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -36,7 +36,7 @@ class CallMetadata:
 _SEED_PROVIDERS = frozenset({"openai"})
 
 
-def effective_seed(provider: str, seed: Optional[int]) -> Optional[int]:
+def effective_seed(provider: str, seed: int | None) -> int | None:
     """The seed the call really used, or None when the provider has no such parameter."""
     return seed if provider in _SEED_PROVIDERS else None
 
@@ -49,12 +49,12 @@ class LLMClient(ABC):
     """
 
     @property
-    def effective_seed(self) -> Optional[int]:
+    def effective_seed(self) -> int | None:
         """None unless the provider sends a seed. Overridden by the providers that do."""
         return None
 
     @property
-    def temperature(self) -> Optional[float]:
+    def temperature(self) -> float | None:
         """The temperature sent, recorded per decision. None for clients that send none (mock)."""
         return None
 

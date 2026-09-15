@@ -7,7 +7,7 @@ into a single builder costs more than it saves — see _conflicts_base for the c
 implementation *was* worth it.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import html
@@ -17,7 +17,7 @@ from ailr.ui._common import _short_author_year
 DECISION_COLORS = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
 
-def header_line(src: Any, badges: Optional[list] = None) -> Any:
+def header_line(src: Any, badges: list | None = None) -> Any:
     """'#12  Smith 2020' plus any status badges that belong on the same line."""
     return html.Div(
         [
@@ -47,7 +47,7 @@ def doi_link(src: Any) -> Any:
     )
 
 
-def tag_chips(tags: Optional[list[dict]]) -> Any:
+def tag_chips(tags: list[dict] | None) -> Any:
     if not tags:
         return html.Span()
     return html.Div(
@@ -63,7 +63,7 @@ def peer_note(workflow: str, peer_count: int) -> Any:
     return html.Small(f"{peer_count} other reviewer(s) voted", className="text-muted d-block mt-1")
 
 
-def decision_controls(sid: Any, my_decision: Optional[str], prefix: str, exclude_id: Any = None) -> list:
+def decision_controls(sid: Any, my_decision: str | None, prefix: str, exclude_id: Any = None) -> list:
     """The include/exclude/uncertain group, or the recorded verdict plus Reset once you have voted.
 
     `prefix` namespaces the pattern-matching ids ('screen' / 'ft'). `exclude_id` replaces the

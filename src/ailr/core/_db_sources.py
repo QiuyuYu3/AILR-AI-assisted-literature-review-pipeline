@@ -2,7 +2,6 @@
 
 import json
 import sqlite3
-from typing import Optional
 
 from ailr.core._db_facade import _row_to_source
 from ailr.core.source import Source
@@ -127,7 +126,7 @@ class SourcesMixin:
         ).fetchall()
         return {r["doi"].lower().strip(): r["id"] for r in rows if r["doi"]}
 
-    def get_source(self, source_id: int) -> Optional[Source]:
+    def get_source(self, source_id: int) -> Source | None:
         row = self._conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
         return _row_to_source(row) if row else None
 
@@ -162,7 +161,7 @@ class SourcesMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to set not-retrieved on source {source_id}: {e}") from e
 
-    def set_study_group(self, source_id: int, primary_id: Optional[int]) -> None:
+    def set_study_group(self, source_id: int, primary_id: int | None) -> None:
         """Mark this report as a companion of `primary_id` (same study), or None to detach it.
 
         Groups are kept one level deep: linking to a report that is itself a companion joins the
@@ -230,7 +229,7 @@ class SourcesMixin:
     def list_sources(
         self,
         project_id: int,
-        limit: Optional[int] = None,
+        limit: int | None = None,
         offset: int = 0,
     ) -> list[Source]:
         sql = "SELECT * FROM sources WHERE project_id = ? AND COALESCE(is_duplicate, 0) = 0 ORDER BY id"
@@ -241,7 +240,7 @@ class SourcesMixin:
         rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_source(r) for r in rows]
 
-    def find_by_doi(self, project_id: int, doi: str) -> Optional[Source]:
+    def find_by_doi(self, project_id: int, doi: str) -> Source | None:
         row = self._conn.execute(
             "SELECT * FROM sources WHERE project_id = ? AND lower(doi) = lower(?)",
             (project_id, doi),
@@ -255,7 +254,7 @@ class SourcesMixin:
         ).fetchall()
         return [_row_to_source(r) for r in rows]
 
-    def count_sources(self, project_id: int, route: Optional[str] = None) -> int:
+    def count_sources(self, project_id: int, route: str | None = None) -> int:
         clause = ""
         if route is not None:
             op = "=" if route == "database" else "!="

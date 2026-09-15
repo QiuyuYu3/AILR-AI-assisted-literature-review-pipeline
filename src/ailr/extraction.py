@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,15 +31,15 @@ class FieldSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str
     type: Literal["string", "integer", "number", "boolean", "list", "object"]
-    description: Optional[str] = None
-    enum: Optional[list[str]] = None
+    description: str | None = None
+    enum: list[str] | None = None
     required: bool = True
     multi: bool = False
     core: bool = False
     verify: bool = True  # whether a human must verify this field at extraction (False = accept AI value)
-    item_type: Optional[Literal["string", "integer", "number", "boolean", "object"]] = None
-    fields: Optional[list["FieldSpec"]] = None
-    item_fields: Optional[list["FieldSpec"]] = None
+    item_type: Literal["string", "integer", "number", "boolean", "object"] | None = None
+    fields: list[FieldSpec] | None = None
+    item_fields: list[FieldSpec] | None = None
 
 
 FieldSpec.model_rebuild()
@@ -48,7 +48,7 @@ FieldSpec.model_rebuild()
 class UserSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
     include_core: bool = True
-    include_suggested: Union[Literal["all"], list[str]] = Field(default_factory=list)
+    include_suggested: Literal["all"] | list[str] = Field(default_factory=list)
     fields: list[FieldSpec] = Field(default_factory=list)
     skip_verify: list[str] = Field(default_factory=list)  # field names to accept from AI without human review
 
@@ -81,7 +81,7 @@ def save_user_schema(
     include_core: bool,
     include_suggested: list[str],
     fields: list[dict],
-    skip_verify: Optional[list[str]] = None,
+    skip_verify: list[str] | None = None,
 ) -> None:
     """Write a UserSchema back to YAML. `fields` are validated through FieldSpec first."""
     specs = [FieldSpec(**f) for f in fields]  # raises ConfigError-worthy ValidationError on bad input

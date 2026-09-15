@@ -2,7 +2,7 @@
 
 import json
 import time
-from typing import Any, Optional
+from typing import Any
 
 from ailr.exceptions import LLMError
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
@@ -15,9 +15,9 @@ class OpenAIClient(LLMClient):
         *,
         model: str,
         temperature: float = 0.0,
-        seed: Optional[int] = 42,
+        seed: int | None = 42,
         max_retries: int = 3,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ) -> None:
         try:
             import openai
@@ -35,11 +35,11 @@ class OpenAIClient(LLMClient):
         return "openai"
 
     @property
-    def effective_seed(self) -> Optional[int]:
+    def effective_seed(self) -> int | None:
         return self._seed
 
     @property
-    def temperature(self) -> Optional[float]:
+    def temperature(self) -> float | None:
         return self._temperature
 
     @property

@@ -6,14 +6,14 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ailr.core.pdf_paths import portable_path, resolve_pdf_path
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.preprocess import PDFConverter, make_converter, strip_references
 
-ProgressCallback = Callable[[int, int, Optional[Source], Optional[Exception]], None]
+ProgressCallback = Callable[[int, int, Source | None, Exception | None], None]
 
 
 def import_markdown_from_folder(project: Project, folder: Path) -> dict[str, Any]:
@@ -81,7 +81,7 @@ class PreprocessTask:
     def __init__(
         self,
         project: Project,
-        converter: Optional[PDFConverter] = None,
+        converter: PDFConverter | None = None,
     ) -> None:
         self.project = project
         self.converter = converter or make_converter(project.config.preprocess.pdf_backend)
@@ -90,8 +90,8 @@ class PreprocessTask:
         self,
         *,
         force: bool = False,
-        only_ids: Optional[set[int]] = None,
-        on_progress: Optional[ProgressCallback] = None,
+        only_ids: set[int] | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> PreprocessSummary:
         pdfs_dir = self.project.root / "data" / "pdfs"
         md_dir = self.project.root / "data" / "markdown"

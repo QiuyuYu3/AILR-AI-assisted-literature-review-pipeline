@@ -8,7 +8,7 @@ both SQLite and PostgreSQL.
 
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import Integer
 from sqlalchemy.engine import make_url
@@ -36,7 +36,7 @@ class Database(
     CalibrationMixin,
     AdminMixin,
 ):
-    def __init__(self, url_or_path, audit_log_path: Optional[Path] = None) -> None:
+    def __init__(self, url_or_path, audit_log_path: Path | None = None) -> None:
         # audit_log_path: when set, decisions/extractions also get a JSONL backup copy
         # (best-effort second record). Project supplies it; other callers may omit it.
         self._audit_path = Path(audit_log_path) if audit_log_path else None

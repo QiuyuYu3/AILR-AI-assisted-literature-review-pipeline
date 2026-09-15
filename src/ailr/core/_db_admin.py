@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from typing import Any, Optional
+from typing import Any
 
 from ailr.core._db_facade import _row_to_source
 from ailr.core.source import Source
@@ -51,7 +51,7 @@ class AdminMixin:
             raise DatabaseError(f"Failed to delete project data: {e}") from e
         return counts
 
-    def raw_table(self, table: str, limit: Optional[int] = 500) -> tuple[list[str], list[dict]]:
+    def raw_table(self, table: str, limit: int | None = 500) -> tuple[list[str], list[dict]]:
         """Return (column_names, rows) for a whitelisted table. Read-only DB inspection.
         limit=None returns the whole table. Values are coerced to JSON-safe types so the UI grid
         never chokes on bytes/odd values."""
@@ -82,9 +82,9 @@ class AdminMixin:
         self,
         run_id: int,
         source_id: int,
-        full_text_decision: Optional[str],
+        full_text_decision: str | None,
         fields: list,
-        flag_check: Optional[list],
+        flag_check: list | None,
     ) -> int:
         with self._lock, self._conn.transaction():
             cur = self._conn.execute(
@@ -193,7 +193,7 @@ class AdminMixin:
 
     # ── Tags ────────────────────────────────────────────────────────
 
-    def create_tag(self, project_id: int, name: str, color: Optional[str] = None) -> int:
+    def create_tag(self, project_id: int, name: str, color: str | None = None) -> int:
         try:
             cur = self._conn.execute(
                 "INSERT INTO tags (project_id, name, color) VALUES (?, ?, ?)",
@@ -216,11 +216,11 @@ class AdminMixin:
         """
         return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
-    def get_tag(self, tag_id: int) -> Optional[dict]:
+    def get_tag(self, tag_id: int) -> dict | None:
         row = self._conn.execute("SELECT * FROM tags WHERE id = ?", (tag_id,)).fetchone()
         return dict(row) if row else None
 
-    def get_tag_by_name(self, project_id: int, name: str) -> Optional[dict]:
+    def get_tag_by_name(self, project_id: int, name: str) -> dict | None:
         row = self._conn.execute(
             "SELECT * FROM tags WHERE project_id = ? AND name = ?",
             (project_id, name),
@@ -230,8 +230,8 @@ class AdminMixin:
     def update_tag(
         self,
         tag_id: int,
-        name: Optional[str] = None,
-        color: Optional[str] = None,
+        name: str | None = None,
+        color: str | None = None,
     ) -> None:
         updates: list[str] = []
         params: list = []

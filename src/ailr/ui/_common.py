@@ -5,7 +5,6 @@ Project loading and the files that belong to a project live in _project.py.
 """
 
 import json
-from typing import Optional
 
 import dash_bootstrap_components as dbc
 from dash import ctx, dcc, html
@@ -60,7 +59,7 @@ def render_prompt_body(text: str, mode: str, *, font: float = 0.95):
     return html.Pre(text, style={"whiteSpace": "pre-wrap", "fontSize": f"{font}rem", **box})
 
 
-def triggered_click_id() -> Optional[dict]:
+def triggered_click_id() -> dict | None:
     """The pattern-matching id of the input that actually carries a click this cycle.
 
     Prefer this over ctx.triggered_id for actions on a re-rendering list of cards: ctx.triggered_id
@@ -78,7 +77,7 @@ def triggered_click_id() -> Optional[dict]:
     return json.loads(clicked["prop_id"].rsplit(".", 1)[0])
 
 
-def value_for_source(values, ids, source_id: int) -> Optional[str]:
+def value_for_source(values, ids, source_id: int) -> str | None:
     """Pick one card's input value out of a pattern-matching State pair, by source id."""
     for val, cid in zip(values or [], ids or []):
         if isinstance(cid, dict) and cid.get("source") == source_id:

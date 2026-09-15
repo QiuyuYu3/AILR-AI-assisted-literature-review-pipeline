@@ -6,7 +6,7 @@ AI's verdict at this stage is derived from extraction.flag_check.
 """
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
@@ -591,7 +591,7 @@ def register_callbacks(app: Any) -> None:
         # them — on a remote database each of those repeats is a round trip.
         abs_conflict_ids = db.unresolved_conflict_ids(pid, abstract_workflow, stage="abstract")
 
-        candidate_ids: Optional[list[int]] = None
+        candidate_ids: list[int] | None = None
 
         def _candidate_ids() -> list[int]:
             # Both filters below need the same list, and either may be off; fetched at most once.
@@ -705,7 +705,7 @@ def register_callbacks(app: Any) -> None:
         return cards, counts, prev_disabled, next_disabled, page_info
 
 
-def _ft_avail_filter(ftavail: Any) -> tuple[bool, Optional[str]]:
+def _ft_avail_filter(ftavail: Any) -> tuple[bool, str | None]:
     """(low_text_mode, ft_avail) from the 'Full-text' checklist.
 
     'Low-text / failed' wins over the other two: it is resolved on disk into an id whitelist, so the
@@ -726,22 +726,22 @@ def _ft_avail_filter(ftavail: Any) -> tuple[bool, Optional[str]]:
 
 def _ft_card(
     src: Source,
-    my_decision: Optional[str],
+    my_decision: str | None,
     workflow: str,
     peer_count: int,
     reviewer_id: str,
     can_extract: bool = False,
     expand_abstract: bool = False,
-    extracted_by: Optional[str] = None,
-    claimed_by: Optional[str] = None,
+    extracted_by: str | None = None,
+    claimed_by: str | None = None,
     extract_verify: bool = False,
     low_text: bool = False,
-    tags: Optional[list[dict]] = None,
-    ai_decision: Optional[str] = None,
+    tags: list[dict] | None = None,
+    ai_decision: str | None = None,
     note_count: int = 0,
     stale: bool = False,
     needs_reconcile: bool = False,
-    companions: Optional[list[dict]] = None,
+    companions: list[dict] | None = None,
 ) -> Any:
     sid = src.id
     # Excluding at full text goes through a modal first: PRISMA wants the reason.

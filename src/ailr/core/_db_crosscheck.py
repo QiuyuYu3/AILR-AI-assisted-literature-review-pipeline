@@ -7,7 +7,6 @@ independent of it.
 
 import json
 import sqlite3
-from typing import Optional
 
 from ailr.core.crosscheck import CrossCheckRecord
 from ailr.exceptions import DatabaseError
@@ -69,8 +68,8 @@ class CrossCheckMixin:
     def get_cross_checks(
         self,
         source_id: int,
-        stage: Optional[str] = None,
-        target_type: Optional[str] = None,
+        stage: str | None = None,
+        target_type: str | None = None,
     ) -> list[dict]:
         """Findings for a source, each carrying `stale`: True when the record it checked has since
         been re-run, so the finding describes a row that is no longer live."""
@@ -121,7 +120,7 @@ class CrossCheckMixin:
         return out
 
     def cross_checks_by_field(
-        self, source_id: int, target_type: str = "ai", target_id: Optional[str] = None
+        self, source_id: int, target_type: str = "ai", target_id: str | None = None
     ) -> dict[str, list[dict]]:
         """Extraction findings grouped by field, for the per-field badges in the extraction view."""
         grouped: dict[str, list[dict]] = {}
@@ -197,7 +196,7 @@ class CrossCheckMixin:
         ).fetchall()
         return {r["source_id"]: r["n"] for r in rows}
 
-    def delete_cross_checks(self, source_id: int, stage: Optional[str] = None) -> int:
+    def delete_cross_checks(self, source_id: int, stage: str | None = None) -> int:
         sql = "DELETE FROM cross_checks WHERE source_id = ?"
         params: list = [source_id]
         if stage:

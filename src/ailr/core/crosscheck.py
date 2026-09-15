@@ -10,7 +10,7 @@ checks, into stored per-field findings.
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from ailr.extraction import FieldSpec
 from ailr.quote_audit import (
@@ -49,15 +49,15 @@ class CrossCheckRecord:
     checker_id: str
     check_kind: str
     verdict: str
-    target_row_id: Optional[int] = None
-    field_name: Optional[str] = None
-    issue_code: Optional[str] = None
-    reason: Optional[str] = None
-    suggested_value: Optional[str] = None
-    confidence: Optional[float] = None
-    llm_params: Optional[dict] = None
-    prompt_version: Optional[str] = None
-    raw_output: Optional[str] = None
+    target_row_id: int | None = None
+    field_name: str | None = None
+    issue_code: str | None = None
+    reason: str | None = None
+    suggested_value: str | None = None
+    confidence: float | None = None
+    llm_params: dict | None = None
+    prompt_version: str | None = None
+    raw_output: str | None = None
 
 
 def _number_variants(value: Any) -> list[str]:
@@ -78,7 +78,7 @@ def _truncate(text: str, width: int = 60) -> str:
     return text if len(text) <= width else text[:width] + "..."
 
 
-def _check_enum(field: FieldSpec, value: Any) -> Optional[Issue]:
+def _check_enum(field: FieldSpec, value: Any) -> Issue | None:
     if not field.enum:
         return None
     allowed = {str(o).strip().lower() for o in field.enum}
@@ -93,7 +93,7 @@ def _check_enum(field: FieldSpec, value: Any) -> Optional[Issue]:
     )
 
 
-def _check_quotes(field: FieldSpec, quotes: list[str], paper: _PaperText) -> Optional[Issue]:
+def _check_quotes(field: FieldSpec, quotes: list[str], paper: _PaperText) -> Issue | None:
     missing = [q for q in quotes if not paper.contains(q)]
     if not missing:
         return None
@@ -105,7 +105,7 @@ def _check_quotes(field: FieldSpec, quotes: list[str], paper: _PaperText) -> Opt
     )
 
 
-def _check_value_in_quote(field: FieldSpec, value: Any, quotes: list[str]) -> Optional[Issue]:
+def _check_value_in_quote(field: FieldSpec, value: Any, quotes: list[str]) -> Issue | None:
     """Scalar numbers only: a number appearing nowhere in its own supporting quote is the
     signature of a value carried over from elsewhere in the paper."""
     if field.type not in ("integer", "number") or not quotes:
@@ -183,8 +183,8 @@ def llm_verdicts_to_records(
     target_id: str,
     row_ids: dict[str, int],
     checker_id: str,
-    llm_params: Optional[dict] = None,
-    prompt_version: Optional[str] = None,
+    llm_params: dict | None = None,
+    prompt_version: str | None = None,
     stage: str = "extraction",
 ) -> list["CrossCheckRecord"]:
     """LLM verdicts (keyed by field) as rows. Unlike the deterministic layer these carry no
@@ -229,7 +229,7 @@ def issues_to_records(
     for issue in issues:
         by_field.setdefault(issue.field_name, []).append(issue)
 
-    def _make(field_name: str, verdict: str, issue: Optional[Issue]) -> CrossCheckRecord:
+    def _make(field_name: str, verdict: str, issue: Issue | None) -> CrossCheckRecord:
         return CrossCheckRecord(
             source_id=source_id,
             stage=stage,

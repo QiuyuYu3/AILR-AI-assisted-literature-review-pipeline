@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Optional
 
 from ailr.core.project import Project
 from ailr.criteria import load_screening_inputs
@@ -34,7 +33,7 @@ class ScreenRunSummary:
             self.uncertain += 1
 
 
-ProgressCallback = Callable[[int, int, Optional[ScreeningDecision], Optional[Exception]], None]
+ProgressCallback = Callable[[int, int, ScreeningDecision | None, Exception | None], None]
 
 
 class ScreeningTask:
@@ -45,11 +44,11 @@ class ScreeningTask:
     def run(
         self,
         *,
-        limit: Optional[int] = None,
-        on_progress: Optional[ProgressCallback] = None,
+        limit: int | None = None,
+        on_progress: ProgressCallback | None = None,
         batch: bool = False,
-        workers: Optional[int] = None,
-        flag_check: Optional[bool] = None,
+        workers: int | None = None,
+        flag_check: bool | None = None,
         force: bool = False,
     ) -> ScreenRunSummary:
         config = self.project.config

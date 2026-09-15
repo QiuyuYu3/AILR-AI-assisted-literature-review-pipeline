@@ -11,7 +11,7 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from ailr.reviewers import QUOTE_SEPARATOR
 
@@ -115,18 +115,18 @@ class QuoteAudit:
         self.not_found.extend(other.not_found)
 
     @property
-    def coverage(self) -> Optional[float]:
+    def coverage(self) -> float | None:
         return self.quoted / self.values if self.values else None
 
     @property
-    def verbatim_rate(self) -> Optional[float]:
+    def verbatim_rate(self) -> float | None:
         return self.verbatim / self.checked if self.checked else None
 
 
 def audit_fields(
     items: Iterable[tuple[str, Any, Any]],
     paper_text: str,
-    source_id: Optional[int] = None,
+    source_id: int | None = None,
 ) -> QuoteAudit:
     """items: (field_name, value, quote_cell) triples for ONE paper. Reserved `_`-prefixed
     fields are skipped; quotes nested inside object / list-of-object values are collected."""

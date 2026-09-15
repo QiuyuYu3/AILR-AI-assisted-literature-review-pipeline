@@ -12,7 +12,7 @@ stage="extraction" — test the EXTRACTION prompt (κ vs the human full-text dec
 
 import json
 import time
-from typing import Any, Optional
+from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html, no_update
@@ -396,7 +396,7 @@ def _doi_line(doi: Any) -> Any:
     return html.Div(html.A(f"DOI: {doi}", href=f"https://doi.org/{doi}", target="_blank", className="small"), className="mb-2")
 
 
-def _fmt(x: Any) -> Optional[str]:
+def _fmt(x: Any) -> str | None:
     """None rather than the string 'nan', so callers can show a message instead of a broken number."""
     try:
         if x is None or x != x:

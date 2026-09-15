@@ -6,7 +6,7 @@ against a live key; report errors and we'll refine.
 """
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 from ailr.exceptions import LLMError
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
@@ -48,7 +48,7 @@ class GeminiClient(LLMClient):
         model: str,
         temperature: float = 0.0,
         max_retries: int = 3,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ) -> None:
         try:
             import google.generativeai as genai
@@ -70,7 +70,7 @@ class GeminiClient(LLMClient):
         return self._model
 
     @property
-    def temperature(self) -> Optional[float]:
+    def temperature(self) -> float | None:
         return self._temperature
 
     def complete_structured(
@@ -108,7 +108,7 @@ class GeminiClient(LLMClient):
             raise LLMError(f"Gemini call failed: {e}") from e
         latency_ms = int((time.monotonic() - t0) * 1000)
 
-        output: Optional[dict] = None
+        output: dict | None = None
         try:
             for part in response.candidates[0].content.parts:
                 fc = getattr(part, "function_call", None)

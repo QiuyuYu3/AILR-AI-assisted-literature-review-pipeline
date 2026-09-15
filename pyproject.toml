@@ -52,4 +52,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B"]
-ignore = ["E501"]
+# B905: one zip() is deliberately uneven, and the rest pair lists Dash itself keeps in step
+ignore = ["E501", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+# these all raise typer.Exit, which is control flow rather than an error worth chaining
+"src/ailr/cli.py" = ["B904"]

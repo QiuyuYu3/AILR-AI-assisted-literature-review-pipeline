@@ -7,7 +7,7 @@ human-vs-human, and any further reviewer combination.
 
 import math
 from collections.abc import Iterable
-from typing import Any, Optional
+from typing import Any
 
 BINARY_CATEGORIES = ["include", "exclude"]
 THREE_WAY_CATEGORIES = ["include", "exclude", "uncertain"]
@@ -24,7 +24,7 @@ def percent_agreement(pairs: Iterable[tuple[str, str]]) -> float:
 
 def confusion_matrix(
     pairs: Iterable[tuple[str, str]],
-    categories: Optional[list[str]] = None,
+    categories: list[str] | None = None,
 ) -> tuple[list[str], list[list[int]]]:
     """Return (categories, matrix). matrix[i][j] = count of (rater1=cat[i], rater2=cat[j])."""
     pairs = list(pairs)
@@ -46,7 +46,7 @@ def confusion_matrix(
 
 def cohen_kappa(
     pairs: Iterable[tuple[str, str]],
-    categories: Optional[list[str]] = None,
+    categories: list[str] | None = None,
 ) -> float:
     """Cohen's kappa for two raters over the same items. NaN if no pairs or undefined."""
     pairs = list(pairs)
@@ -74,7 +74,7 @@ _Z95 = 1.959964
 
 def cohen_kappa_ci(
     pairs: Iterable[tuple[str, str]],
-    categories: Optional[list[str]] = None,
+    categories: list[str] | None = None,
     z: float = _Z95,
 ) -> tuple[float, float]:
     """Asymptotic 95% CI for Cohen's kappa, using the Fleiss-Cohen-Everitt (1969) variance —
@@ -112,7 +112,7 @@ def cohen_kappa_ci(
     return kappa - z * se, kappa + z * se
 
 
-def pabak(pairs: Iterable[tuple[str, str]], categories: Optional[list[str]] = None) -> float:
+def pabak(pairs: Iterable[tuple[str, str]], categories: list[str] | None = None) -> float:
     """Prevalence-and-bias-adjusted kappa. Cohen's kappa is depressed when one category dominates,
     which is the normal case at screening (includes are often under 10%); PABAK depends only on
     observed agreement. Generalised to k categories: (k * p_o - 1) / (k - 1)."""

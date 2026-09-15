@@ -6,7 +6,7 @@ Any rispy key not consumed by the mapping below is preserved in Source.metadata.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import unquote
 
 import rispy
@@ -29,7 +29,7 @@ KNOWN_KEYS = {
 }
 
 
-def parse_ris(file_path: Path, source_database: Optional[str] = None) -> list[Source]:
+def parse_ris(file_path: Path, source_database: str | None = None) -> list[Source]:
     if not file_path.exists():
         raise InputNotFoundError(f"RIS file not found: {file_path}")
 
@@ -45,7 +45,7 @@ def parse_ris(file_path: Path, source_database: Optional[str] = None) -> list[So
     return [_record_to_source(rec, source_database) for rec in records]
 
 
-def detect_source_database(records: list[dict[str, Any]]) -> Optional[str]:
+def detect_source_database(records: list[dict[str, Any]]) -> str | None:
     if not records:
         return None
     first = records[0]
@@ -61,7 +61,7 @@ def detect_source_database(records: list[dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _record_to_source(rec: dict[str, Any], source_database: Optional[str]) -> Source:
+def _record_to_source(rec: dict[str, Any], source_database: str | None) -> Source:
     title = (rec.get("title") or rec.get("primary_title") or "").strip()
     abstract = rec.get("abstract")
     doi = rec.get("doi")
@@ -91,7 +91,7 @@ def _record_to_source(rec: dict[str, Any], source_database: Optional[str]) -> So
     )
 
 
-def _coerce_year(raw: Any) -> Optional[int]:
+def _coerce_year(raw: Any) -> int | None:
     if raw is None:
         return None
     if isinstance(raw, int):
@@ -106,7 +106,7 @@ def _coerce_year(raw: Any) -> Optional[int]:
     return None
 
 
-def _extract_pmid(raw: Any) -> Optional[str]:
+def _extract_pmid(raw: Any) -> str | None:
     if raw is None:
         return None
     if isinstance(raw, str) and raw.isdigit():
@@ -114,7 +114,7 @@ def _extract_pmid(raw: Any) -> Optional[str]:
     return None
 
 
-def pdf_attachment_from_record(rec: dict[str, Any]) -> Optional[str]:
+def pdf_attachment_from_record(rec: dict[str, Any]) -> str | None:
     """First PDF path from a parsed RIS record's L1/L2 attachment tags (Zotero "Export Files")."""
     for key in ("file_attachments1", "file_attachments2"):
         val = rec.get(key)

@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ailr.core._db_facade import _row_to_source
 from ailr.core.source import Source
@@ -127,7 +127,7 @@ class CalibrationMixin:
         self,
         project_id: int,
         stage: str,
-        sample_round: Optional[int] = None,
+        sample_round: int | None = None,
     ) -> list[Source]:
         if sample_round is None:
             sql = """
@@ -163,8 +163,8 @@ class CalibrationMixin:
         sample_size: int,
         prompt_snapshot: str,
         criteria_snapshot: str,
-        llm_params: Optional[dict] = None,
-        note: Optional[str] = None,
+        llm_params: dict | None = None,
+        note: str | None = None,
     ) -> int:
         with self._lock, self._conn.transaction():
             cur = self._conn.execute(
@@ -184,11 +184,11 @@ class CalibrationMixin:
         run_id: int,
         source_id: int,
         decision: str,
-        reasoning: Optional[str],
-        confidence: Optional[float],
-        matched_criteria: Optional[list],
-        evidence_quotes: Optional[list],
-        flag_check: Optional[list] = None,
+        reasoning: str | None,
+        confidence: float | None,
+        matched_criteria: list | None,
+        evidence_quotes: list | None,
+        flag_check: list | None = None,
     ) -> int:
         with self._lock, self._conn.transaction():
             cur = self._conn.execute(
@@ -243,8 +243,8 @@ class CalibrationMixin:
         project_id: int,
         prompt_type: str,
         content: str,
-        notes: Optional[str] = None,
-        composed: Optional[str] = None,
+        notes: str | None = None,
+        composed: str | None = None,
     ) -> str:
         """Snapshot the current prompt into prompt_versions. Auto-numbers v1, v2, ... per type.
         content is the editable template (for restore); composed is the fully-resolved prompt
@@ -262,7 +262,7 @@ class CalibrationMixin:
             self._conn.commit()
             return version
 
-    def save_artifact_version(self, project_id: int, kind: str, content: str, notes: Optional[str] = None) -> Optional[str]:
+    def save_artifact_version(self, project_id: int, kind: str, content: str, notes: str | None = None) -> str | None:
         """Snapshot an editable artifact (criteria / variables / a prompt) on Save. Auto-numbers
         v1, v2, … per (project, kind); skips (returns None) when identical to the latest, so repeated
         no-op saves don't spam history."""
@@ -291,7 +291,7 @@ class CalibrationMixin:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def get_artifact_version(self, project_id: int, kind: str, version: str) -> Optional[dict]:
+    def get_artifact_version(self, project_id: int, kind: str, version: str) -> dict | None:
         row = self._conn.execute(
             "SELECT version, content, notes, created_at FROM artifact_versions WHERE project_id = ? AND kind = ? AND version = ?",
             (project_id, kind, version),
@@ -339,14 +339,14 @@ class CalibrationMixin:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def get_prompt_version(self, project_id: int, prompt_type: str, version: str) -> Optional[dict]:
+    def get_prompt_version(self, project_id: int, prompt_type: str, version: str) -> dict | None:
         row = self._conn.execute(
             "SELECT version, content, composed, notes, created_at FROM prompt_versions WHERE project_id = ? AND prompt_type = ? AND version = ?",
             (project_id, prompt_type, version),
         ).fetchone()
         return dict(row) if row else None
 
-    def latest_prompt_version(self, project_id: int, prompt_type: str) -> Optional[str]:
+    def latest_prompt_version(self, project_id: int, prompt_type: str) -> str | None:
         row = self._conn.execute(
             "SELECT version FROM prompt_versions WHERE project_id = ? AND prompt_type = ? ORDER BY created_at DESC, version DESC LIMIT 1",
             (project_id, prompt_type),

@@ -3,7 +3,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
@@ -1134,12 +1134,12 @@ def register_callbacks(app: Any) -> None:
 
 def _source_card(
     src: Source,
-    my_decision: Optional[str],
+    my_decision: str | None,
     workflow: str,
     peer_count: int,
     abstract_open: bool = False,
     reviewer_id: str = "",
-    tags: Optional[list[dict]] = None,
+    tags: list[dict] | None = None,
     note_count: int = 0,
     stale: bool = False,
     crosscheck_flagged: int = 0,

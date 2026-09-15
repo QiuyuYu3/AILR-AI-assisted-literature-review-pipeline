@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import Integer, create_engine, event, text
 from sqlalchemy.exc import IntegrityError as _SAIntegrityError
@@ -88,7 +87,7 @@ class _Result:
 
 _INSERT_OR_IGNORE_RE = re.compile(r"^(\s*)INSERT\s+OR\s+IGNORE\s+INTO", re.IGNORECASE)
 _INSERT_TABLE_RE = re.compile(r'^\s*INSERT\s+INTO\s+"?(\w+)"?', re.IGNORECASE)
-_ID_TABLES: Optional[set] = None
+_ID_TABLES: set | None = None
 
 
 @lru_cache(maxsize=1024)

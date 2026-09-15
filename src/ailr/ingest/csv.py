@@ -2,7 +2,7 @@
 
 import csv as _csv
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ailr.core.source import Source
 from ailr.exceptions import IngestError, InputNotFoundError
@@ -20,8 +20,8 @@ _COLUMN_ALIASES: dict[str, set[str]] = {
 
 def parse_csv(
     file_path: Path,
-    source_database: Optional[str] = None,
-    delimiter: Optional[str] = None,
+    source_database: str | None = None,
+    delimiter: str | None = None,
 ) -> list[Source]:
     if not file_path.exists():
         raise InputNotFoundError(f"File not found: {file_path}")
@@ -61,9 +61,9 @@ def _row_to_source(
     row: dict[str, Any],
     lookup: dict[str, str],
     headers: list[str],
-    source_database: Optional[str],
+    source_database: str | None,
 ) -> Source:
-    def _get(canonical: str) -> Optional[str]:
+    def _get(canonical: str) -> str | None:
         col = lookup.get(canonical)
         if col is None:
             return None
@@ -107,7 +107,7 @@ def _split_authors(raw: str) -> list[str]:
     return [s] if s else []
 
 
-def _coerce_year(raw: Any) -> Optional[int]:
+def _coerce_year(raw: Any) -> int | None:
     if raw is None or raw == "":
         return None
     digits = "".join(c for c in str(raw) if c.isdigit())[:4]

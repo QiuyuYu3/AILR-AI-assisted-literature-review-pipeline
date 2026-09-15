@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from ailr.core.crosscheck import check_extraction, issues_to_records, llm_verdicts_to_records
 from ailr.core.crosscheck_screening import check_screening_decision, checked_fields, screening_text
@@ -78,8 +78,8 @@ class _CrossCheckTask:
     def run(
         self,
         source_ids: list[int],
-        targets: Optional[list[str]] = None,
-        on_progress: Optional[ProgressCallback] = None,
+        targets: list[str] | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> CrossCheckSummary:
         if targets is None:
             targets = list(self.project.config.crosscheck.targets)
@@ -96,7 +96,7 @@ class _CrossCheckTask:
         """What the records are judged against: the extraction schema, or the criterion IDs."""
         return compose_schema(self.project.root / self.project.config.extraction.schema_path)
 
-    def _source_text(self, source) -> Optional[str]:
+    def _source_text(self, source) -> str | None:
         """The text the record claims to be grounded in. None means this source cannot be checked."""
         md_path = resolve_markdown_path(source.markdown_path, self.project.root, source.id)
         return md_path.read_text(encoding="utf-8") if md_path else None
@@ -188,7 +188,7 @@ class _ScreeningCrossCheckMixin:
         _, criterion_ids = resolve_criteria(self.project.root, self.project.config.screening)
         return criterion_ids
 
-    def _source_text(self, source) -> Optional[str]:
+    def _source_text(self, source) -> str | None:
         return screening_text(source).strip() or None
 
     def _extractor_groups(self, source_id: int, targets: list[str]) -> dict[tuple[str, str], list[dict]]:
@@ -240,8 +240,8 @@ class LLMCrossCheckTask(_CrossCheckTask):
     def __init__(self, project: Project, checker: LLMCrossChecker) -> None:
         super().__init__(project)
         self.checker = checker
-        self._prompt_template: Optional[str] = None
-        self._additional: Optional[str] = None
+        self._prompt_template: str | None = None
+        self._additional: str | None = None
 
     def _prompt(self) -> str:
         if self._prompt_template is None:
@@ -299,7 +299,7 @@ class ScreeningLLMCrossCheckTask(_ScreeningCrossCheckMixin, LLMCrossCheckTask):
     def __init__(self, project: Project, checker: ScreeningCrossChecker, stage: str = "abstract") -> None:
         super().__init__(project, checker)
         self.stage = stage
-        self._criteria: Optional[str] = None
+        self._criteria: str | None = None
 
     def _prompt(self) -> str:
         if self._prompt_template is None:
@@ -384,7 +384,7 @@ class QuickTestCrossCheckTask(LLMCrossCheckTask):
         self.run_id = run_id
         self._rows_by_source: dict[int, list[dict]] = {}
 
-    def run_for_run(self, on_progress: Optional[ProgressCallback] = None) -> CrossCheckSummary:
+    def run_for_run(self, on_progress: ProgressCallback | None = None) -> CrossCheckSummary:
         self._rows_by_source = {
             r["source_id"]: _quick_test_rows(r)
             for r in self.project.db.list_test_extractions(self.run_id)

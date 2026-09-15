@@ -1,6 +1,6 @@
 """Dashboard / Summary tab: project overview."""
 
-from typing import Any, Optional
+from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import html
@@ -20,7 +20,7 @@ def register_callbacks(app: Any) -> None:
     pass
 
 
-def _build_content(reviewer: Optional[str]) -> Any:
+def _build_content(reviewer: str | None) -> Any:
     project = get_project()
     db = project.db
     cfg = project.config
@@ -174,8 +174,8 @@ def _stage_card(
     main_label: str,
     sub_metrics: list[tuple[str, int, str]],
     extra: Any = None,
-    bg: Optional[str] = None,
-    text: Optional[str] = None,
+    bg: str | None = None,
+    text: str | None = None,
     outline: bool = False,
 ) -> Any:
     body_children: list[Any] = [

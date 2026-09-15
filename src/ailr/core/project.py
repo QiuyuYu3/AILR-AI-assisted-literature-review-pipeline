@@ -3,7 +3,7 @@
 import json
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ailr.core.config import Config, load_config
 from ailr.core.database import Database
@@ -19,7 +19,7 @@ from ailr.ingest import dedup
 from ailr.ingest import ris as ris_ingest
 
 
-def _authors_str(src: Source) -> Optional[str]:
+def _authors_str(src: Source) -> str | None:
     return json.dumps(src.authors) if src.authors else None
 
 
@@ -49,8 +49,8 @@ class IngestResult:
         imported: int,
         deduplicated: int,
         failed: int,
-        failures: Optional[list[dict[str, Any]]] = None,
-        title_matches: Optional[list[dict[str, Any]]] = None,
+        failures: list[dict[str, Any]] | None = None,
+        title_matches: list[dict[str, Any]] | None = None,
     ) -> None:
         self.parsed = parsed
         self.imported = imported
@@ -90,7 +90,7 @@ class Project:
         cls,
         root: Path,
         mode: str = "assisted",
-        preset: Optional[Path] = None,
+        preset: Path | None = None,
         project_type: str = "scoping",
     ) -> "Project":
         root = Path(root).resolve()
@@ -149,7 +149,7 @@ class Project:
     def ingest(
         self,
         file_path: Path,
-        source_database: Optional[str] = None,
+        source_database: str | None = None,
         identification_route: str = "database",
     ) -> IngestResult:
         file_path = Path(file_path).expanduser().resolve()
@@ -180,7 +180,7 @@ class Project:
 
         # Collect every dropped record (with its full JSON so it can be restored later) and
         # write them in one bulk transaction instead of one INSERT+commit per duplicate.
-        def _dup_row(src: Source, reason: str, matched_id: Optional[int] = None) -> tuple:
+        def _dup_row(src: Source, reason: str, matched_id: int | None = None) -> tuple:
             return (self._project_id, src.title, _authors_str(src), src.doi, reason,
                     matched_id, json.dumps(source_to_record(src)))
 

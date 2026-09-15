@@ -4,7 +4,6 @@ absolute paths are used as-is for legacy/out-of-project files."""
 
 import os
 from pathlib import Path
-from typing import Optional
 
 
 def portable_path(path: Path, project_root: Path) -> Path:
@@ -16,7 +15,7 @@ def portable_path(path: Path, project_root: Path) -> Path:
         return Path(path)
 
 
-def resolve_pdf_path(pdf_path: Optional[str], project_root: Path) -> Optional[Path]:
+def resolve_pdf_path(pdf_path: str | None, project_root: Path) -> Path | None:
     if not pdf_path:
         return None
     p = Path(pdf_path)
@@ -25,10 +24,10 @@ def resolve_pdf_path(pdf_path: Optional[str], project_root: Path) -> Optional[Pa
 
 
 def resolve_markdown_path(
-    markdown_path: Optional[str],
+    markdown_path: str | None,
     project_root: Path,
-    source_id: Optional[int] = None,
-) -> Optional[Path]:
+    source_id: int | None = None,
+) -> Path | None:
     """Falls back to the canonical data/markdown/<id>.md, which is where preprocess always writes.
     Rows written before paths were stored relative hold an absolute path from whichever machine ran
     preprocess, so on a teammate's machine only the fallback resolves."""

@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 import yaml
@@ -43,7 +43,7 @@ show_app = typer.Typer(
 app.add_typer(show_app, name="show")
 
 
-def _truncate(text: Optional[str], width: int) -> str:
+def _truncate(text: str | None, width: int) -> str:
     if text is None:
         return ""
     return (text[: width - 3] + "...") if len(text) > width else text
@@ -53,7 +53,7 @@ def _truncate(text: Optional[str], width: int) -> str:
 def init(
     name: Annotated[str, typer.Argument(help="Name of the new review project (also directory name).")],
     mode: Annotated[str, typer.Option("--mode", "-m", help="Built-in mode preset: strict | assisted | custom.")] = "assisted",
-    preset: Annotated[Optional[Path], typer.Option("--preset", help="Path to a custom mode preset YAML to layer on top of defaults.")] = None,
+    preset: Annotated[Path | None, typer.Option("--preset", help="Path to a custom mode preset YAML to layer on top of defaults.")] = None,
     review_type: Annotated[str, typer.Option("--type", help="Review type: scoping | systematic.")] = "scoping",
 ) -> None:
     """Scaffold a new review project directory."""
@@ -75,7 +75,7 @@ def init(
 def ingest(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     file: Annotated[Path, typer.Argument(help="RIS / BibTeX / CSV file to import.")],
-    source_database: Annotated[Optional[str], typer.Option("--source-db", help="Tag for the source database (WoS, PubMed, Scopus...).")] = None,
+    source_database: Annotated[str | None, typer.Option("--source-db", help="Tag for the source database (WoS, PubMed, Scopus...).")] = None,
 ) -> None:
     """Import bibliographic records into the project database."""
     try:
@@ -134,9 +134,9 @@ def import_pdfs(
 @app.command()
 def screen(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
-    limit: Annotated[Optional[int], typer.Option("--limit", help="Process at most N un-screened sources.")] = None,
+    limit: Annotated[int | None, typer.Option("--limit", help="Process at most N un-screened sources.")] = None,
     mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call, no tokens spent).")] = False,
-    workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save the abstract screening workflow: assisted | independent.")] = None,
+    workflow: Annotated[str | None, typer.Option("--workflow", help="Override + save the abstract screening workflow: assisted | independent.")] = None,
     include_ai: Annotated[bool, typer.Option("--include-ai", help="In independent workflow, run AI as a reference reviewer.")] = False,
     force: Annotated[bool, typer.Option("--force", help="Re-screen sources the AI already decided, e.g. after editing the criteria or prompt.")] = False,
 ) -> None:
@@ -203,11 +203,11 @@ def screen(
 @app.command()
 def extract(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
-    limit: Annotated[Optional[int], typer.Option("--limit", help="Process at most N included sources.")] = None,
+    limit: Annotated[int | None, typer.Option("--limit", help="Process at most N included sources.")] = None,
     mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call, no tokens spent).")] = False,
     force: Annotated[bool, typer.Option("--force", help="Re-extract even if extractions already exist for the source.")] = False,
     all_sources: Annotated[bool, typer.Option("--all", help="Extract from every source with markdown, not just include'd ones.")] = False,
-    workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save extraction.workflow: verify | independent.")] = None,
+    workflow: Annotated[str | None, typer.Option("--workflow", help="Override + save extraction.workflow: verify | independent.")] = None,
 ) -> None:
     """Run AI extraction on sources marked 'include' with markdown available."""
     try:
@@ -267,7 +267,7 @@ def extract(
 @app.command()
 def preprocess(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
-    backend: Annotated[Optional[str], typer.Option("--backend", help="Override config.preprocess.pdf_backend (pymupdf | marker).")] = None,
+    backend: Annotated[str | None, typer.Option("--backend", help="Override config.preprocess.pdf_backend (pymupdf | marker).")] = None,
     force: Annotated[bool, typer.Option("--force", help="Re-convert even if data/markdown/<id>.md already exists.")] = False,
     list_missing: Annotated[bool, typer.Option("--list-missing", help="List sources without a matching PDF and exit.")] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
@@ -353,9 +353,9 @@ def preprocess(
 def calibrate(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     stage: Annotated[str, typer.Option("--stage", help="screening | extraction")] = "screening",
-    n: Annotated[Optional[int], typer.Option("--n", help="Override sample size. Defaults to config calibration.")] = None,
+    n: Annotated[int | None, typer.Option("--n", help="Override sample size. Defaults to config calibration.")] = None,
     mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call).")] = False,
-    workflow: Annotated[Optional[str], typer.Option("--workflow", help="Override + save the stage's workflow.")] = None,
+    workflow: Annotated[str | None, typer.Option("--workflow", help="Override + save the stage's workflow.")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
 ) -> None:
     """Sample N sources, run AI screening on them, report agreement vs existing human decisions.
@@ -686,7 +686,7 @@ def show_stats(
 def export(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     format: Annotated[str, typer.Option("--format", help="table | prisma | prisma-svg | methods | table-json | ris")] = "table",
-    out: Annotated[Optional[Path], typer.Option("--out", "-o", help="Output file. Defaults to stdout.")] = None,
+    out: Annotated[Path | None, typer.Option("--out", "-o", help="Output file. Defaults to stdout.")] = None,
     all_sources: Annotated[bool, typer.Option("--all", help="For table formats: include all extracted sources, not just include'd.")] = False,
     extractor: Annotated[str, typer.Option("--extractor", help="Which extractor's data to export: ai | human.")] = "ai",
 ) -> None:
@@ -730,7 +730,7 @@ def export(
 def prompt_bump(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
     type_: Annotated[str, typer.Argument(help="screening | extraction", metavar="TYPE")],
-    notes: Annotated[Optional[str], typer.Option("--notes", help="One-line description of what changed in this prompt version.")] = None,
+    notes: Annotated[str | None, typer.Option("--notes", help="One-line description of what changed in this prompt version.")] = None,
 ) -> None:
     """Version-bump a prompt: snapshot current text into prompt_versions table."""
     if type_ not in ("screening", "extraction"):
@@ -766,8 +766,8 @@ _WORKFLOW_STAGES = {
 @app.command()
 def workflow(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
-    stage: Annotated[Optional[str], typer.Option("--stage", help="abstract | full-text | extraction. Omit to print all three.")] = None,
-    set_: Annotated[Optional[str], typer.Option("--set", help="New workflow for --stage. Omit to just print.")] = None,
+    stage: Annotated[str | None, typer.Option("--stage", help="abstract | full-text | extraction. Omit to print all three.")] = None,
+    set_: Annotated[str | None, typer.Option("--set", help="New workflow for --stage. Omit to just print.")] = None,
 ) -> None:
     """Show or set who does the work at each stage (the Protocol -> Workflow settings)."""
     if stage is not None and stage not in _WORKFLOW_STAGES:
@@ -802,7 +802,7 @@ def workflow(
 
 @app.command()
 def ui(
-    project: Annotated[Optional[Path], typer.Argument(help="Path to the review project directory. Omit to open the project manager (create/open a project in the browser).")] = None,
+    project: Annotated[Path | None, typer.Argument(help="Path to the review project directory. Omit to open the project manager (create/open a project in the browser).")] = None,
     port: Annotated[int, typer.Option("--port", help="Port for the Dash server.")] = 8050,
 ) -> None:
     """Launch the Dash review UI (screening + extraction tabs)."""
@@ -836,8 +836,8 @@ def ui(
 @app.command("db-migrate")
 def db_migrate(
     project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
-    to: Annotated[Optional[str], typer.Option("--to", help="Target DB URL, pasted as-is (e.g. postgresql://user:pw@host/db). Defaults to the project's storage.database_url.")] = None,
-    from_sqlite: Annotated[Optional[Path], typer.Option("--from", help="Source SQLite file. Defaults to the project's storage.database file.")] = None,
+    to: Annotated[str | None, typer.Option("--to", help="Target DB URL, pasted as-is (e.g. postgresql://user:pw@host/db). Defaults to the project's storage.database_url.")] = None,
+    from_sqlite: Annotated[Path | None, typer.Option("--from", help="Source SQLite file. Defaults to the project's storage.database file.")] = None,
 ) -> None:
     """Copy all data from the project's SQLite DB into a target DB (e.g. Postgres/Neon). The target should be empty."""
     from ailr.core.config import load_config

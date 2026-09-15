@@ -3,7 +3,7 @@
 import json
 import sqlite3
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from ailr.core._db_facade import _row_to_source
 from ailr.core._db_screening import ft_final_include_md_sql
@@ -22,7 +22,7 @@ AI_SUPERSEDED = "ai_superseded"
 _RUN_GAP_SECONDS = 120
 
 
-def _as_datetime(ts: Any) -> Optional[datetime]:
+def _as_datetime(ts: Any) -> datetime | None:
     """timestamp comes back as a datetime on Postgres and as a string on SQLite."""
     if isinstance(ts, datetime):
         return ts
@@ -155,7 +155,7 @@ class ExtractionMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete extractions: {e}") from e
 
-    def max_ai_extraction_id(self, source_id: int) -> Optional[int]:
+    def max_ai_extraction_id(self, source_id: int) -> int | None:
         row = self._conn.execute(
             "SELECT MAX(id) AS m FROM extractions WHERE source_id = ? AND extractor_type = 'ai'",
             (source_id,),
@@ -189,7 +189,7 @@ class ExtractionMixin:
         """
         rows = self.list_extractions(source_id, extractor_type=AI_SUPERSEDED)  # ordered by id
         runs: list[dict] = []
-        previous: Optional[datetime] = None
+        previous: datetime | None = None
         for row in rows:
             ts = _as_datetime(row.get("timestamp"))
             new_run = (
@@ -325,7 +325,7 @@ class ExtractionMixin:
         ).fetchall()
         return {r["source_id"] for r in rows}
 
-    def consensus_adjudicator(self, source_id: int) -> Optional[str]:
+    def consensus_adjudicator(self, source_id: int) -> str | None:
         row = self._conn.execute(
             "SELECT extractor_id FROM extractions WHERE source_id = ? AND extractor_type = 'consensus' "
             "ORDER BY id DESC LIMIT 1",
@@ -487,7 +487,7 @@ class ExtractionMixin:
         """
         return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
-    def delete_reconciliations_for_source(self, source_id: int, reconcile_stage: Optional[str] = None) -> int:
+    def delete_reconciliations_for_source(self, source_id: int, reconcile_stage: str | None = None) -> int:
         """Remove a source's reconciliations (final decisions). With reconcile_stage set
         (e.g. 'full_text_screening'), only that stage. Used by Move back / Move to screening
         so a re-review starts clean."""
@@ -515,7 +515,7 @@ class ExtractionMixin:
     def list_extractions(
         self,
         source_id: int,
-        extractor_type: Optional[str] = None,
+        extractor_type: str | None = None,
     ) -> list[dict]:
         sql = "SELECT * FROM extractions WHERE source_id = ? AND field_name != '_flag_check'"
         params: list = [source_id]
@@ -541,7 +541,7 @@ class ExtractionMixin:
         return out
 
     def stale_ai_extraction_source_ids(
-        self, project_id: int, current_composed: str, source_ids: Optional[list[int]] = None
+        self, project_id: int, current_composed: str, source_ids: list[int] | None = None
     ) -> set[int]:
         """Sources whose AI extraction was produced under a prompt/criteria that no longer matches the
         current one — i.e. needs re-running. `source_ids` narrows the scan to the ids a page is showing.
@@ -594,7 +594,7 @@ class ExtractionMixin:
                 pass
         return out
 
-    def get_flag_check(self, source_id: int, extractor_type: str = "ai") -> Optional[list[dict]]:
+    def get_flag_check(self, source_id: int, extractor_type: str = "ai") -> list[dict] | None:
         row = self._conn.execute(
             "SELECT value FROM extractions WHERE source_id = ? AND extractor_type = ? AND field_name = '_flag_check' ORDER BY id DESC LIMIT 1",
             (source_id, extractor_type),

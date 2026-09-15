@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Optional
 
 from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.core.project import Project
@@ -18,7 +17,7 @@ from ailr.reviewers import (
     ScreeningDecision,
 )
 
-ProgressCallback = Callable[[int, int, Optional[Source], Optional[Exception]], None]
+ProgressCallback = Callable[[int, int, Source | None, Exception | None], None]
 
 
 @dataclass
@@ -48,13 +47,13 @@ class ExtractionTask:
     def run(
         self,
         *,
-        limit: Optional[int] = None,
+        limit: int | None = None,
         only_includes: bool = True,
         force: bool = False,
-        on_progress: Optional[ProgressCallback] = None,
+        on_progress: ProgressCallback | None = None,
         batch: bool = False,
-        workers: Optional[int] = None,
-        source_ids: Optional[list[int]] = None,
+        workers: int | None = None,
+        source_ids: list[int] | None = None,
     ) -> ExtractRunSummary:
         config = self.project.config
         prompt_path = self.project.root / config.extraction.prompt

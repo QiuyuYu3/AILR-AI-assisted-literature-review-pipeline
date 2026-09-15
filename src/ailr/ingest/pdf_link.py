@@ -8,7 +8,6 @@ import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import rispy
 from rapidfuzz import fuzz
@@ -171,7 +170,7 @@ def _match_source(
     rec: dict,
     existing_norms: list[tuple[str, Source]],
     existing_by_doi: dict[str, Source],
-) -> Optional[Source]:
+) -> Source | None:
     doi = rec.get("doi")
     if isinstance(doi, str) and doi.strip():
         hit = existing_by_doi.get(doi.strip().lower())
@@ -199,7 +198,7 @@ def _match_source(
     return max(scored, key=lambda t: t[0])[1]
 
 
-def _record_year(rec: dict) -> Optional[int]:
+def _record_year(rec: dict) -> int | None:
     for key in ("year", "publication_year", "date"):
         v = rec.get(key)
         if v:

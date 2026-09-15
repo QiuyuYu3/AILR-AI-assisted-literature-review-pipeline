@@ -8,7 +8,7 @@ it judges, it is not independent of it and its verdicts stay out of agreement st
 import json
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ailr.core.crosscheck_screening import DECISION_FIELD
 from ailr.core.source import Source
@@ -134,7 +134,7 @@ class ScreeningCrossChecker:
         self._client = llm_client
         self._prompt_version = prompt_version
         self._max_tokens = max_tokens
-        self._last_metadata: Optional[CallMetadata] = None
+        self._last_metadata: CallMetadata | None = None
 
     @property
     def checker_id(self) -> str:
@@ -145,7 +145,7 @@ class ScreeningCrossChecker:
         return self._prompt_version
 
     @property
-    def last_metadata(self) -> Optional[CallMetadata]:
+    def last_metadata(self) -> CallMetadata | None:
         return self._last_metadata
 
     def llm_params(self) -> dict[str, Any]:
@@ -259,7 +259,7 @@ class LLMCrossChecker:
         self._client = llm_client
         self._prompt_version = prompt_version
         self._max_tokens = max_tokens
-        self._last_metadata: Optional[CallMetadata] = None
+        self._last_metadata: CallMetadata | None = None
 
     @property
     def checker_id(self) -> str:
@@ -270,7 +270,7 @@ class LLMCrossChecker:
         return self._prompt_version
 
     @property
-    def last_metadata(self) -> Optional[CallMetadata]:
+    def last_metadata(self) -> CallMetadata | None:
         return self._last_metadata
 
     def llm_params(self) -> dict[str, Any]:

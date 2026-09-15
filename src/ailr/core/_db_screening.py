@@ -3,7 +3,7 @@
 import json
 import re
 import sqlite3
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ailr.core._db_facade import _row_to_source
 from ailr.core.config import team_size_for
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ailr.reviewers import ScreeningDecision
 
 
-def _flag_check_from_raw(raw_output: Optional[str]) -> list[dict]:
+def _flag_check_from_raw(raw_output: str | None) -> list[dict]:
     """The per-criterion verdicts live inside raw_output as _flag_check, in either the named-slot
     object shape or the legacy array. Returns the canonical list, empty when there is none."""
     if not raw_output:
@@ -104,7 +104,7 @@ def ft_final_include_md_sql(team_size: int = 1) -> str:
     return f"(s.markdown_path IS NOT NULL AND {stage_final_include_sql('full_text', team_size)})"
 
 
-def _route_filter(route: Optional[str]) -> str:
+def _route_filter(route: str | None) -> str:
     """PRISMA 2020 reports two identification arms; every flow count can be scoped to one of them.
     Rows written before the column existed default to 'database', so `route='database'` also picks
     up NULLs. Inlined rather than parameterised so callers keep their existing positional args."""
@@ -138,7 +138,7 @@ _SORT_ORDERS = {
 _PAPER_ID_PATTERN = re.compile(r"^#?(\d+)$")
 
 
-def _paper_id(kw: str) -> Optional[int]:
+def _paper_id(kw: str) -> int | None:
     """The paper number in '#123' / '123', or None. Values too large for an int column are text."""
     m = _PAPER_ID_PATTERN.match(kw)
     if not m:
@@ -147,7 +147,7 @@ def _paper_id(kw: str) -> Optional[int]:
     return sid if sid < 2**31 else None
 
 
-def _keyword_filter(keyword: str, within: str) -> tuple[Optional[str], list]:
+def _keyword_filter(keyword: str, within: str) -> tuple[str | None, list]:
     """(WHERE clause, params) for the keyword search, or (None, []). Case-insensitive via
     lower(col) LIKE (portable across SQLite and PostgreSQL); author search matches the stored JSON text."""
     kw = (keyword or "").strip().lower()
@@ -244,7 +244,7 @@ class ScreeningMixin:
         project_id: int,
         current_composed: str,
         stage: str = "abstract",
-        source_ids: Optional[list[int]] = None,
+        source_ids: list[int] | None = None,
     ) -> set[int]:
         """Sources whose latest AI screening decision was made under a prompt/criteria that no longer
         matches the current one. `source_ids` narrows the scan to the ids a page is showing.
@@ -362,7 +362,7 @@ class ScreeningMixin:
         self,
         project_id: int,
         reviewer_type: str = "ai",
-        limit: Optional[int] = None,
+        limit: int | None = None,
         offset: int = 0,
     ) -> list[Source]:
         sql = """
@@ -384,7 +384,7 @@ class ScreeningMixin:
     def count_screening_decisions(
         self,
         project_id: int,
-        reviewer_type: Optional[str] = None,
+        reviewer_type: str | None = None,
     ) -> int:
         if reviewer_type:
             sql = """
@@ -403,7 +403,7 @@ class ScreeningMixin:
         return self._conn.execute(sql, params).fetchone()["n"]
 
     def screening_summary(self, project_id: int, reviewer_type: str = "ai", stage: str = "abstract",
-                          route: Optional[str] = None) -> dict[str, int]:
+                          route: str | None = None) -> dict[str, int]:
         # Count only the latest decision per (source, reviewer); superseded re-votes are excluded.
         rows = self._conn.execute(
             f"""
@@ -429,7 +429,7 @@ class ScreeningMixin:
         return out
 
     def count_sources_screened(self, project_id: int, reviewer_type: str = "human", stage: str = "abstract",
-                               route: Optional[str] = None) -> int:
+                               route: str | None = None) -> int:
         return self._conn.execute(
             f"""
             SELECT COUNT(DISTINCT d.source_id) AS n
@@ -486,7 +486,7 @@ class ScreeningMixin:
         rows = self._conn.execute(sql, (project_id, stage, reviewer_id)).fetchall()
         return [_row_to_source(r) for r in rows]
 
-    def get_latest_ai_decision(self, source_id: int, stage: str = "abstract") -> Optional[dict]:
+    def get_latest_ai_decision(self, source_id: int, stage: str = "abstract") -> dict | None:
         row = self._conn.execute(
             """
             SELECT decision, reasoning, confidence, reviewer_id, evidence_quotes, matched_criteria, timestamp
@@ -568,7 +568,7 @@ class ScreeningMixin:
         return out
 
     def source_ids_with_decisions(
-        self, project_id: int, stage: str = "abstract", reviewer_types: Optional[list[str]] = None
+        self, project_id: int, stage: str = "abstract", reviewer_types: list[str] | None = None
     ) -> list[int]:
         """Sources carrying at least one decision at this stage — the candidate set for a
         cross-check run, so the walk skips papers nobody has screened yet."""
@@ -585,7 +585,7 @@ class ScreeningMixin:
         return [r["source_id"] for r in self._conn.execute(sql, params).fetchall()]
 
     def latest_screening_decisions(
-        self, source_id: int, stage: str = "abstract", reviewer_types: Optional[list[str]] = None
+        self, source_id: int, stage: str = "abstract", reviewer_types: list[str] | None = None
     ) -> list[dict]:
         """The live decision per (reviewer_type, reviewer_id) for one source, with evidence_quotes,
         matched_criteria and flag_check decoded. Re-screening appends rather than replaces, so only
@@ -644,7 +644,7 @@ class ScreeningMixin:
         status: str = "all",
         keyword: str = "",
         within: str = "title_and_abstract",
-        tag_id: Optional[int] = None,
+        tag_id: int | None = None,
         team_size: int = 2,
         sort_by: str = "id",
         page: int = 0,
@@ -709,14 +709,14 @@ class ScreeningMixin:
         status: str = "all",
         keyword: str = "",
         within: str = "title_and_abstract",
-        tag_id: Optional[int] = None,
-        ft_avail: Optional[str] = None,  # 'has' / 'needs' / None
-        id_whitelist: Optional[set[int]] = None,  # restrict to these source ids (used by the low-text filter)
-        exclude_ids: Optional[set[int]] = None,  # drop these source ids (e.g. unresolved-conflict papers)
+        tag_id: int | None = None,
+        ft_avail: str | None = None,  # 'has' / 'needs' / None
+        id_whitelist: set[int] | None = None,  # restrict to these source ids (used by the low-text filter)
+        exclude_ids: set[int] | None = None,  # drop these source ids (e.g. unresolved-conflict papers)
         team_size: int = 2,
         extractors_required: int = 1,  # humans each paper needs extracted by (2 under independent)
         abstract_workflow: str = "assisted",  # decides when abstract screening is finished with a paper
-        abstract_conflict_ids: Optional[set[int]] = None,  # pass in to skip a repeated conflict scan
+        abstract_conflict_ids: set[int] | None = None,  # pass in to skip a repeated conflict scan
         sort_by: str = "id",
         page: int = 0,
         page_size: int = 25,
@@ -810,7 +810,7 @@ class ScreeningMixin:
         return _fetch_source_page(self._conn, " AND ".join(where), params, sort_by, page, page_size)
 
     def _ft_candidate_where(
-        self, project_id: int, workflow: str, conflict_ids: Optional[set[int]] = None
+        self, project_id: int, workflow: str, conflict_ids: set[int] | None = None
     ) -> tuple[str, list]:
         """THE full-text candidate rule: abstract screening is FINISHED for the paper and settled on
         include. A paper still in conflict, or waiting on a reviewer, is unfinished business at the
@@ -836,7 +836,7 @@ class ScreeningMixin:
         return clause, params
 
     def count_full_text_candidates(
-        self, project_id: int, *, workflow: str, conflict_ids: Optional[set[int]] = None
+        self, project_id: int, *, workflow: str, conflict_ids: set[int] | None = None
     ) -> int:
         """Number of full-text candidates (abstract screening finished and settled on include)."""
         where, params = self._ft_candidate_where(project_id, workflow, conflict_ids)
@@ -845,7 +845,7 @@ class ScreeningMixin:
         ).fetchone()["n"]
 
     def full_text_candidate_ids(
-        self, project_id: int, *, workflow: str, conflict_ids: Optional[set[int]] = None
+        self, project_id: int, *, workflow: str, conflict_ids: set[int] | None = None
     ) -> list[int]:
         """Ids of all full-text candidates; used to compute the low-text set."""
         where, params = self._ft_candidate_where(project_id, workflow, conflict_ids)
@@ -872,8 +872,8 @@ class ScreeningMixin:
         return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
 
     def final_include_ids(self, project_id: int, stage: str = "abstract", *, workflow: str,
-                          require_markdown: bool = False, route: Optional[str] = None,
-                          not_retrieved: Optional[bool] = None) -> set[int]:
+                          require_markdown: bool = False, route: str | None = None,
+                          not_retrieved: bool | None = None) -> set[int]:
         """PAPERS whose review at this stage is FINISHED and settled on include.
 
         Three states exist, not two: include, exclude, and not-yet-decided. A paper only counts
@@ -900,7 +900,7 @@ class ScreeningMixin:
         return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
 
     def count_final_include_studies(self, project_id: int, *, workflow: str,
-                                    route: Optional[str] = None) -> int:
+                                    route: str | None = None) -> int:
         """Included STUDIES, where several reports of one study count once. PRISMA 2020's included
         box reports this alongside the number of reports. Equal to the report count unless someone
         has grouped companion reports."""
@@ -915,8 +915,8 @@ class ScreeningMixin:
         return row["n"]
 
     def count_final_includes(self, project_id: int, stage: str = "abstract", *, workflow: str,
-                             require_markdown: bool = False, route: Optional[str] = None,
-                             not_retrieved: Optional[bool] = None) -> int:
+                             require_markdown: bool = False, route: str | None = None,
+                             not_retrieved: bool | None = None) -> int:
         """How many PAPERS (not decisions) final_include_ids returns. For the PRISMA flow, where
         two reviewers including the same paper must count once.
         `not_retrieved` narrows to (or excludes) reports marked as impossible to obtain."""
@@ -974,7 +974,7 @@ class ScreeningMixin:
         return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
     def delete_screening_decision(
-        self, source_id: int, reviewer_id: str, stage: str = "abstract", reviewer_type: Optional[str] = None
+        self, source_id: int, reviewer_id: str, stage: str = "abstract", reviewer_type: str | None = None
     ) -> int:
         """Remove a reviewer's screening decisions on a source for the given stage.
         Pass reviewer_type='human' on undo/reset so an AI verdict can never be removed."""
@@ -990,7 +990,7 @@ class ScreeningMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete screening_decision: {e}") from e
 
-    def delete_stage_decisions(self, source_id: int, stage: str, reviewer_type: Optional[str] = None) -> int:
+    def delete_stage_decisions(self, source_id: int, stage: str, reviewer_type: str | None = None) -> int:
         """Remove a source's decisions at one stage. With reviewer_type set (e.g. 'human'),
         only that reviewer type is removed — the AI's verdict is kept (so conflicts/audit survive)."""
         sql = "DELETE FROM screening_decisions WHERE source_id = ? AND stage = ?"
@@ -1005,7 +1005,7 @@ class ScreeningMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete stage decisions: {e}") from e
 
-    def delete_all_screening_decisions(self, source_id: int, reviewer_type: Optional[str] = None) -> int:
+    def delete_all_screening_decisions(self, source_id: int, reviewer_type: str | None = None) -> int:
         """Remove a source's screening decisions across all stages. With reviewer_type set
         (e.g. 'human'), only that reviewer type is removed — the AI's verdicts are kept."""
         sql = "DELETE FROM screening_decisions WHERE source_id = ?"
@@ -1020,7 +1020,7 @@ class ScreeningMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete screening_decisions: {e}") from e
 
-    def clear_mock_ai_decisions(self, project_id: int, stage: Optional[str] = None) -> int:
+    def clear_mock_ai_decisions(self, project_id: int, stage: str | None = None) -> int:
         """Delete mock AI screening decisions (provider 'mock') in a project; real AI and human are kept."""
         where = ("reviewer_type = 'ai' AND reviewer_id LIKE 'mock:%' "
                  "AND source_id IN (SELECT id FROM sources WHERE project_id = ?)")
@@ -1351,7 +1351,7 @@ class ScreeningMixin:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def other_human_decided(self, source_id: int, stage: str, reviewer_id: str) -> Optional[str]:
+    def other_human_decided(self, source_id: int, stage: str, reviewer_id: str) -> str | None:
         """For single-human (assisted) screening: the reviewer_id of ANOTHER human who already
         decided this source at this stage, else None. Used to stop a second human from voting
         the same paper (each paper is screened by one human + the AI in assisted mode)."""
@@ -1365,7 +1365,7 @@ class ScreeningMixin:
         ).fetchone()
         return row["reviewer_id"] if row else None
 
-    def other_human_extracted(self, source_id: int, reviewer_id: str) -> Optional[str]:
+    def other_human_extracted(self, source_id: int, reviewer_id: str) -> str | None:
         """For verify-mode extraction: the extractor_id of ANOTHER human who has CLAIMED this source
         (saved a draft or submitted), else None. A draft claims the paper so a second human can't
         also edit it (one human per paper); 'done' is tracked separately by the _submitted marker."""
@@ -1385,7 +1385,7 @@ class ScreeningMixin:
         source_id: int,
         final_decision: str,
         adjudicator: str,
-        rationale: Optional[str] = None,
+        rationale: str | None = None,
         stage: str = "abstract",
     ) -> int:
         reconcile_stage = reconcile_stage_for(stage)
@@ -1427,7 +1427,7 @@ class ScreeningMixin:
         """
         return [dict(r) for r in self._conn.execute(sql, (project_id, stage, limit)).fetchall()]
 
-    def get_reconciliation(self, reconciliation_id: int) -> Optional[dict]:
+    def get_reconciliation(self, reconciliation_id: int) -> dict | None:
         """One reconciliation row. Read before deleting it, so the undo can be attributed."""
         row = self._conn.execute(
             "SELECT * FROM reconciliations WHERE id = ?", (reconciliation_id,)

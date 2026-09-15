@@ -6,7 +6,7 @@ import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from ailr.core.source import Source
 from ailr.exceptions import LLMError
@@ -35,16 +35,16 @@ class ScreeningDecision:
     reasoning: str
     reviewer_type: str
     reviewer_id: str
-    source_id: Optional[int] = None
+    source_id: int | None = None
     stage: Literal["abstract", "full_text"] = "abstract"
     evidence_quotes: list[str] = field(default_factory=list)
     matched_criteria: list[str] = field(default_factory=list)
-    flag_check: Optional[list[dict[str, Any]]] = None
-    confidence: Optional[float] = None
-    llm_params: Optional[dict[str, Any]] = None
-    prompt_version: Optional[str] = None
-    raw_output: Optional[str] = None
-    timestamp: Optional[datetime] = None
+    flag_check: list[dict[str, Any]] | None = None
+    confidence: float | None = None
+    llm_params: dict[str, Any] | None = None
+    prompt_version: str | None = None
+    raw_output: str | None = None
+    timestamp: datetime | None = None
 
 
 @dataclass
@@ -54,15 +54,15 @@ class ExtractionResult:
     extractor_id: str
     field_name: str
     value: Any
-    source_id: Optional[int] = None
-    source_quote: Optional[str] = None
-    page_or_section: Optional[str] = None
-    confidence: Optional[float] = None
+    source_id: int | None = None
+    source_quote: str | None = None
+    page_or_section: str | None = None
+    confidence: float | None = None
     is_newly_discovered: bool = False
-    llm_params: Optional[dict[str, Any]] = None
-    prompt_version: Optional[str] = None
-    raw_output: Optional[str] = None
-    timestamp: Optional[datetime] = None
+    llm_params: dict[str, Any] | None = None
+    prompt_version: str | None = None
+    raw_output: str | None = None
+    timestamp: datetime | None = None
 
 
 @dataclass
@@ -70,8 +70,8 @@ class SourceExtraction:
     """All extraction results for a single source from one reviewer pass."""
     source_id: int
     results: list[ExtractionResult] = field(default_factory=list)
-    flag_check: Optional[list[dict[str, Any]]] = None
-    raw_output: Optional[dict[str, Any]] = None
+    flag_check: list[dict[str, Any]] | None = None
+    raw_output: dict[str, Any] | None = None
 
 
 class Reviewer(ABC):
@@ -94,7 +94,7 @@ class Reviewer(ABC):
         criteria_text: str,
         prompt_template: str,
         additional_text: str = "",
-        criterion_ids: Optional[list[str]] = None,
+        criterion_ids: list[str] | None = None,
         flag_check: bool = False,
     ) -> ScreeningDecision:
         """Make a screening decision for one source. Caller fills source_id afterward."""
@@ -111,7 +111,7 @@ class Reviewer(ABC):
         additional_text: str = "",
         with_quotes: bool = True,
         flag_check: bool = True,
-        criterion_ids: Optional[list[str]] = None,
+        criterion_ids: list[str] | None = None,
     ) -> SourceExtraction:
         """Extract structured fields from the full-text paper. Caller fills source_id afterward."""
 
@@ -176,7 +176,7 @@ class LLMReviewer(Reviewer):
         self._tls = threading.local()
 
     @property
-    def last_metadata(self) -> Optional[CallMetadata]:
+    def last_metadata(self) -> CallMetadata | None:
         return getattr(self._tls, "metadata", None)
 
     @property
@@ -187,7 +187,7 @@ class LLMReviewer(Reviewer):
     def reviewer_id(self) -> str:
         return f"{self._client.provider_name}:{self._client.model_name}"
 
-    def _llm_params(self, metadata: CallMetadata, max_tokens: Optional[int] = None) -> dict[str, Any]:
+    def _llm_params(self, metadata: CallMetadata, max_tokens: int | None = None) -> dict[str, Any]:
         """What the call actually used, stored per decision. The methods export reads these back so
         it describes the runs that produced the data, not whatever the config says at export time."""
         params: dict[str, Any] = {
@@ -208,7 +208,7 @@ class LLMReviewer(Reviewer):
         criteria_text: str,
         prompt_template: str,
         additional_text: str = "",
-        criterion_ids: Optional[list[str]] = None,
+        criterion_ids: list[str] | None = None,
         flag_check: bool = False,
     ) -> ScreeningDecision:
         system_prompt = compose_screening_prompt(prompt_template, criteria=criteria_text, additional=additional_text)
@@ -257,7 +257,7 @@ class LLMReviewer(Reviewer):
         additional_text: str = "",
         with_quotes: bool = True,
         flag_check: bool = True,
-        criterion_ids: Optional[list[str]] = None,
+        criterion_ids: list[str] | None = None,
     ) -> SourceExtraction:
         tool_schema = build_extraction_tool_schema(
             fields,
@@ -286,17 +286,17 @@ class LLMReviewer(Reviewer):
         self._tls.metadata = metadata
 
         results: list[ExtractionResult] = []
-        for field in fields:
-            if field.name not in output:
+        for spec in fields:
+            if spec.name not in output:
                 continue
-            raw = output[field.name]
-            value, quote = _unwrap_value_quote(raw, with_quotes=with_quotes, field=field)
+            raw = output[spec.name]
+            value, quote = _unwrap_value_quote(raw, with_quotes=with_quotes, field=spec)
             confidence = raw.get("confidence") if isinstance(raw, dict) else None
             results.append(
                 ExtractionResult(
                     extractor_type=self.reviewer_type,
                     extractor_id=self.reviewer_id,
-                    field_name=field.name,
+                    field_name=spec.name,
                     value=value,
                     source_quote=quote,
                     confidence=confidence,
@@ -337,7 +337,7 @@ def _flag_check_item_schema() -> dict[str, Any]:
     }
 
 
-def _build_screening_tool(criterion_ids: Optional[list[str]] = None) -> ToolSchema:
+def _build_screening_tool(criterion_ids: list[str] | None = None) -> ToolSchema:
     """Constrain matched_criteria to the known criterion IDs (so the model can't invent labels)."""
     if not criterion_ids:
         return SCREENING_TOOL
@@ -346,7 +346,7 @@ def _build_screening_tool(criterion_ids: Optional[list[str]] = None) -> ToolSche
     return ToolSchema(name=SCREENING_TOOL.name, description=SCREENING_TOOL.description, input_schema=schema)
 
 
-def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: Optional[list[str]] = None) -> ToolSchema:
+def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: list[str] | None = None) -> ToolSchema:
     """Inject _flag_check: a named-slot object keyed by criterion_ids (each required), or the legacy
     free array when no IDs are known."""
     schema = dict(tool_schema.input_schema)
@@ -375,7 +375,7 @@ def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: Optional[l
     )
 
 
-def _normalize_flag_check(raw: Any) -> Optional[list[dict[str, Any]]]:
+def _normalize_flag_check(raw: Any) -> list[dict[str, Any]] | None:
     """Normalize either the named-slot object {ID: {verdict,...}} or the legacy array
     [{criterion_id, verdict,...}] into the canonical list[dict] stored in the DB."""
     if raw is None:
@@ -408,7 +408,7 @@ def _parse_json_blob(raw: Any, field: FieldSpec, *, opens: str = "[{") -> Any:
         ) from e
 
 
-def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tuple[Any, Optional[str]]:
+def _unwrap_value_quote(raw: Any, *, with_quotes: bool, field: FieldSpec) -> tuple[Any, str | None]:
     if not with_quotes:
         return raw, None
     if field.type in ("string", "integer", "number", "boolean"):

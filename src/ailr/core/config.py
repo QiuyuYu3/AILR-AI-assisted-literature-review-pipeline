@@ -14,7 +14,7 @@ Per-stage LLM override:
 
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -28,7 +28,7 @@ class ProjectMeta(BaseModel):
     type: Literal["scoping", "systematic"] = "scoping"
     description: str = ""
     mode: Literal["strict", "assisted", "custom"] = "assisted"
-    mode_preset: Optional[str] = None
+    mode_preset: str | None = None
     # PRISMA 2020 item 24: the register the review is filed with, its number, and where the
     # protocol can be read. Blank is a valid answer and reports as "not registered".
     registry: str = ""
@@ -40,25 +40,25 @@ class LLMConfig(BaseModel):
     provider: Literal["anthropic", "openai", "gemini"] = "anthropic"
     # No default: model names date fast, and a stale one shipped as a default is worse than
     # being asked to pick. Set it per stage in Settings -> Models.
-    model: Optional[str] = None
+    model: str | None = None
     temperature: float = 0.0
     # No default: only some provider APIs take a seed (see llm/base._SEED_PROVIDERS). Defaulting it
     # made every project's config advertise a reproducibility control the call never sent.
-    seed: Optional[int] = None
+    seed: int | None = None
     max_retries: int = 3
 
 
 class StageLLMOverride(BaseModel):
-    provider: Optional[Literal["anthropic", "openai", "gemini"]] = None
-    model: Optional[str] = None
-    temperature: Optional[float] = None
-    seed: Optional[int] = None
-    max_retries: Optional[int] = None
+    provider: Literal["anthropic", "openai", "gemini"] | None = None
+    model: str | None = None
+    temperature: float | None = None
+    seed: int | None = None
+    max_retries: int | None = None
 
 
 class CalibrationConfig(BaseModel):
     fraction: float = 0.10
-    n: Optional[int] = None
+    n: int | None = None
     min: int = 30
 
 
@@ -75,10 +75,10 @@ class ScreeningConfig(BaseModel):
     )
     # Full-text screening runs its own workflow: the common design is AI-assisted at title/abstract
     # (thousands of records) and two humans at full text (dozens). None = same as `workflow`.
-    full_text_workflow: Optional[Literal["assisted", "independent"]] = None
+    full_text_workflow: Literal["assisted", "independent"] | None = None
     target_kappa: float = 0.7
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
-    llm: Optional[StageLLMOverride] = None
+    llm: StageLLMOverride | None = None
     workers: int = 4  # concurrent LLM screening calls (1 = serial)
     flag_check: bool = True  # per-criterion verdicts on every AI screening decision (auditable); escape hatch to disable
 
@@ -88,7 +88,7 @@ class ExtractionConfig(BaseModel):
     prompt: str = "prompts/extraction.txt"
     additional: str = "prompts/extraction_additional.txt"
     schema_path: str = "schema.yaml"
-    codebook: Optional[str] = "codebook.yaml"
+    codebook: str | None = "codebook.yaml"
     workflow: Literal["verify", "independent"] = Field(
         default="verify",
         validation_alias=AliasChoices("workflow", "blinding"),
@@ -100,7 +100,7 @@ class ExtractionConfig(BaseModel):
     calibration: CalibrationConfig = Field(
         default_factory=lambda: CalibrationConfig(min=10)
     )
-    llm: Optional[StageLLMOverride] = None
+    llm: StageLLMOverride | None = None
     workers: int = 2  # concurrent LLM extraction calls (1 = serial; full-paper prompts are large)
 
 
@@ -117,7 +117,7 @@ class CrossCheckConfig(BaseModel):
     # gets its own prompt rather than a stage marker inside the extraction one.
     screening_prompt: str = "prompts/crosscheck_screening.txt"
     screening_additional: str = "prompts/crosscheck_screening_additional.txt"
-    llm: Optional[StageLLMOverride] = None
+    llm: StageLLMOverride | None = None
     # A checker on the same model as the extractor agrees with itself far more often than an
     # independent one would, which makes the agreement rate it produces unreportable.
     allow_same_model: bool = False
@@ -134,7 +134,7 @@ class StorageConfig(BaseModel):
     database: str = "data/review.sqlite"
     # Optional SQLAlchemy URL for a shared DB (e.g. "postgresql+psycopg://user:pw@host/db").
     # When set it takes precedence over `database` (the local SQLite file path).
-    database_url: Optional[str] = None
+    database_url: str | None = None
 
 
 class LoggingConfig(BaseModel):
@@ -233,7 +233,7 @@ def extractors_for(workflow: str) -> int:
     return 2 if workflow == "independent" else 1
 
 
-def resolve_stage_llm(top_level: LLMConfig, override: Optional[StageLLMOverride]) -> LLMConfig:
+def resolve_stage_llm(top_level: LLMConfig, override: StageLLMOverride | None) -> LLMConfig:
     if override is None:
         return top_level
     fields = top_level.model_dump()
@@ -241,7 +241,7 @@ def resolve_stage_llm(top_level: LLMConfig, override: Optional[StageLLMOverride]
     return LLMConfig(**fields)
 
 
-def crosscheck_llm_blocked(config: "Config", stage: str = "extraction") -> Optional[str]:
+def crosscheck_llm_blocked(config: "Config", stage: str = "extraction") -> str | None:
     """Why the LLM cross-check must not run, or None when it may. A checker sharing the model it
     checks is the failure mode worth refusing by default, not just warning about."""
     cc = config.crosscheck
@@ -290,8 +290,8 @@ def save_crosscheck_config(
     project_dir: Path,
     targets: list[str],
     llm_enabled: bool,
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
+    provider: str | None = None,
+    model: str | None = None,
     allow_same_model: bool = False,
 ) -> None:
     """Update the `crosscheck` block in lit_review.yaml."""
@@ -315,7 +315,7 @@ def save_llm_config(
     provider: str,
     model: str,
     temperature: float,
-    seed: Optional[int] = None,
+    seed: int | None = None,
 ) -> None:
     """Update the top-level `llm:` block in lit_review.yaml (used by AI screening/extraction)."""
     def mutate(llm: dict) -> None:
@@ -331,9 +331,9 @@ def save_llm_config(
 def save_stage_llm_config(
     project_dir: Path,
     stage: Literal["screening", "extraction"],
-    provider: Optional[str],
-    model: Optional[str],
-    temperature: Optional[float] = None,
+    provider: str | None,
+    model: str | None,
+    temperature: float | None = None,
 ) -> None:
     """Set or clear a stage's `llm:` override (screening.llm / extraction.llm).
     Blank model clears the override so the stage inherits the top-level `llm:`.

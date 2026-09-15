@@ -1,7 +1,7 @@
 """Anthropic provider. Uses tool_use for structured output and ephemeral cache for system prompts."""
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 from ailr.exceptions import LLMError
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
@@ -15,7 +15,7 @@ class AnthropicClient(LLMClient):
         model: str,
         temperature: float = 0.0,
         max_retries: int = 3,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ) -> None:
         try:
             import anthropic
@@ -39,7 +39,7 @@ class AnthropicClient(LLMClient):
         return self._model
 
     @property
-    def temperature(self) -> Optional[float]:
+    def temperature(self) -> float | None:
         return self._temperature
 
     def complete_structured(

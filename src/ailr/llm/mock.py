@@ -1,7 +1,7 @@
 """MockLLMClient: deterministic, no-API client for development and CI."""
 
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 
@@ -13,11 +13,11 @@ def synth_from_tool_schema(tool_schema: ToolSchema) -> dict[str, Any]:
     return _synth_object(tool_schema.input_schema or {}, None)
 
 
-def _synth_object(schema: dict, parent: Optional[str]) -> dict:
+def _synth_object(schema: dict, parent: str | None) -> dict:
     return {n: _synth_value(n, s, parent) for n, s in (schema.get("properties") or {}).items()}
 
 
-def _synth_value(name: str, sub: dict, parent: Optional[str]) -> Any:
+def _synth_value(name: str, sub: dict, parent: str | None) -> Any:
     if sub.get("enum"):
         return sub["enum"][0]
     t = sub.get("type")
@@ -55,8 +55,8 @@ class MockLLMClient(LLMClient):
         self,
         *,
         model: str = "mock",
-        response: Optional[dict[str, Any]] = None,
-        response_fn: Optional[Callable[[str, str, ToolSchema], dict[str, Any]]] = None,
+        response: dict[str, Any] | None = None,
+        response_fn: Callable[[str, str, ToolSchema], dict[str, Any]] | None = None,
         latency_ms: int = 0,
     ) -> None:
         self._model = model

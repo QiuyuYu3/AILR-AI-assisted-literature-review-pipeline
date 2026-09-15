@@ -3,34 +3,34 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
 class Source:
     title: str
-    id: Optional[int] = None
-    project_id: Optional[int] = None
-    doi: Optional[str] = None
-    pmid: Optional[str] = None
-    abstract: Optional[str] = None
+    id: int | None = None
+    project_id: int | None = None
+    doi: str | None = None
+    pmid: str | None = None
+    abstract: str | None = None
     authors: list[str] = field(default_factory=list)
-    year: Optional[int] = None
-    journal: Optional[str] = None
-    source_database: Optional[str] = None
+    year: int | None = None
+    journal: str | None = None
+    source_database: str | None = None
     # PRISMA 2020 identification arm: 'database' (databases and registers) or 'other'
     # (citation searching, hand searching, websites, organisations).
     identification_route: str = "database"
-    pdf_path: Optional[Path] = None
-    markdown_path: Optional[Path] = None
+    pdf_path: Path | None = None
+    markdown_path: Path | None = None
     # PRISMA's "reports not retrieved": the full text was sought and could not be obtained.
     # Distinct from simply having no markdown yet, which only means not done.
     full_text_not_retrieved: bool = False
     # Set when this report is a companion of another (same study, several publications): the id
     # of the report representing the study. NULL/None means this report is its own study.
-    study_group_id: Optional[int] = None
+    study_group_id: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    imported_at: Optional[datetime] = None
+    imported_at: datetime | None = None
 
 
 _RECORD_FIELDS = ("title", "doi", "pmid", "abstract", "authors", "year", "journal",

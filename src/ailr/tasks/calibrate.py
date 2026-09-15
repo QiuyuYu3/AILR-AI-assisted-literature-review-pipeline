@@ -3,7 +3,6 @@
 import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Optional
 
 from ailr.core.project import Project
 from ailr.core.source import Source
@@ -12,7 +11,7 @@ from ailr.exceptions import AILRError
 from ailr.metrics import cohen_kappa, cohen_kappa_ci, percent_agreement
 from ailr.reviewers import LLMReviewer, Reviewer, ScreeningDecision
 
-ProgressCallback = Callable[[int, int, Optional[ScreeningDecision], Optional[Exception]], None]
+ProgressCallback = Callable[[int, int, ScreeningDecision | None, Exception | None], None]
 
 # Which records a calibration round draws. Unrelated to the LLM decoding seed it used to read from
 # `llm.seed`, which only some provider APIs accept; sampling has to stay reproducible regardless.
@@ -42,10 +41,10 @@ class QuickTestTask:
         self,
         *,
         n: int = 5,
-        source_ids: Optional[list[int]] = None,
-        seed: Optional[int] = None,
-        note: Optional[str] = None,
-        on_progress: Optional[ProgressCallback] = None,
+        source_ids: list[int] | None = None,
+        seed: int | None = None,
+        note: str | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> QuickTestSummary:
         all_sources = self.project.db.list_sources(self.project.project_id)
         candidates = [s for s in all_sources if s.abstract]
@@ -199,10 +198,10 @@ class ExtractionQuickTestTask:
         self,
         *,
         n: int = 3,
-        source_ids: Optional[list[int]] = None,
-        seed: Optional[int] = None,
-        note: Optional[str] = None,
-        on_progress: Optional[ProgressCallback] = None,
+        source_ids: list[int] | None = None,
+        seed: int | None = None,
+        note: str | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> QuickExtractSummary:
         from ailr.core.pdf_paths import resolve_markdown_path
         from ailr.extraction import compose_schema
@@ -345,7 +344,7 @@ class CalibrationTask:
         self.stage = stage
         self.decision_stage = _DECISION_STAGE[stage]
 
-    def determine_sample_size(self, n_arg: Optional[int], candidates_available: int) -> int:
+    def determine_sample_size(self, n_arg: int | None, candidates_available: int) -> int:
         if n_arg is not None:
             return min(n_arg, candidates_available)
 
@@ -363,9 +362,9 @@ class CalibrationTask:
     def run(
         self,
         *,
-        n: Optional[int] = None,
-        seed: Optional[int] = None,
-        on_progress: Optional[ProgressCallback] = None,
+        n: int | None = None,
+        seed: int | None = None,
+        on_progress: ProgressCallback | None = None,
     ) -> CalibrationSummary:
         candidates = self.project.db.list_calibration_candidates(
             project_id=self.project.project_id, stage=self.stage
@@ -415,7 +414,7 @@ class CalibrationTask:
         self,
         sample_ids: list[int],
         summary: CalibrationSummary,
-        on_progress: Optional[ProgressCallback],
+        on_progress: ProgressCallback | None,
     ) -> None:
         """The AI's full-text verdict comes from extracting the paper (flag_check re-checks the
         criteria against the full text), so calibrating it means running the real extraction on
@@ -447,7 +446,7 @@ class CalibrationTask:
         sample: list[Source],
         sample_size: int,
         summary: CalibrationSummary,
-        on_progress: Optional[ProgressCallback],
+        on_progress: ProgressCallback | None,
     ) -> None:
         prompt_template, criteria_text, criterion_ids, additional_text = load_screening_inputs(
             self.project.root, self.project.config.screening
@@ -486,7 +485,7 @@ class CalibrationTask:
 
         self.project.db.insert_api_calls(self.project.project_id, call_metas)
 
-    def _existing_ai_decision(self, source_id: Optional[int]) -> Optional[str]:
+    def _existing_ai_decision(self, source_id: int | None) -> str | None:
         if source_id is None:
             return None
         row = self.project.db._conn.execute(

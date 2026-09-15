@@ -2,7 +2,6 @@
 
 import sqlite3
 from pathlib import Path
-from typing import Optional
 
 from ailr.exceptions import DatabaseError
 
@@ -36,8 +35,8 @@ class ScreeningAuxMixin:
         source_id: int,
         reviewer_id: str,
         action: str,
-        decision: Optional[str] = None,
-        rationale: Optional[str] = None,
+        decision: str | None = None,
+        rationale: str | None = None,
     ) -> int:
         """Append an audit row to screening_actions. Used by the History panel. `rationale` is the
         adjudicator's reason (or an exclusion reason on a vote), kept here rather than read from
@@ -58,7 +57,7 @@ class ScreeningAuxMixin:
     def get_screening_actions(
         self,
         source_id: int,
-        reviewer_id: Optional[str] = None,
+        reviewer_id: str | None = None,
     ) -> list[dict]:
         """Action timeline for a source. If reviewer_id is given, filter to that reviewer — except
         for adjudications, which stay visible to everyone: the final decision is the team's
@@ -84,7 +83,7 @@ class ScreeningAuxMixin:
             params = (source_id,)
         return [dict(r) for r in self._conn.execute(sql, params).fetchall()]
 
-    def add_note(self, source_id: int, reviewer_id: Optional[str], text: str) -> int:
+    def add_note(self, source_id: int, reviewer_id: str | None, text: str) -> int:
         try:
             cur = self._conn.execute(
                 "INSERT INTO notes (source_id, reviewer_id, text) VALUES (?, ?, ?)",
@@ -124,11 +123,11 @@ class ScreeningAuxMixin:
         self,
         project_id: int,
         source_database: str,
-        search_query: Optional[str],
-        date_searched: Optional[str],
-        filters: Optional[str],
-        records_found: Optional[int],
-        records_imported: Optional[int],
+        search_query: str | None,
+        date_searched: str | None,
+        filters: str | None,
+        records_found: int | None,
+        records_imported: int | None,
     ) -> int:
         try:
             cur = self._conn.execute(
@@ -161,12 +160,12 @@ class ScreeningAuxMixin:
     def insert_duplicate(
         self,
         project_id: int,
-        title: Optional[str],
-        doi: Optional[str],
+        title: str | None,
+        doi: str | None,
         reason: str,
-        matched_source_id: Optional[int] = None,
-        authors: Optional[str] = None,
-        full_record_json: Optional[str] = None,
+        matched_source_id: int | None = None,
+        authors: str | None = None,
+        full_record_json: str | None = None,
     ) -> int:
         try:
             cur = self._conn.execute(
@@ -205,7 +204,7 @@ class ScreeningAuxMixin:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def get_duplicate_record(self, duplicate_id: int) -> Optional[str]:
+    def get_duplicate_record(self, duplicate_id: int) -> str | None:
         row = self._conn.execute(
             "SELECT full_record_json FROM duplicates WHERE id = ?", (duplicate_id,)
         ).fetchone()
