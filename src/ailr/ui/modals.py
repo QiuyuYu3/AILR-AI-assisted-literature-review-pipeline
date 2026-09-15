@@ -7,6 +7,7 @@ both conflict tabs all reuse the same six. The exclusion modal is the odd one ou
 always mounted, but its callbacks sit with the full-text review that owns the workflow.
 """
 
+import time
 from typing import Any
 
 import dash_bootstrap_components as dbc
