@@ -4,7 +4,11 @@ These are real (not mocked): Project.init builds a real SQLite DB with the schem
 tests exercise the actual project -> DB -> UI wiring. Mock only at external boundaries (LLM).
 """
 
+import json
+
 import pytest
+from dash._callback_context import context_value
+from dash._utils import AttributeDict
 
 import ailr.ui._project as ui_project
 from ailr.core.project import Project
@@ -21,6 +25,20 @@ def tmp_project(tmp_path, monkeypatch):
     monkeypatch.setattr(ui_project, "_project", None)              # reset get_project() cache
     monkeypatch.setattr(ui_project, "_RECENT_FILE", tmp_path / "recent.json")  # keep ~/.ailr untouched
     return project
+
+
+@pytest.fixture
+def click():
+    """Fake the Dash context of one click on a component; reset afterwards so it cannot leak."""
+    tokens = []
+
+    def _click(component_id, prop="n_clicks"):
+        cid = json.dumps(component_id) if isinstance(component_id, dict) else component_id
+        tokens.append(context_value.set(AttributeDict(triggered_inputs=[{"prop_id": f"{cid}.{prop}", "value": 1}])))
+
+    yield _click
+    for token in reversed(tokens):
+        context_value.reset(token)
 
 
 @pytest.fixture

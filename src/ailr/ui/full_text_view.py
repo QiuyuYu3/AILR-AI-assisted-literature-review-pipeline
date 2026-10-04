@@ -367,9 +367,12 @@ def register_callbacks(app: Any) -> None:
             return no_update
         sid = int(triggered["source"])
         db = get_project().db
-        db.delete_all_screening_decisions(sid, reviewer_type="human")
-        db.delete_reconciliations_for_source(sid)
-        db.insert_screening_action(sid, (reviewer or "").strip() or "?", action="move_to_screening")
+        # One commit: clearing the votes but keeping a reconciliation would leave a final decision
+        # standing on no vote at all.
+        with db._conn.transaction():
+            db.delete_all_screening_decisions(sid, reviewer_type="human")
+            db.delete_reconciliations_for_source(sid)
+            db.insert_screening_action(sid, (reviewer or "").strip() or "?", action="move_to_screening")
         return {"ts": time.time()}
 
     @app.callback(

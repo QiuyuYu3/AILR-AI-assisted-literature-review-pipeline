@@ -643,13 +643,15 @@ def register_callbacks(app: Any) -> None:
             if action == "duplicate":
                 db.mark_source_duplicate(sid, True)
             elif action == "to_screening":
-                db.delete_all_screening_decisions(sid, reviewer_type="human")
-                db.delete_reconciliations_for_source(sid)
-                db.insert_screening_action(sid, rid, action="move_to_screening")
+                with db._conn.transaction():  # votes, rulings and the audit row go together or not at all
+                    db.delete_all_screening_decisions(sid, reviewer_type="human")
+                    db.delete_reconciliations_for_source(sid)
+                    db.insert_screening_action(sid, rid, action="move_to_screening")
             elif action == "to_fulltext":
-                db.delete_stage_decisions(sid, "full_text", reviewer_type="human")
-                db.delete_reconciliations_for_source(sid, "full_text_screening")
-                db.insert_screening_action(sid, rid, action="move_to_full_text")
+                with db._conn.transaction():
+                    db.delete_stage_decisions(sid, "full_text", reviewer_type="human")
+                    db.delete_reconciliations_for_source(sid, "full_text_screening")
+                    db.insert_screening_action(sid, rid, action="move_to_full_text")
             else:
                 continue
             count += 1

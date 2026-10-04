@@ -137,8 +137,10 @@ def register_callbacks(app: Any) -> None:
             try:
                 src = source_from_record(json.loads(rec))
                 src.project_id = project.project_id
-                db.insert_source(src)
-                db.delete_duplicate(int(row["id"]))
+                # Half a restore would count the paper twice in PRISMA: as a record and a duplicate.
+                with db._conn.transaction():
+                    db.insert_source(src)
+                    db.delete_duplicate(int(row["id"]))
                 restored += 1
             except DuplicateError:
                 already += 1  # a source with this DOI already exists (a true duplicate)
