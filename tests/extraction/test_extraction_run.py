@@ -10,13 +10,13 @@ from ailr.exceptions import DatabaseError
 from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
 from ailr.reviewers import ExtractionResult, LLMReviewer, ScreeningDecision
 from ailr.tasks.extract import ExtractionTask
-from tests.helpers import add_source, extract_reviewer, vote
+from tests.helpers import add_source, extract_reviewer, settle, vote
 
 
 def _add_source(project, title, include=True, md_file=True, md_path=True):
     sid = add_source(project, title, abstract="An abstract.", with_md=md_path, md_on_disk=md_path and md_file)
     if include:
-        vote(project.db, sid, "include", "amber", stage="abstract")
+        settle(project.db, sid, "include", stage="abstract")
     return sid
 
 

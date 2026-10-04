@@ -392,29 +392,18 @@ class ExtractionMixin:
             )
         return n
 
-    def list_full_text_includes_with_markdown(self, project_id: int) -> list[Source]:
-        """Sources included at the FULL-TEXT stage (by any reviewer) AND with markdown. Extraction candidates."""
-        sql = """
-            SELECT DISTINCT s.* FROM sources s
-            JOIN screening_decisions d ON d.source_id = s.id
-            WHERE s.project_id = ?
-              AND d.stage = 'full_text'
-              AND d.decision = 'include'
-              AND s.markdown_path IS NOT NULL
-            ORDER BY s.id
-        """
-        return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
-
-    def list_full_text_final_includes_with_markdown(self, project_id: int, team_size: int = 1) -> list[Source]:
+    def list_full_text_final_includes_with_markdown(self, project_id: int, team_size: int = 1,
+                                                    ai_votes: bool = False) -> list[Source]:
         """Extraction-verify queue: papers (with markdown) whose FINAL full-text decision is
         include — i.e. resolved-as-include in conflicts (reconciliation), or human-included
-        with the stage finished. The AI's own verdict is the blinded second opinion (surfaced in
-        conflicts), not what gates this queue. Unresolved conflicts still appear here; the caller
-        subtracts unresolved_conflict_ids. 'Move back to full-text' removes a paper by
-        clearing the human's full-text verdict + any full-text reconciliation (AI kept)."""
+        with the stage finished, which under ai_votes also needs the AI's full-text verdict.
+        Unresolved conflicts still appear here; the caller subtracts unresolved_conflict_ids.
+        'Move back to full-text' removes a paper by clearing the human's full-text verdict + any
+        full-text reconciliation (AI kept)."""
         sql = f"""
             SELECT s.* FROM sources s
-            WHERE s.project_id = ? AND COALESCE(s.is_duplicate, 0) = 0 AND {ft_final_include_md_sql(team_size)}
+            WHERE s.project_id = ? AND COALESCE(s.is_duplicate, 0) = 0
+              AND {ft_final_include_md_sql(team_size, ai_votes=ai_votes)}
             ORDER BY s.id
         """
         return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]

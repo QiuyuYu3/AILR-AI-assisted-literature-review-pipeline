@@ -11,6 +11,7 @@
 - Titles repeated inside one import file are deduplicated by the same rule as across imports.
 - Importing AI results archives the earlier AI extraction instead of deleting it.
 - Schema sub-fields can no longer be named value, quote or confidence.
+- Assisted screening settles a paper only once the AI has voted too; new Awaiting AI filter and dashboard count.
 
 ### Fixed
 - PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.
@@ -25,6 +26,7 @@
 - Agreement figures and the reliability CSV now leave out records flagged as duplicates.
 - `ailr metrics --json` failed on Postgres: the average latency came back as a Decimal.
 - The dashboard, CLI counts and Conflicts queue now leave out records flagged as duplicates.
+- The extraction import template now lists the same papers an in-app extraction run takes.
 
 ---
 ## [0.36.0] – 2026-10-04

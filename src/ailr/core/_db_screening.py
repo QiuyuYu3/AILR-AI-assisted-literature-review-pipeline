@@ -6,7 +6,7 @@ import sqlite3
 from typing import TYPE_CHECKING
 
 from ailr.core._db_facade import _row_to_source
-from ailr.core.config import team_size_for
+from ailr.core.config import ai_votes_for, team_size_for
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError
 
@@ -34,28 +34,6 @@ def reconcile_stage_for(stage: str) -> str:
     return "abstract_screening" if stage == "abstract" else "full_text_screening"
 
 
-# A paper's FINAL verdict at one stage is include: reconciled as include, or the stage is finished
-# for it (team_size humans have voted) and some human's latest vote is include with no
-# reconciliation overriding it. Papers whose reviewers disagree still satisfy this — they are
-# removed afterwards by final_include_ids, which is the only place that knows the conflict rule.
-# Takes (reconcile_stage, stage, reconcile_stage, stage, team_size).
-_FINAL_INCLUDE_PREDICATE = """
-                EXISTS (SELECT 1 FROM reconciliations r
-                        WHERE r.source_id = s.id AND r.stage = ? AND r.final_value = 'include')
-                OR (
-                  EXISTS (SELECT 1 FROM screening_decisions d
-                          WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = ?
-                            AND d.decision = 'include'
-                            AND d.id = (SELECT MAX(id) FROM screening_decisions
-                                        WHERE source_id = d.source_id AND reviewer_id = d.reviewer_id
-                                          AND reviewer_type = 'human' AND stage = d.stage))
-                  AND NOT EXISTS (SELECT 1 FROM reconciliations r
-                                  WHERE r.source_id = s.id AND r.stage = ?)
-                  AND (SELECT COUNT(DISTINCT reviewer_id) FROM screening_decisions
-                       WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) >= ?
-                )
-"""
-
 def _last_quick_test_sql(stage: str) -> tuple[str, str]:
     """The papers the most recent quick test covered, as (sql, test_runs.stage). The sql takes
     (project_id, test_stage).
@@ -73,9 +51,30 @@ def _last_quick_test_sql(stage: str) -> tuple[str, str]:
     )
 
 
-def _stage_final_sql(stage: str, team_size: int, verdict: str) -> str:
-    """A stage finished for the paper and settled on `verdict`, as a parameterless fragment."""
+def _ai_voted_sql(stage: str) -> str:
+    return (f"EXISTS (SELECT 1 FROM screening_decisions a "
+            f"WHERE a.source_id = s.id AND a.reviewer_type = 'ai' AND a.stage = '{stage}')")
+
+
+def _awaiting_ai_sql(stage: str) -> str:
+    """A human has voted at this stage, the AI has not, and nobody has adjudicated the paper."""
     rec_stage = reconcile_stage_for(stage)
+    return f"""(
+    EXISTS (SELECT 1 FROM screening_decisions d
+            WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = '{stage}')
+    AND NOT {_ai_voted_sql(stage)}
+    AND NOT EXISTS (SELECT 1 FROM reconciliations r
+                    WHERE r.source_id = s.id AND r.stage = '{rec_stage}')
+)"""
+
+
+def _stage_final_sql(stage: str, team_size: int, verdict: str, ai_votes: bool) -> str:
+    """A stage finished for the paper and settled on `verdict`, as a parameterless fragment: an
+    adjudicator ruled `verdict`, or everyone the workflow calls for has voted (team_size humans, and
+    the AI when ai_votes) and some human's latest vote is `verdict`. Papers whose reviewers disagree
+    still pass; the caller subtracts unresolved_conflict_ids."""
+    rec_stage = reconcile_stage_for(stage)
+    ai_voted = f"AND {_ai_voted_sql(stage)}" if ai_votes else ""
     return f"""(
     EXISTS (SELECT 1 FROM reconciliations r
             WHERE r.source_id = s.id AND r.stage = '{rec_stage}' AND r.final_value = '{verdict}')
@@ -88,30 +87,30 @@ def _stage_final_sql(stage: str, team_size: int, verdict: str) -> str:
         AND NOT EXISTS (SELECT 1 FROM reconciliations r
                         WHERE r.source_id = s.id AND r.stage = '{rec_stage}')
         AND (SELECT COUNT(DISTINCT reviewer_id) FROM screening_decisions
-             WHERE source_id = s.id AND reviewer_type = 'human' AND stage = '{stage}') >= {int(team_size)})
+             WHERE source_id = s.id AND reviewer_type = 'human' AND stage = '{stage}') >= {int(team_size)}
+        {ai_voted})
 )"""
 
 
-def stage_final_include_sql(stage: str, team_size: int = 1) -> str:
-    """The `_FINAL_INCLUDE_PREDICATE` rule for one stage, as a parameterless fragment (the stage is
-    a literal here and team_size is an int this module controls) so callers can drop it into a
+def stage_final_include_sql(stage: str, team_size: int = 1, *, ai_votes: bool) -> str:
+    """The settled-on-include rule for one stage, as a parameterless fragment (the stage is a
+    literal here and team_size is an int this module controls) so callers can drop it into a
     larger WHERE without disturbing their own placeholder order.
 
     Reads the latest vote PER REVIEWER, not the single most recent row for the paper: with two
-    reviewers the latter made the answer depend on who happened to vote last. Papers whose
-    reviewers disagree still pass; the caller subtracts unresolved_conflict_ids.
+    reviewers the latter made the answer depend on who happened to vote last.
     """
-    return _stage_final_sql(stage, team_size, "include")
+    return _stage_final_sql(stage, team_size, "include", ai_votes)
 
 
-def stage_final_exclude_sql(stage: str, team_size: int = 1) -> str:
+def stage_final_exclude_sql(stage: str, team_size: int = 1, *, ai_votes: bool) -> str:
     """The mirror of stage_final_include_sql; the caller subtracts unresolved_conflict_ids too."""
-    return _stage_final_sql(stage, team_size, "exclude")
+    return _stage_final_sql(stage, team_size, "exclude", ai_votes)
 
 
-def ft_final_include_md_sql(team_size: int = 1) -> str:
+def ft_final_include_md_sql(team_size: int = 1, *, ai_votes: bool) -> str:
     """Full-text final-include plus "markdown present": what gates the to-extract queue."""
-    return f"(s.markdown_path IS NOT NULL AND {stage_final_include_sql('full_text', team_size)})"
+    return f"(s.markdown_path IS NOT NULL AND {stage_final_include_sql('full_text', team_size, ai_votes=ai_votes)})"
 
 
 # Sources flagged by hand as duplicates were, for PRISMA, removed before screening.
@@ -622,6 +621,8 @@ class ScreeningMixin:
                 "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = ?)"
             )
             params += [reviewer_id, stage]
+        elif status == "awaiting_ai":
+            where.append(_awaiting_ai_sql(stage))
         elif status in ("quick_test", "calibration"):  # 'calibration': the old value, still in saved sessions
             sql, test_stage = _last_quick_test_sql(stage)
             where.append(sql)
@@ -664,6 +665,7 @@ class ScreeningMixin:
         id_whitelist: set[int] | None = None,  # restrict to these source ids (used by the low-text filter)
         exclude_ids: set[int] | None = None,  # drop these source ids (e.g. unresolved-conflict papers)
         team_size: int = 2,
+        ai_votes: bool = False,  # the AI's full-text verdict is one of the votes the stage waits for
         extractors_required: int = 1,  # humans each paper needs extracted by (2 under independent)
         abstract_workflow: str = "assisted",  # decides when abstract screening is finished with a paper
         abstract_conflict_ids: set[int] | None = None,  # pass in to skip a repeated conflict scan
@@ -688,8 +690,10 @@ class ScreeningMixin:
             where.append("EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id "
                          "AND d.reviewer_type = 'human' AND d.reviewer_id = ? AND d.stage = 'full_text')")
             params.append(reviewer_id)
+        elif status == "awaiting_ai":
+            where.append(_awaiting_ai_sql("full_text"))
         elif status == "to_extract":
-            where.append(ft_final_include_md_sql(team_size))
+            where.append(ft_final_include_md_sql(team_size, ai_votes=ai_votes))
             # Same shape as `to_review`: filter on THIS extractor plus the team cap, not on
             # "anyone submitted" — under independent extraction the queue has to stay open to the
             # second extractor after the first one submits.
@@ -710,7 +714,7 @@ class ScreeningMixin:
         elif status == "my_draft":
             # Saved but not submitted by me. Deliberately a subset of `to_extract`, which keeps
             # showing drafts: this filter locates work in progress, it does not move it off the queue.
-            where.append(ft_final_include_md_sql(team_size))
+            where.append(ft_final_include_md_sql(team_size, ai_votes=ai_votes))
             where.append("EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
                          "AND e.extractor_type = 'human' AND e.extractor_id = ? "
                          "AND e.field_name NOT IN ('_submitted', '_flag_check'))")
@@ -771,7 +775,7 @@ class ScreeningMixin:
         Returns (where_fragment, params) so callers can splice it into their own query."""
         clause = (
             "s.project_id = ? AND COALESCE(s.is_duplicate,0) = 0 AND "
-            + stage_final_include_sql("abstract", team_size_for(workflow))
+            + stage_final_include_sql("abstract", team_size_for(workflow), ai_votes=ai_votes_for(workflow))
         )
         params: list = [project_id]
         conflicts = (
@@ -810,14 +814,14 @@ class ScreeningMixin:
         ).fetchall()
         return [_row_to_source(r) for r in rows]
 
-    def final_include_md_ids(self, source_ids: list[int], team_size: int = 1) -> set[int]:
+    def final_include_md_ids(self, source_ids: list[int], team_size: int = 1, ai_votes: bool = False) -> set[int]:
         """Subset of the given sources that are 'final full-text include with markdown' (extraction-
         eligible): reconciled-as-include, or human-included with the stage finished, and markdown
         present. Unresolved conflicts still appear here; the caller subtracts them."""
         if not source_ids:
             return set()
         ph = ",".join("?" for _ in source_ids)
-        sql = f"SELECT s.id FROM sources s WHERE s.id IN ({ph}) AND {ft_final_include_md_sql(team_size)}"
+        sql = f"SELECT s.id FROM sources s WHERE s.id IN ({ph}) AND {ft_final_include_md_sql(team_size, ai_votes=ai_votes)}"
         return {r["id"] for r in self._conn.execute(sql, source_ids).fetchall()}
 
     def final_include_ids(self, project_id: int, stage: str = "abstract", *, workflow: str,
@@ -827,14 +831,14 @@ class ScreeningMixin:
 
         Three states exist, not two: include, exclude, and not-yet-decided. A paper only counts
         as included once the stage is actually done with it — every reviewer the workflow calls
-        for has voted, and either they agree or an adjudicator has ruled. A paper one of two
-        reviewers has judged, or one they disagree on with no adjudication, is unfinished
-        business and belongs in neither the included nor the excluded box.
+        for has voted (in assisted, the AI as well as the human), and either they agree or an
+        adjudicator has ruled. A paper one of two reviewers has judged, or one they disagree on
+        with no adjudication, is unfinished business and belongs in neither the included nor the
+        excluded box.
 
         The conflict rule itself lives in unresolved_conflict_ids and is only referenced here,
         so the two can never drift apart.
         """
-        reconcile_stage = reconcile_stage_for(stage)
         md = "AND s.markdown_path IS NOT NULL" if require_markdown else ""
         nr = ""
         if not_retrieved is not None:
@@ -842,10 +846,9 @@ class ScreeningMixin:
         sql = f"""
             SELECT s.id FROM sources s
             WHERE s.project_id = ? {md} {nr} {_route_filter(route)} {_NOT_DUPLICATE}
-              AND ({_FINAL_INCLUDE_PREDICATE})
+              AND {stage_final_include_sql(stage, team_size_for(workflow), ai_votes=ai_votes_for(workflow))}
         """
-        params = (project_id, reconcile_stage, stage, reconcile_stage, stage, team_size_for(workflow))
-        settled = {r["id"] for r in self._conn.execute(sql, params).fetchall()}
+        settled = {r["id"] for r in self._conn.execute(sql, (project_id,)).fetchall()}
         return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
 
     def final_exclude_ids(self, project_id: int, stage: str = "abstract", *, workflow: str,
@@ -855,10 +858,19 @@ class ScreeningMixin:
         sql = f"""
             SELECT s.id FROM sources s
             WHERE s.project_id = ? {_route_filter(route)} {_NOT_DUPLICATE}
-              AND {stage_final_exclude_sql(stage, team_size_for(workflow))}
+              AND {stage_final_exclude_sql(stage, team_size_for(workflow), ai_votes=ai_votes_for(workflow))}
         """
         settled = {r["id"] for r in self._conn.execute(sql, (project_id,)).fetchall()}
         return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
+
+    def awaiting_ai_ids(self, project_id: int, workflow: str, stage: str = "abstract") -> set[int]:
+        """Assisted mode: papers a human has voted on that the AI has not judged yet. Not a conflict,
+        since only one side has voted, and not settled either: they wait for the AI's verdict. At
+        full text that verdict comes from AI extraction."""
+        if not ai_votes_for(workflow):
+            return set()
+        sql = f"SELECT s.id FROM sources s WHERE s.project_id = ? {_NOT_DUPLICATE} AND {_awaiting_ai_sql(stage)}"
+        return {r["id"] for r in self._conn.execute(sql, (project_id,)).fetchall()}
 
     def count_final_include_studies(self, project_id: int, *, workflow: str,
                                     route: str | None = None) -> int:
@@ -1074,7 +1086,7 @@ class ScreeningMixin:
         return out
 
     def full_text_page_meta(self, source_ids: list[int], reviewer_id: str, stage: str = "full_text",
-                            team_size: int = 1) -> dict:
+                            team_size: int = 1, ai_votes: bool = False) -> dict:
         """One-round-trip per-source metadata for the full-text page: this reviewer's latest decision,
         peer-reviewer count, latest AI decision, note count, human submitter, who holds an unsubmitted
         claim, and extraction-eligibility.
@@ -1094,7 +1106,7 @@ class ScreeningMixin:
                    COALESCE(nt.n, 0) AS note_count,
                    sub.extractor_id AS extracted_by,
                    claim.extractor_id AS claimed_by,
-                   CASE WHEN {ft_final_include_md_sql(team_size)} THEN 1 ELSE 0 END AS extract_eligible
+                   CASE WHEN {ft_final_include_md_sql(team_size, ai_votes=ai_votes)} THEN 1 ELSE 0 END AS extract_eligible
             FROM sources s
             LEFT JOIN (
                 SELECT sd.source_id, sd.decision FROM screening_decisions sd

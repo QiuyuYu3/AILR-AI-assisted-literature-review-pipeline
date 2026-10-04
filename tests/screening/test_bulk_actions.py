@@ -13,7 +13,7 @@ from ailr.core.config import save_stage_workflow
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
 from ailr.ui import sources_view
-from tests.helpers import add_source, callbacks_of, component_text, set_config, vote
+from tests.helpers import add_source, callbacks_of, component_text, set_config, settle, vote
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ def test_bulk_skips_papers_another_human_already_screened(tmp_project, bulk_appl
 
 def test_bulk_leaves_the_other_reviewers_result_standing(tmp_project, bulk_apply):
     ids = _sources(tmp_project, 2)
-    vote(tmp_project.db, ids[0], "include", "amber", stage="abstract")
+    settle(tmp_project.db, ids[0], "include", stage="abstract")
     bulk_apply(1, [{"id": s} for s in ids], "abstract", "exclude", "", "bo")
     final = tmp_project.db.final_include_ids(tmp_project.project_id, "abstract", workflow="assisted")
     assert ids[0] in final          # amber's include survives the bulk exclude

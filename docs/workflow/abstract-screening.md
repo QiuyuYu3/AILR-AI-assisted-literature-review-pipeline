@@ -69,6 +69,8 @@ Where the AI and human (or two humans) disagree, the pair appears on the **Confl
 
 :::{important}
 A paper leaves this stage only once it is **settled**: everyone the workflow calls for has voted, and any disagreement has been adjudicated. Until then it stays here, out of the full-text queue, and PRISMA counts it as neither included nor excluded.
+
+In `assisted` that includes the AI. A paper you screened before the AI did, such as one imported after the last AI run, waits until AI screening has run on it. The **Awaiting AI** status filter lists these papers and the dashboard counts them.
 :::
 
 ![abstract conflicts](../figures/abstract_conflicts.png)

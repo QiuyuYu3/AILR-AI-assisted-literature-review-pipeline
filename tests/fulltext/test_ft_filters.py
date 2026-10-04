@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from ailr.ui.full_text_view import (
+    _AWAITING_AI_FILTER,
     _RECONCILE_FILTER,
     _ft_avail_filter,
     _low_text_md,
@@ -35,8 +36,9 @@ def test_ft_avail_filter(checked, expected):
     assert _ft_avail_filter(checked) == expected
 
 
-def _project(workflow: str):
-    return SimpleNamespace(config=SimpleNamespace(extraction=SimpleNamespace(workflow=workflow)))
+def _project(workflow: str, screening: str = "independent"):
+    return SimpleNamespace(config=SimpleNamespace(
+        extraction=SimpleNamespace(workflow=workflow), screening_workflow=lambda _stage: screening))
 
 
 def test_to_reconcile_is_offered_only_for_independent_extraction():
@@ -51,11 +53,12 @@ def test_to_reconcile_sits_before_the_quick_test_and_all_entries():
     assert values.index("to_reconcile") < values.index("quick_test") < values.index("all")
 
 
+@pytest.mark.parametrize("screening", ["assisted", "independent"])
 @pytest.mark.parametrize("workflow", ["verify", "assisted", "independent"])
-def test_every_status_reaches_exactly_one_group(workflow):
+def test_every_status_reaches_exactly_one_group(workflow, screening):
     # The sidebar renders the three groups plus a standalone 'All'. A status that falls out of that
     # partition is silently unreachable in the UI, which is how a filter goes missing unnoticed.
-    project = _project(workflow)
+    project = _project(workflow, screening)
     review, extraction, checks = _status_groups(project)
     grouped = [o["value"] for o in review + extraction + checks]
     assert len(grouped) == len(set(grouped))
@@ -69,9 +72,16 @@ def test_the_groups_hold_what_their_headings_say():
     assert [o["value"] for o in checks] == ["crosscheck_flagged", "quick_test"]
 
 
+def test_awaiting_ai_is_offered_only_where_the_ai_votes_at_full_text():
+    assert _AWAITING_AI_FILTER not in _status_filters(_project("verify", screening="independent"))
+    review, _extraction, _checks = _status_groups(_project("verify", screening="assisted"))
+    assert [o["value"] for o in review] == ["to_review", "reviewed", "awaiting_ai"]
+
+
 @pytest.mark.parametrize(
     "value,group",
-    [("to_review", "review"), ("my_draft", "extract"), ("quick_test", "checks"), ("all", "all")],
+    [("to_review", "review"), ("awaiting_ai", "review"), ("my_draft", "extract"), ("quick_test", "checks"),
+     ("all", "all")],
 )
 def test_status_group_of(value, group):
     assert _status_group_of(value) == group

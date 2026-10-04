@@ -10,7 +10,7 @@ from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
 from ailr.reviewers import ExtractionResult
 from ailr.ui import full_text_view
-from tests.helpers import add_source, callbacks_of, vote, walk
+from tests.helpers import add_source, callbacks_of, settle, vote, walk
 
 
 def _draft(db, sid, extractor_id, field_name="design"):
@@ -29,8 +29,8 @@ def _submit(db, sid, extractor_id):
 def _extraction_ready(project):
     """A paper settled as an include at both stages, with markdown — extraction-ready."""
     sid = add_source(project, with_md=True)
-    vote(project.db, sid, "include", "amber", stage="abstract")
-    vote(project.db, sid, "include", "amber", stage="full_text")
+    settle(project.db, sid, "include", stage="abstract")
+    settle(project.db, sid, "include", stage="full_text")
     return sid
 
 
@@ -54,7 +54,7 @@ class TestFullTextCandidates:
     def test_human_include_is_a_candidate_in_assisted(self, tmp_project):
         db = tmp_project.db
         sid = add_source(tmp_project)
-        vote(db, sid, "include", "amber", stage="abstract")
+        settle(db, sid, "include", stage="abstract")
         assert _candidates(db, tmp_project.project_id, "assisted") == {sid}
 
     def test_ai_vote_alone_is_not_a_candidate(self, tmp_project):
@@ -66,7 +66,7 @@ class TestFullTextCandidates:
     def test_human_exclude_is_not_a_candidate(self, tmp_project):
         db = tmp_project.db
         sid = add_source(tmp_project)
-        vote(db, sid, "exclude", "amber", stage="abstract")
+        settle(db, sid, "exclude", stage="abstract")
         assert _candidates(db, tmp_project.project_id, "assisted") == set()
 
     def test_unresolved_assisted_conflict_is_held_back(self, tmp_project):
@@ -111,7 +111,7 @@ class TestFullTextCandidates:
         db = tmp_project.db
         pid = tmp_project.project_id
         settled = add_source(tmp_project)
-        vote(db, settled, "include", "amber", stage="abstract")
+        settle(db, settled, "include", stage="abstract")
         pending = add_source(tmp_project)
         vote(db, pending, "include", "gpt", stage="abstract", reviewer_type="ai")  # AI only: not finished
 
@@ -126,7 +126,7 @@ class TestReviewQueue:
     def test_in_assisted_one_vote_takes_it_off_everyones_queue(self, tmp_project):
         db, pid = tmp_project.db, tmp_project.project_id
         sid = add_source(tmp_project)
-        vote(db, sid, "include", "amber", stage="abstract")  # amber's abstract vote is not a full-text one
+        settle(db, sid, "include", stage="abstract")  # amber's abstract vote is not a full-text one
         for rid in ("amber", "bob"):
             assert _page(db, pid, rid, status="to_review", workflow="assisted", team_size=1) == {sid}
             assert _page(db, pid, rid, status="reviewed", workflow="assisted", team_size=1) == set()
@@ -140,7 +140,7 @@ class TestReviewQueue:
     def test_in_independent_it_stays_open_for_the_second_reviewer_only(self, tmp_project):
         db, pid = tmp_project.db, tmp_project.project_id
         sid = add_source(tmp_project)
-        vote(db, sid, "include", "amber", stage="abstract")
+        settle(db, sid, "include", stage="abstract")
         vote(db, sid, "include", "amber", stage="full_text")
         assert _page(db, pid, "amber", status="to_review", workflow="assisted", team_size=2) == set()
         assert _page(db, pid, "bob", status="to_review", workflow="assisted", team_size=2) == {sid}
@@ -198,7 +198,7 @@ class TestToExtractQueue:
     def test_under_independent_full_text_both_reviewers_must_include_first(self, tmp_project):
         db, pid = tmp_project.db, tmp_project.project_id
         sid = add_source(tmp_project, with_md=True)
-        vote(db, sid, "include", "amber", stage="abstract")
+        settle(db, sid, "include", stage="abstract")
         vote(db, sid, "include", "amber", stage="full_text")
         assert _page(db, pid, "amber", status="to_extract", workflow="assisted", team_size=2) == set()
 
@@ -224,8 +224,8 @@ class TestToExtractQueue:
     def test_paper_without_markdown_is_never_queued(self, tmp_project):
         db, pid = tmp_project.db, tmp_project.project_id
         sid = add_source(tmp_project, with_md=False)
-        vote(db, sid, "include", "amber", stage="abstract")
-        vote(db, sid, "include", "amber", stage="full_text")
+        settle(db, sid, "include", stage="abstract")
+        settle(db, sid, "include", stage="full_text")
         queued = self._eligible_paper(tmp_project)   # same route, but with markdown
         assert _page(db, pid, "amber", status="to_extract", workflow="assisted",
                      team_size=1, extractors_required=2) == {queued}
@@ -322,8 +322,8 @@ class TestQueueMatchesPrisma:
 
     def test_assisted_page_count_equals_reports_sought(self, tmp_project):
         db = tmp_project.db
-        vote(db, add_source(tmp_project), "include", "amber", stage="abstract")
-        vote(db, add_source(tmp_project), "exclude", "amber", stage="abstract")
+        settle(db, add_source(tmp_project), "include", stage="abstract")
+        settle(db, add_source(tmp_project), "exclude", stage="abstract")
 
         held = add_source(tmp_project)  # unresolved AI-vs-human conflict
         vote(db, held, "include", "amber", stage="abstract")
@@ -358,7 +358,7 @@ class TestQueueMatchesPrisma:
         db = tmp_project.db
         keep, copy = add_source(tmp_project, "Paper"), add_source(tmp_project, "Paper, again")
         for sid in (keep, copy):
-            vote(db, sid, "include", "amber", stage="abstract")
+            settle(db, sid, "include", stage="abstract")
         db.mark_source_duplicate(copy, True)
         page, sought = self._counts_agree(tmp_project)
         assert page == sought == 1

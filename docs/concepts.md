@@ -61,7 +61,7 @@ extraction:
   workflow: independent
 ```
 
-A stage's workflow also decides when a paper is **settled** there: `independent` needs two human votes, and an unadjudicated disagreement means the stage is not finished. An unsettled paper does not move to the next stage, and PRISMA counts it as neither included nor excluded.
+A stage's workflow also decides when a paper is **settled** there: `independent` needs two human votes, `assisted` needs the human's vote and the AI's, and an unadjudicated disagreement means the stage is not finished. An unsettled paper does not move to the next stage, and PRISMA counts it as neither included nor excluded.
 
 ## Blinding
 

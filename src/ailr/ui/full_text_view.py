@@ -11,7 +11,7 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
-from ailr.core.config import extractors_for, team_size_for
+from ailr.core.config import ai_votes_for, extractors_for, team_size_for
 from ailr.core.source import Source
 from ailr.ui._actions import _apply_reset, _apply_resolve, _apply_vote
 from ailr.ui._cards import (
@@ -43,16 +43,20 @@ _STATUS_FILTERS = [
 # Reconciliation only exists when two people extract the same paper; under `verify` the filter
 # could never match, so it is not offered.
 _RECONCILE_FILTER = {"label": "To reconcile", "value": "to_reconcile"}
+# Only `assisted` makes the AI one of the votes a paper waits for.
+_AWAITING_AI_FILTER = {"label": "Awaiting AI", "value": "awaiting_ai"}
 
 
 def _status_filters(project: Any) -> list[dict]:
-    if project.config.extraction.workflow != "independent":
-        return _STATUS_FILTERS
-    at = [o["value"] for o in _STATUS_FILTERS].index("extracted_mine") + 1
-    return _STATUS_FILTERS[:at] + [_RECONCILE_FILTER] + _STATUS_FILTERS[at:]
+    opts = list(_STATUS_FILTERS)
+    if ai_votes_for(project.config.screening_workflow("full_text")):
+        opts.insert([o["value"] for o in opts].index("reviewed") + 1, _AWAITING_AI_FILTER)
+    if project.config.extraction.workflow == "independent":
+        opts.insert([o["value"] for o in opts].index("extracted_mine") + 1, _RECONCILE_FILTER)
+    return opts
 
 
-_REVIEW_VALUES = {"to_review", "reviewed"}
+_REVIEW_VALUES = {"to_review", "reviewed", "awaiting_ai"}
 # Results of an automated run, not a position in the extraction queue.
 _CHECK_VALUES = {"crosscheck_flagged", "quick_test"}
 
@@ -653,17 +657,20 @@ def register_callbacks(app: Any) -> None:
             pid, rid, status=status, keyword=search or "", within=within or "title_and_abstract",
             tag_id=tag_id, ft_avail=ft_avail, id_whitelist=id_whitelist,
             exclude_ids=ft_conflict_ids if status in ("to_extract", "my_draft") else None,
-            team_size=team_size, extractors_required=extractors_for(project.config.extraction.workflow),
+            team_size=team_size, ai_votes=ai_votes_for(workflow),
+            extractors_required=extractors_for(project.config.extraction.workflow),
             abstract_workflow=abstract_workflow, abstract_conflict_ids=abs_conflict_ids,
             sort_by=sort_by or "id", page=req_page, page_size=psize,
         )
 
         page_ids = [s.id for s in page_sources if s.id is not None]
         # One round-trip for all per-source scalar metadata (was six separate queries).
-        meta = db.full_text_page_meta(page_ids, rid, stage="full_text", team_size=team_size)
+        meta = db.full_text_page_meta(page_ids, rid, stage="full_text", team_size=team_size,
+                                      ai_votes=ai_votes_for(workflow))
         my_decisions = meta["my_decisions"]
         peer_counts = meta["peer_counts"] if workflow == "independent" else {}
         extract_ids = meta["extract_eligible"] - ft_conflict_ids  # extraction-eligible, minus unresolved conflicts
+        awaiting_ai = db.awaiting_ai_ids(pid, workflow, stage="full_text")
         extracted_by = meta["extracted_by"]                       # {sid: extractor_id who submitted}
         claimed_by = meta["claimed_by"]                           # {sid: extractor_id holding it, draft included}
         ai_by_source = meta["ai_decisions"]
@@ -680,7 +687,7 @@ def register_callbacks(app: Any) -> None:
         cards = [
             _ft_card(
                 s, my_decisions.get(s.id), workflow, peer_counts.get(s.id, 0), rid,
-                can_extract=s.id in extract_ids, expand_abstract=bool(expand_all),
+                can_extract=s.id in extract_ids, awaiting_ai=s.id in awaiting_ai, expand_abstract=bool(expand_all),
                 extracted_by=extracted_by.get(s.id),
                 claimed_by=claimed_by.get(s.id),
                 extract_verify=project.config.extraction.workflow == "verify",
@@ -734,6 +741,7 @@ def _ft_card(
     peer_count: int,
     reviewer_id: str,
     can_extract: bool = False,
+    awaiting_ai: bool = False,
     expand_abstract: bool = False,
     extracted_by: str | None = None,
     claimed_by: str | None = None,
@@ -888,6 +896,16 @@ def _ft_card(
                           title="Criteria or the extraction prompt changed since this paper was AI-extracted."),
             )
         extract_row = html.Div(children, className="mt-2")
+    elif awaiting_ai:
+        # Says why an included paper has no extraction button yet.
+        extract_row = html.Div(
+            dbc.Badge(
+                "Awaiting the AI's full-text verdict", color="secondary", className="align-middle",
+                title="Assisted screening settles a paper once the AI has voted too. "
+                      "AI extraction gives its full-text verdict.",
+            ),
+            className="mt-2",
+        )
 
     abstract_block: Any = None
     if expand_abstract and src.abstract:

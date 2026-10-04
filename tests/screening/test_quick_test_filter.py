@@ -9,8 +9,7 @@ lists the papers the most recent quick-test run covered, which is a different ta
 from pathlib import Path
 
 from ailr.core.source import Source
-from ailr.reviewers import ScreeningDecision
-from tests.helpers import add_source
+from tests.helpers import add_source, settle
 
 
 def _run(db, project, stage, sample_size):
@@ -73,10 +72,7 @@ def test_full_text_queue_lists_the_latest_quick_test_only(tmp_project):
     for i in range(3):
         sid = add_source(tmp_project, f"ft {i}")
         db.update_markdown_path(sid, Path("data/markdown") / f"{sid}.md")
-        db.insert_screening_decision(ScreeningDecision(
-            decision="include", reasoning="in", reviewer_type="human",
-            reviewer_id="amber", source_id=sid, stage="abstract",
-        ))
+        settle(db, sid, "include", stage="abstract")
         sids.append(sid)
 
     old_run = _run(db, tmp_project, "extraction", 1)

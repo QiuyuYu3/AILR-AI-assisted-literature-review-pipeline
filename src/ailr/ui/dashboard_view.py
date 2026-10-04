@@ -5,7 +5,7 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import html
 
-from ailr.core.config import team_size_for
+from ailr.core.config import ai_votes_for, team_size_for
 from ailr.ui._project import get_project
 
 
@@ -55,14 +55,22 @@ def _build_content(reviewer: str | None) -> Any:
     ft_sources_screened = db.count_sources_screened(pid, "human", stage="full_text", exclude_duplicates=True)
 
     with_md = db.count_sources_with_markdown(pid)
+    ft_workflow = cfg.screening_workflow("full_text")
     # Count extraction only among papers still confirmed for it (full-text includes with markdown),
     # so a paper moved back to full-text review stops counting as extracted until it's re-included.
-    _ft_conflict_ids = db.unresolved_conflict_ids(pid, cfg.screening_workflow("full_text"), stage="full_text")
-    _ft_team_size = team_size_for(cfg.screening_workflow("full_text"))
+    _ft_conflict_ids = db.unresolved_conflict_ids(pid, ft_workflow, stage="full_text")
+    _ft_team_size = team_size_for(ft_workflow)
     eligible_ext_ids = [
-        s.id for s in db.list_full_text_final_includes_with_markdown(pid, team_size=_ft_team_size)
+        s.id for s in db.list_full_text_final_includes_with_markdown(
+            pid, team_size=_ft_team_size, ai_votes=ai_votes_for(ft_workflow))
         if s.id not in _ft_conflict_ids
     ]
+    # A human has voted but the AI has not, so the paper is not settled yet (assisted only).
+    abstract_awaiting_ai = len(db.awaiting_ai_ids(pid, cfg.screening_workflow("abstract"), stage="abstract"))
+    ft_awaiting_ai = len(db.awaiting_ai_ids(pid, ft_workflow, stage="full_text"))
+    ft_awaiting_hint = "Run AI extraction: its flag_check gives the AI's full-text verdict."
+    if not cfg.extraction.flag_check:
+        ft_awaiting_hint = "extraction.flag_check is off, so AI extraction gives no full-text verdict."
     ai_extracted = len(db.sources_with_extraction(eligible_ext_ids, "ai"))
     human_extracted = len(db.sources_with_submission(eligible_ext_ids))
     # Only independent extraction produces papers waiting on an adjudicated consensus.
@@ -95,7 +103,9 @@ def _build_content(reviewer: str | None) -> Any:
                 ("exclude", human_counts["exclude"], "danger"),
                 ("uncertain", human_counts["uncertain"], "warning"),
             ]
-            + ([("cross-check flagged", abstract_crosscheck_flagged, "warning")] if abstract_crosscheck_flagged else []),
+            + ([("cross-check flagged", abstract_crosscheck_flagged, "warning")] if abstract_crosscheck_flagged else [])
+            + ([("awaiting AI", abstract_awaiting_ai, "warning", "Run AI screening to settle these.")]
+               if abstract_awaiting_ai else []),
             extra=html.Small(
                 f"across {abstract_sources_screened} unique source(s)  •  "
                 f"AI: {sum(ai_counts.values())} decisions  •  "
@@ -125,7 +135,8 @@ def _build_content(reviewer: str | None) -> Any:
                 ("include", ft_human["include"], "success"),
                 ("exclude", ft_human["exclude"], "danger"),
                 ("uncertain", ft_human["uncertain"], "warning"),
-            ],
+            ]
+            + ([("awaiting AI", ft_awaiting_ai, "warning", ft_awaiting_hint)] if ft_awaiting_ai else []),
             extra=html.Small(
                 f"across {ft_sources_screened} unique source(s)  •  "
                 f"{with_md} source(s) have markdown ready",
@@ -172,7 +183,7 @@ def _stage_card(
     title: str,
     main_metric: str,
     main_label: str,
-    sub_metrics: list[tuple[str, int, str]],
+    sub_metrics: list[tuple],  # (label, value, color) plus an optional hover hint
     extra: Any = None,
     bg: str | None = None,
     text: str | None = None,
@@ -202,8 +213,9 @@ def _stage_card(
                                     f"{label}: {value}",
                                     color=color,
                                     className="me-2",
+                                    title=hint[0] if hint else None,
                                 )
-                                for (label, value, color) in sub_metrics
+                                for (label, value, color, *hint) in sub_metrics
                             ]
                         ),
                     ],

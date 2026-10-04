@@ -40,6 +40,12 @@ def vote(db, sid, decision, reviewer_id, *, stage, reviewer_type="human", reason
     ))
 
 
+def settle(db, sid, decision, reviewer_id="amber", *, stage) -> None:
+    """Both votes an `assisted` stage waits for, alike: the AI's, then the human's."""
+    vote(db, sid, decision, "gpt", stage=stage, reviewer_type="ai")
+    vote(db, sid, decision, reviewer_id, stage=stage)
+
+
 def count_decisions(db, project_id, reviewer_type=None) -> int:
     """Every screening_decisions row of the project, optionally of one reviewer type."""
     sql = "SELECT COUNT(*) AS n FROM screening_decisions d JOIN sources s ON s.id = d.source_id WHERE s.project_id = ?"

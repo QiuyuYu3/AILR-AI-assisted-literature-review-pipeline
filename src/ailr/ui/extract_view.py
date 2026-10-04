@@ -311,9 +311,12 @@ def register_callbacks(app: Any) -> None:
         project = get_project()
         fields = compose_schema(project.root / project.config.extraction.schema_path)
         skeleton = {f.name: {"value": None, "quote": None} for f in fields}
+        # The papers an in-app run would take: under assisted, full text waits for their verdicts.
+        candidates = project.db.list_full_text_candidates(
+            project.project_id, workflow=project.config.screening_workflow("abstract"))
         recs = [
             {"source_id": s.id, "_title": s.title, "extraction": dict(skeleton), "flag_check": {"decision": ""}}
-            for s in project.db.list_full_text_includes_with_markdown(project.project_id)
+            for s in candidates if s.markdown_path
         ]
         return dict(content=json.dumps(recs, indent=2, ensure_ascii=False), filename="extraction_import_template.json")
 

@@ -21,7 +21,7 @@ from ailr.exports.tables import (
     extraction_table_json,
 )
 from ailr.reviewers import ExtractionResult
-from tests.helpers import add_source, vote
+from tests.helpers import add_source, settle, vote
 
 _SCHEMA = """\
 include_suggested: []
@@ -49,8 +49,8 @@ def _add_included_source(project, title="Paper", include=True):
     """An included study (settled include at both stages), or with include=False one nobody voted on."""
     sid = add_source(project, title, year=2021, authors=["Lee, J"], with_md=True)
     if include:
-        vote(project.db, sid, "include", "amber", stage="abstract")
-        vote(project.db, sid, "include", "amber", stage="full_text")
+        settle(project.db, sid, "include", stage="abstract")
+        settle(project.db, sid, "include", stage="full_text")
     return sid
 
 
@@ -151,7 +151,7 @@ class TestWhichPapersAnExportCovers:
         db = export_project.db
         included = _add_included_source(export_project, "included")
         abstract_only = _add_included_source(export_project, "included at title/abstract only", include=False)
-        vote(db, abstract_only, "include", "amber", stage="abstract")
+        settle(db, abstract_only, "include", stage="abstract")
         excluded = _add_included_source(export_project, "excluded at full text")
         vote(db, excluded, "exclude", "amber", stage="full_text")       # the reviewer changed their mind
         flagged = _add_included_source(export_project, "flagged as a duplicate")

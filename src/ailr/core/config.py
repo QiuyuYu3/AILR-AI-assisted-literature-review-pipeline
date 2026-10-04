@@ -227,6 +227,12 @@ def team_size_for(workflow: str) -> int:
     return 2 if workflow == "independent" else 1
 
 
+def ai_votes_for(workflow: str) -> bool:
+    """Whether the AI is one of the reviewers a workflow calls for. In `assisted` a stage is only
+    finished for a paper once the AI has voted on it as well as the human."""
+    return workflow == "assisted"
+
+
 def extractors_for(workflow: str) -> int:
     """Human extractors an extraction workflow calls for: 2 in `independent` (both extract blind,
     then reconcile), 1 in `verify` (one human checks the AI's fields)."""

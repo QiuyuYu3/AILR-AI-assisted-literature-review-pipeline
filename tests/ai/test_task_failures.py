@@ -16,7 +16,7 @@ from ailr.reviewers import LLMReviewer, Reviewer
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.preprocess import PreprocessTask
 from ailr.tasks.screen import ScreeningTask
-from tests.helpers import add_source, count_decisions, extract_reviewer, screen_reviewer, vote
+from tests.helpers import add_source, count_decisions, extract_reviewer, screen_reviewer, settle
 
 
 class _BoomReviewer(Reviewer):
@@ -56,7 +56,7 @@ def _abstract_source(project, title="Paper"):
 def _extractable_source(project, title="Paper"):
     """An abstract-include with markdown on disk: an extraction candidate."""
     sid = add_source(project, title, abstract="An abstract.", md_on_disk=True)
-    vote(project.db, sid, "include", "amber", stage="abstract")
+    settle(project.db, sid, "include", stage="abstract")
     return sid
 
 

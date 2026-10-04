@@ -27,7 +27,7 @@ from ailr.metrics import (
 )
 from ailr.reviewers import ExtractionResult, ScreeningDecision
 from ailr.ui import reports_view
-from tests.helpers import add_source, component_text, set_config, stash_duplicate, vote
+from tests.helpers import add_source, component_text, set_config, settle, stash_duplicate, vote
 
 
 def _add_source(project, title, with_md=False):
@@ -50,8 +50,9 @@ def _pipeline_state(project):
     vote(db, s3, "include", "amber", stage="abstract")
     vote(db, s1, "include", "gpt", stage="abstract", reviewer_type="ai")
     vote(db, s2, "exclude", "gpt", stage="abstract", reviewer_type="ai")
+    vote(db, s3, "include", "gpt", stage="abstract", reviewer_type="ai")
 
-    vote(db, s1, "include", "amber", stage="full_text")
+    settle(db, s1, "include", stage="full_text")
     db.insert_extraction(ExtractionResult(
         extractor_type="ai", extractor_id="gpt", field_name="design", value="obs", source_id=s1,
     ))
@@ -79,7 +80,7 @@ class TestPrismaCounts:
         assert c["full_text_assessed"] == 1
         assert c["studies_included"] == c["reports_included"] == 1   # s3 is an include at title/abstract only
         assert c["studies_extracted"] == 1
-        assert c["ai_abstract_screened"] == 2
+        assert c["ai_abstract_screened"] == 3
 
     def test_not_retrieved_is_marked_not_inferred(self, tmp_project):
         """PRISMA's 'not retrieved' means sought and unobtainable. A missing markdown alone is
@@ -109,7 +110,8 @@ class TestPrismaCounts:
         vote(db, sid, "include", "bob", stage="abstract")
         vote(db, sid, "include", "amber", stage="full_text")
         vote(db, sid, "include", "bob", stage="full_text")
-        c = prisma_counts(tmp_project)
+        save_stage_workflow(tmp_project.root, "screening", "independent")
+        c = prisma_counts(Project(tmp_project.root))
         assert c["abstract_screened"] == 1
         assert c["reports_sought"] == 1
         assert c["reports_retrieved"] == 1
@@ -159,8 +161,8 @@ class TestPrismaFollowsTheStageWorkflows:
         assert prisma_counts(project)["studies_included"] == 1
 
     def test_the_full_text_override_gates_the_included_box(self, tmp_project):
-        """Abstract independent, full text assisted: two abstract votes, but one full-text vote
-        settles the stage."""
+        """Abstract independent, full text assisted: two abstract votes, but at full text one human
+        vote and the AI's settle the stage."""
         db = tmp_project.db
         sid = _add_source(tmp_project, "assisted at full text", with_md=True)
         vote(db, sid, "include", "amber", stage="abstract")
@@ -168,7 +170,9 @@ class TestPrismaFollowsTheStageWorkflows:
         vote(db, sid, "include", "amber", stage="full_text")
         save_stage_workflow(tmp_project.root, "screening", "independent")
         save_stage_workflow(tmp_project.root, "full_text_screening", "assisted")
+        assert prisma_counts(self._reload(tmp_project))["studies_included"] == 0
 
+        vote(db, sid, "include", "gpt", stage="full_text", reviewer_type="ai")
         assert prisma_counts(self._reload(tmp_project))["studies_included"] == 1
 
     def test_a_half_screened_paper_is_not_yet_sought(self, tmp_project):
@@ -267,7 +271,8 @@ class TestExcludedBoxesFollowTheSettledRule:
         for name in ("Wrong population", "Wrong outcome"):
             db.create_exclusion_reason(tmp_project.project_id, name)
         sid = _add_source(tmp_project, "re-voted exclusion", with_md=True)
-        vote(db, sid, "include", "amber", stage="abstract")
+        settle(db, sid, "include", stage="abstract")
+        vote(db, sid, "exclude", "gpt", stage="full_text", reviewer_type="ai")
         vote(db, sid, "exclude", "amber", stage="full_text", reasoning="Wrong population")
         vote(db, sid, "exclude", "amber", stage="full_text", reasoning="Wrong outcome")
 
@@ -283,7 +288,7 @@ class TestFlaggedDuplicates:
         keep = _add_source(tmp_project, "Paper C")
         copy = _add_source(tmp_project, "Paper C, second copy")
         for sid in (keep, copy):
-            vote(db, sid, "include", "amber", stage="abstract")
+            settle(db, sid, "include", stage="abstract")
         db.mark_source_duplicate(copy, True)
 
         c = prisma_counts(tmp_project)
@@ -296,8 +301,8 @@ class TestFlaggedDuplicates:
         keep = _add_source(tmp_project, "Paper D", with_md=True)
         copy = _add_source(tmp_project, "Paper D, second copy", with_md=True)
         for sid in (keep, copy):
-            vote(db, sid, "include", "amber", stage="abstract")
-            vote(db, sid, "include", "amber", stage="full_text")
+            settle(db, sid, "include", stage="abstract")
+            settle(db, sid, "include", stage="full_text")
         db.mark_source_duplicate(copy, True)
 
         c = prisma_counts(tmp_project)
@@ -330,8 +335,8 @@ class TestMethodsNumbers:
 
     def _included_at_full_text(self, project, title):
         sid = _add_source(project, title, with_md=True)
-        vote(project.db, sid, "include", "amber", stage="abstract")
-        vote(project.db, sid, "include", "amber", stage="full_text")
+        settle(project.db, sid, "include", stage="abstract")
+        settle(project.db, sid, "include", stage="full_text")
         return sid
 
     def test_independent_screening_reports_records_not_decisions(self, tmp_project):
@@ -718,8 +723,8 @@ class TestReportText:
         primary = _add_source(tmp_project, "primary report", with_md=True)
         companion = _add_source(tmp_project, "companion report", with_md=True)
         for sid in (primary, companion):
-            vote(db, sid, "include", "amber", stage="abstract")
-            vote(db, sid, "include", "amber", stage="full_text")
+            settle(db, sid, "include", stage="abstract")
+            settle(db, sid, "include", stage="full_text")
         assert "**Reports of included studies:**" not in build_prisma_report(tmp_project)
 
         db.set_study_group(companion, primary)
@@ -744,8 +749,8 @@ class TestAgreementReporting:
     def test_kappa_uses_latest_only_pairs(self, tmp_project):
         _pipeline_state(tmp_project)
         text = build_methods_skeleton(tmp_project)
-        # s1: (include, include); s2: (exclude, exclude) after the re-vote -> perfect agreement
-        assert "Agreement between AI: gpt and amber on the 2 records" in text
+        # s1, s3: (include, include); s2: (exclude, exclude) after the re-vote -> perfect agreement
+        assert "Agreement between AI: gpt and amber on the 3 records" in text
         assert "κ = 1.00" in text
 
     def test_agreement_pairs_per_reviewer_not_latest_human(self, tmp_project):
@@ -812,6 +817,7 @@ class TestFullTextExclusionReasons:
     def _excluded(self, project, title, reason, second=None, reconcile=None):
         db = project.db
         sid = _add_source(project, title)
+        vote(db, sid, "exclude", "gpt", stage="full_text", reviewer_type="ai")
         vote(db, sid, "exclude", "amber", stage="full_text", reasoning=reason)
         if second:
             vote(db, sid, second, "lin", stage="full_text")
@@ -861,9 +867,9 @@ class TestIdentificationArms:
                                       source_database=db_name, identification_route=route))
         if md:
             db.update_markdown_path(sid, Path("data/markdown") / f"{sid}.md")
-        vote(db, sid, abstract, "amber", stage="abstract")
+        settle(db, sid, abstract, stage="abstract")
         if ft:
-            vote(db, sid, ft, "amber", stage="full_text")
+            settle(db, sid, ft, stage="full_text")
         return sid
 
     def test_records_default_to_the_database_arm(self, tmp_project):

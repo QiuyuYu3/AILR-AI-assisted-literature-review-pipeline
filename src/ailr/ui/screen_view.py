@@ -8,7 +8,7 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
-from ailr.core.config import team_size_for
+from ailr.core.config import ai_votes_for, team_size_for
 from ailr.core.source import Source
 from ailr.extraction import compose_screening_prompt
 from ailr.ui import ai_runner, version_ui
@@ -93,15 +93,26 @@ _STATUS_FILTERS = [
     {"label": "All", "value": "all"},
 ]
 
-_REVIEW_VALUES = {"to_screen", "reviewed"}
+# Only `assisted` makes the AI one of the votes a paper waits for.
+_AWAITING_AI_FILTER = {"label": "Awaiting AI", "value": "awaiting_ai"}
+
+_REVIEW_VALUES = {"to_screen", "reviewed", "awaiting_ai"}
 # Results of an automated run, not a position in the review queue.
 _CHECK_VALUES = {"crosscheck_flagged", "quick_test"}
 
 
-def _status_groups() -> tuple[list[dict], list[dict]]:
+def _status_filters(workflow: str) -> list[dict]:
+    if not ai_votes_for(workflow):
+        return _STATUS_FILTERS
+    at = [o["value"] for o in _STATUS_FILTERS].index("reviewed") + 1
+    return _STATUS_FILTERS[:at] + [_AWAITING_AI_FILTER] + _STATUS_FILTERS[at:]
+
+
+def _status_groups(workflow: str) -> tuple[list[dict], list[dict]]:
     """Status options split into review / check-result groups ('All' excluded)."""
-    review = [o for o in _STATUS_FILTERS if o["value"] in _REVIEW_VALUES]
-    checks = [o for o in _STATUS_FILTERS if o["value"] in _CHECK_VALUES]
+    opts = _status_filters(workflow)
+    review = [o for o in opts if o["value"] in _REVIEW_VALUES]
+    checks = [o for o in opts if o["value"] in _CHECK_VALUES]
     return review, checks
 
 
@@ -391,7 +402,7 @@ def ai_screening_panel() -> list[Any]:
 
 
 def layout() -> Any:
-    review_opts, check_opts = _status_groups()
+    review_opts, check_opts = _status_groups(get_project().config.screening_workflow("abstract"))
     return dbc.Row(
         [
             dbc.Col(

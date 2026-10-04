@@ -20,7 +20,7 @@ from ailr.reviewers import ScreeningDecision
 from ailr.ui import screen_view
 from ailr.ui._actions import _apply_reset, _apply_vote
 from ailr.ui._common import triggered_click_id
-from ailr.ui.screen_view import _STATUS_FILTERS, _status_group_of, _status_groups
+from ailr.ui.screen_view import _status_filters, _status_group_of, _status_groups
 from tests.helpers import add_source, callbacks_of
 
 # ---------- half 1: triggered_click_id ----------
@@ -166,24 +166,29 @@ def test_ai_decision_does_not_block_the_human(tmp_project):
 
 # ---------- half 3: status filter grouping ----------
 
-def test_every_status_reaches_exactly_one_group():
+@pytest.mark.parametrize("workflow", ["assisted", "independent"])
+def test_every_status_reaches_exactly_one_group(workflow):
     # The sidebar renders two groups plus a standalone 'All'. A status that falls out of that
     # partition is silently unreachable in the UI.
-    review, checks = _status_groups()
+    review, checks = _status_groups(workflow)
     grouped = [o["value"] for o in review + checks]
     assert len(grouped) == len(set(grouped))
-    assert set(grouped) | {"all"} == {o["value"] for o in _STATUS_FILTERS}
+    assert set(grouped) | {"all"} == {o["value"] for o in _status_filters(workflow)}
 
 
 def test_the_groups_hold_what_their_headings_say():
-    review, checks = _status_groups()
+    review, checks = _status_groups("independent")
     assert [o["value"] for o in review] == ["to_screen", "reviewed"]
     assert [o["value"] for o in checks] == ["crosscheck_flagged", "quick_test"]
+    # only assisted makes the AI one of the votes a paper waits for
+    review, _checks = _status_groups("assisted")
+    assert [o["value"] for o in review] == ["to_screen", "reviewed", "awaiting_ai"]
 
 
 @pytest.mark.parametrize(
     "value,group",
-    [("to_screen", "review"), ("reviewed", "review"), ("quick_test", "checks"), ("all", "all")],
+    [("to_screen", "review"), ("reviewed", "review"), ("awaiting_ai", "review"), ("quick_test", "checks"),
+     ("all", "all")],
 )
 def test_status_group_of(value, group):
     assert _status_group_of(value) == group

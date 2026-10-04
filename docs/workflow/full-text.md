@@ -60,7 +60,7 @@ Conversion **flags scanned / low-text PDFs**. The check is a simple character co
 
 ## 2. Full-text review
 
-Full-text screening has **its own workflow**, set on [**Protocol → Workflow**](../protocol.md#workflow) and independent of the abstract stage. The usual design is `assisted` at title/abstract and `independent` (two humans) at full text. Under `assisted` the AI's verdict here comes from AI extraction's per-criterion `flag_check`, so extraction has to have run for the AI to have a vote.
+Full-text screening has **its own workflow**, set on [**Protocol → Workflow**](../protocol.md#workflow) and independent of the abstract stage. The usual design is `assisted` at title/abstract and `independent` (two humans) at full text. Under `assisted` the AI's verdict here comes from AI extraction's per-criterion `flag_check`, so extraction has to have run for the AI to have a vote. Until it has, a paper you have reviewed is not settled: its card reads **Awaiting the AI's full-text verdict** where the extraction button would be, and the **Awaiting AI** status filter lists it.
 
 The **Full-text review** page lists each candidate with **include / exclude** controls. A paper becomes a candidate once abstract screening is **settled on include** for it and its markdown is available; one still waiting on a second reviewer, or in an unresolved abstract conflict, stays at the abstract stage. When you exclude a paper, **record the reason**; exclusion reasons are required for the PRISMA flow diagram, and recording them here means you never have to reconstruct them later.
 
