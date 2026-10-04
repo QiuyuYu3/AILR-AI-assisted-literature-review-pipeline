@@ -24,7 +24,10 @@ def tmp_project(tmp_path, monkeypatch):
     monkeypatch.setenv("AILR_PROJECT", str(root))
     monkeypatch.setattr(ui_project, "_project", None)              # reset get_project() cache
     monkeypatch.setattr(ui_project, "_RECENT_FILE", tmp_path / "recent.json")  # keep ~/.ailr untouched
-    return project
+    yield project
+    # an open SQLite file keeps Windows from deleting the folder; close the copy the UI loaded too
+    for p in {id(x): x for x in (project, ui_project._project) if x is not None}.values():
+        p.db.close()
 
 
 @pytest.fixture

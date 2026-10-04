@@ -172,6 +172,19 @@ class TestFinalExport:
         rows = list(csv.DictReader(io.StringIO(extraction_table_csv(export_project, extractor_type="final"))))
         assert [(r["extractor_id"], r["design"]) for r in rows] == [("amber", "observational")]
 
+    def test_a_reviewers_later_save_replaces_their_earlier_value(self, export_project):
+        """Saving appends rows, so the export must read each reviewer's newest row per field."""
+        sid = _add_included_source(export_project)
+        for design in ("observational", "experimental"):
+            export_project.db.insert_extraction(ExtractionResult(
+                extractor_type="human", extractor_id="amber", field_name="design", value=design, source_id=sid,
+            ))
+        export_project.db.mark_extraction_submitted(sid, "amber")
+        rows = list(csv.DictReader(io.StringIO(extraction_table_csv(export_project, extractor_type="final"))))
+        assert [(r["extractor_id"], r["design"]) for r in rows] == [("amber", "experimental")]
+        [rec] = json.loads(extraction_table_json(export_project, extractor_type="final"))
+        assert rec["fields"]["design"]["value"] == "experimental"
+
     def test_ris_carries_only_settled_includes_for_the_pdf_hunt(self, export_project):
         """The RIS file goes to Zotero to fetch full texts, so it lists what full-text review will
         need: a vote changed to exclude, a paper still in conflict and a flagged duplicate stay out."""

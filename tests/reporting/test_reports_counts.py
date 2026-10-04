@@ -7,18 +7,28 @@ Regressions guarded:
 """
 
 import json
+import re
 from pathlib import Path
 
-from ailr.core.config import save_project_type, save_stage_workflow
+import pytest
+
+from ailr.core.config import save_project_type, save_registration, save_stage_workflow
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.exports.methods import build_methods_skeleton
 from ailr.exports.prisma import build_prisma_report, build_prisma_svg, prisma_counts
 from ailr.ingest.dedup import TITLE_MATCH_THRESHOLD
-from ailr.metrics import binarize, decisions_for_pair, rater_overlaps
-from ailr.reviewers import ExtractionResult
+from ailr.llm.base import CallMetadata
+from ailr.metrics import (
+    BINARY_CATEGORIES,
+    binarize,
+    cohen_kappa_ci,
+    decisions_for_pair,
+    rater_overlaps,
+)
+from ailr.reviewers import ExtractionResult, ScreeningDecision
 from ailr.ui import reports_view
-from tests.helpers import add_source, component_text, vote
+from tests.helpers import add_source, component_text, set_config, vote
 
 
 def _add_source(project, title, with_md=False):
@@ -390,6 +400,126 @@ class TestMethodsNumbers:
         assert "A further 2 records were flagged by hand as duplicates" in build_methods_skeleton(tmp_project)
 
 
+# 12 AI/human pairs that read differently binary and three-way (worked by hand in test_calibration.py):
+# binary κ = 23/35, prevalence-adjusted κ = 2/3, agreement 10/12; three-way κ = 15/31.
+_AGREEMENT_TABLE = (
+    [("include", "include")] * 3 + [("exclude", "exclude")] * 4 + [("uncertain", "include")] * 2
+    + [("uncertain", "uncertain")] + [("include", "exclude")] + [("exclude", "uncertain")]
+)
+
+
+class TestMethodsAgreement:
+    """The agreement sentences, on votes where the wrong pairs, categories or stage give another figure."""
+
+    def _screened(self, project):
+        sids = []
+        for i, (ai, human) in enumerate(_AGREEMENT_TABLE):
+            sid = _add_source(project, f"P{i}")
+            vote(project.db, sid, ai, "gpt", stage="abstract", reviewer_type="ai")
+            vote(project.db, sid, human, "amber", stage="abstract")
+            sids.append(sid)
+        return sids
+
+    def test_kappa_is_binary_and_reported_with_its_interval_and_agreement(self, tmp_project):
+        self._screened(tmp_project)
+        lo, hi = cohen_kappa_ci(binarize(list(_AGREEMENT_TABLE)), categories=BINARY_CATEGORIES)
+        text = build_methods_skeleton(tmp_project)
+        assert ("Agreement between AI: gpt and amber on the 12 records both reviewers judged at title/abstract "
+                f"screening was Cohen's κ = 0.66 (95% CI [{lo:.2f}, {hi:.2f}], Fleiss-Cohen-Everitt") in text
+        assert "prevalence-adjusted κ = 0.67; percent agreement = 83.3%)" in text
+
+    def test_full_text_votes_stay_out_of_the_title_abstract_figure(self, tmp_project):
+        for sid in self._screened(tmp_project):
+            vote(tmp_project.db, sid, "include", "gpt", stage="full_text", reviewer_type="ai")
+            vote(tmp_project.db, sid, "exclude", "amber", stage="full_text")
+        text = build_methods_skeleton(tmp_project)
+        assert "judged at title/abstract screening was Cohen's κ = 0.66" in text
+        assert "judged at full-text review was Cohen's κ = 0.00" in text
+
+    def test_further_reviewer_pairs_are_listed_with_their_own_figures(self, tmp_project):
+        sids = self._screened(tmp_project)
+        # bob shares five records: he agrees with amber on all five and with the AI on three
+        for i, decision in ((0, "include"), (3, "exclude"), (4, "exclude"), (10, "exclude"), (11, "include")):
+            vote(tmp_project.db, sids[i], decision, "bob", stage="abstract")
+        text = build_methods_skeleton(tmp_project)
+        assert "Agreement between AI: gpt and amber on the 12 records" in text
+        assert "AI: gpt vs bob: κ = 0.17 (95% CI" in text and "amber vs bob: κ = 1.00 (95% CI" in text
+        assert text.count(", n = 5)") == 2
+
+
+class TestMethodsDesign:
+    """Which design paragraphs are written, and the settings and records they cite."""
+
+    def _ai_votes(self, project, *llm_params, stage="abstract"):
+        for i, params in enumerate(llm_params):
+            sid = _add_source(project, f"{stage} {i}")
+            project.db.insert_screening_decision(ScreeningDecision(
+                decision="include", reasoning="t", reviewer_type="ai", reviewer_id="gpt",
+                source_id=sid, stage=stage, llm_params=params,
+            ))
+
+    def test_assisted_screening_names_the_recorded_model_and_settings(self, tmp_project):
+        self._ai_votes(tmp_project, {"model": "claude-x", "temperature": 0.0, "seed": 7})
+        assert "screened by claude-x (temperature 0.0, seed 7) and one human reviewer" in build_methods_skeleton(tmp_project)
+
+    def test_each_recorded_configuration_is_named_with_its_count(self, tmp_project):
+        a = {"model": "claude-a", "temperature": 0.0}
+        self._ai_votes(tmp_project, a, a, a, {"model": "claude-b", "temperature": None})
+        text = build_methods_skeleton(tmp_project)
+        assert "claude-a (temperature 0.0, 3 rows) and claude-b (temperature not recorded, 1 rows)" in text
+
+    def test_full_text_rows_are_not_title_abstract_settings(self, tmp_project):
+        self._ai_votes(tmp_project, {"model": "claude-abstract", "temperature": 0.0})
+        self._ai_votes(tmp_project, {"model": "claude-fulltext", "temperature": 0.5}, stage="full_text")
+        text = build_methods_skeleton(tmp_project)
+        assert "screened by claude-abstract (temperature 0.0) and one human reviewer" in text
+
+    def test_with_nothing_recorded_the_configuration_is_cited_as_such(self, tmp_project):
+        project = set_config(tmp_project, "llm", model="claude-config", temperature=0.3)
+        text = build_methods_skeleton(project)
+        assert "screened by claude-config (temperature 0.3, per the current configuration)" in text
+
+    def test_independent_screening_reports_the_ai_as_a_reference_only(self, tmp_project):
+        for i, decision in enumerate(["include"] * 3 + ["exclude"] * 2 + ["uncertain"]):
+            vote(tmp_project.db, _add_source(tmp_project, f"P{i}"), decision, "gpt", stage="abstract", reviewer_type="ai")
+        save_stage_workflow(tmp_project.root, "screening", "independent")
+        text = build_methods_skeleton(Project(tmp_project.root))
+        assert "additionally run as a reference reviewer (not counted as one of the two required reviewers)" in text
+        assert "6 AI-screened records (3 include / 2 exclude / 1 uncertain)" in text
+
+    def test_verify_extraction_and_whether_criteria_were_rechecked(self, tmp_project):
+        text = build_methods_skeleton(tmp_project)
+        assert "(AI-extract + human-verify design)" in text and "(enabled for this project)" in text
+        assert "(disabled for this project)" in build_methods_skeleton(set_config(tmp_project, "extraction", flag_check=False))
+
+    def test_registration_and_protocol(self, tmp_project):
+        text = build_methods_skeleton(tmp_project)
+        assert "This review was not registered." in text and "No protocol was prepared in advance." in text
+        save_registration(tmp_project.root, "OSF", "10.17605/OSF.IO/ABCDE", "https://osf.io/abcde")
+        text = build_methods_skeleton(Project(tmp_project.root))
+        assert "This review was registered with OSF (10.17605/OSF.IO/ABCDE)." in text
+        assert "The protocol is available at https://osf.io/abcde." in text
+
+    def test_revisions_after_the_first_version_are_listed_as_amendments(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        db.save_artifact_version(pid, "criteria", '{"criteria": [{"id": "c1"}]}', "as first written")
+        assert "The protocol was not amended after the review began." in build_methods_skeleton(tmp_project)
+        db.save_artifact_version(pid, "criteria", '{"criteria": [{"id": "c1"}, {"id": "c2"}]}', "added c2")
+        text = build_methods_skeleton(tmp_project)
+        assert "1 amendment(s) were made to the protocol after its first version." in text
+        assert "| Eligibility criteria | v2 |" in text and "| added c2 |" in text
+
+    def test_llm_calls_and_tokens_are_totalled(self, tmp_project):
+        text = build_methods_skeleton(tmp_project)
+        assert "Total LLM calls" not in text and "not guaranteed to reproduce" not in text
+        for n_in, n_out in ((1000, 200), (1500, 300)):
+            tmp_project.db.insert_api_call(tmp_project.project_id, CallMetadata(
+                provider="anthropic", model="claude-x", input_tokens=n_in, output_tokens=n_out))
+        text = build_methods_skeleton(tmp_project)
+        assert "Total LLM calls: 2. Total tokens (in + out): 3,000." in text
+        assert "not guaranteed to reproduce identical model outputs" in text
+
+
 class TestReportAndSvgShareCounts:
     def test_markdown_report_renders_the_counts(self, tmp_project):
         _pipeline_state(tmp_project)
@@ -411,6 +541,138 @@ class TestReportAndSvgShareCounts:
         assert f"{c['reports_sought']} reports sought for retrieval" in svg
         assert f"{c['full_text_assessed']} full-text studies assessed" in svg
         assert f"{c['studies_included']} studies included" in svg
+
+
+def _distinct_counts(two_arms=False) -> dict:
+    """Counts in which no two boxes share a number: totals 1xx, database arm 2xx, other arm 3xx."""
+    def arm(base):
+        keys = ("identified", "duplicates", "after_dedup", "screened", "excluded_abstract", "abstract_pending",
+                "sought", "retrieved", "not_retrieved", "assessed", "excluded_full_text")
+        out = {k: base + i for i, k in enumerate(keys, start=1)}
+        out.update(full_text_exclusion_reasons=[{"reason": "Wrong population", "n": base + 12}],
+                   full_text_pending=base + 13, included=base + 14, included_reports=base + 15)
+        return out
+
+    other = arm(300) if two_arms else {**arm(300), "identified": 0}
+    keys = ("records_identified", "duplicates_removed", "duplicates_flagged", "records_after_dedup",
+            "abstract_screened", "abstract_excluded", "abstract_pending", "ai_abstract_screened",
+            "ai_abstract_included", "ai_abstract_excluded", "ai_abstract_uncertain", "reports_sought",
+            "reports_retrieved", "reports_not_retrieved", "full_text_assessed", "full_text_excluded_reports")
+    counts = {k: 100 + i for i, k in enumerate(keys, start=1)}
+    counts.update(
+        project_name="Distinct", project_type="systematic",
+        by_source_database=[{"source_database": "PubMed", "n": 401}],
+        by_route={"database": [{"source_database": "PubMed", "n": 401}],
+                  "other": [{"source_database": "Citation searching", "n": 402}] if two_arms else []},
+        database_arm=arm(200), other_arm=other,
+        full_text_exclusion_reasons=[{"reason": "Wrong population", "n": 117}, {"reason": "Wrong design", "n": 118}],
+        full_text_pending=119, studies_included=120, reports_included=121, studies_extracted=122,
+    )
+    return counts
+
+
+def _svg_boxes(svg: str) -> list[list[str]]:
+    return [re.findall(r"<tspan[^>]*>(.*?)</tspan>", text) for text in re.findall(r"<text[^>]*>(.*?)</text>", svg)]
+
+
+def _numbers(text: str) -> set[int]:
+    return {int(n) for n in re.findall(r"\b[1-4]\d\d\b", text)}
+
+
+class TestEveryBoxShowsItsOwnNumber:
+    """The renderers fed counts in which no two boxes are equal; on real data several boxes are often 1."""
+
+    @pytest.fixture
+    def counts(self, monkeypatch):
+        def use(two_arms=False):
+            c = _distinct_counts(two_arms)
+            monkeypatch.setattr("ailr.exports.prisma.prisma_counts", lambda _project: c)
+            return c
+        return use
+
+    def test_svg_single_column(self, tmp_project, counts):
+        counts()
+        assert _svg_boxes(build_prisma_svg(tmp_project)) == [
+            ["101 records identified", "PubMed: 401"],
+            ["102 duplicates removed"],
+            ["104 records after duplicates removed"],
+            ["106 excluded at title/abstract", "107 awaiting a decision"],
+            ["112 reports sought for retrieval"],
+            ["114 reports not retrieved"],
+            ["115 full-text studies assessed"],
+            ["116 excluded, with reasons:", "  Wrong population: 117", "  Wrong design: 118", "119 awaiting a decision"],
+            ["120 studies included", "in 121 reports", "of which extracted: 122"],
+        ]
+
+    def test_svg_two_arms(self, tmp_project, counts):
+        counts(two_arms=True)
+        assert _svg_boxes(build_prisma_svg(tmp_project)) == [
+            ["Via databases and registers", "201 records identified", "PubMed: 401"],
+            ["202 duplicates removed"],
+            ["203 records after duplicates removed"],
+            ["205 excluded at title/abstract", "206 awaiting a decision"],
+            ["207 reports sought for retrieval"],
+            ["209 reports not retrieved"],
+            ["210 full-text studies assessed"],
+            ["211 excluded, with reasons:", "  Wrong population: 212", "213 awaiting a decision"],
+            ["120 studies included", "in 121 reports", "of which extracted: 122"],
+            ["Via other methods", "301 records identified", "Citation searching: 402"],
+            ["307 reports sought for retrieval"],
+            ["310 full-text studies assessed"],
+        ]
+
+    def test_markdown_report(self, tmp_project, counts):
+        counts()
+        report = build_prisma_report(tmp_project)
+        sections = {part.split("\n", 1)[0]: part for part in report.split("\n## ")[1:]}
+        assert _numbers(sections["Identification"]) == {101, 102, 104, 401}
+        assert _numbers(sections["Screening (Title + Abstract)"]) == {105, 106, 107, 108, 109, 110, 111}
+        assert _numbers(sections["Eligibility (Full Text)"]) == {112, 114, 115, 116, 117, 118, 119}
+        assert _numbers(sections["Included"]) == {120, 121, 122}
+        for line in ("**Total records identified:** 101", "**Duplicates removed:** 102 ", "**Records after deduplication:** 104",
+                     "**Records screened:** 105", "- excluded: 106", "- awaiting a decision: 107", "108 screened",
+                     "include 109, exclude 110, uncertain 111", "**Reports sought for retrieval:** 112",
+                     "**Reports not retrieved:** 114", "**Reports assessed for eligibility:** 115",
+                     "- awaiting a decision: 119", "**Full-text reports excluded, with reasons:** 116",
+                     "- Wrong population: 117", "- Wrong design: 118", "**Studies included:** 120",
+                     "**Reports of included studies:** 121", "- with completed extraction: 122"):
+            assert line in report, line
+
+    def test_markdown_report_two_arms(self, tmp_project, counts):
+        counts(two_arms=True)
+        report = build_prisma_report(tmp_project)
+        identification = report.split("## Identification")[1].split("## Screening")[0]
+        databases, other = identification.split("### Via other methods")
+        assert "- PubMed: 401" in databases and "**Records identified:** 201" in databases
+        assert "- Citation searching: 402" in other and "**Records identified:** 301" in other
+        assert [line for line in report.splitlines() if line.startswith("| ") and "Other methods" not in line] == [
+            "| Records identified | 201 | 301 |",
+            "| Duplicates removed | 202 | 302 |",
+            "| Records after duplicates removed | 203 | 303 |",
+            "| Records screened | 204 | 304 |",
+            "| Reports sought for retrieval | 207 | 307 |",
+            "| Reports assessed for eligibility | 210 | 310 |",
+            "| Studies included | 214 | 314 |",
+        ]
+
+    def test_reports_page(self, counts):
+        text = component_text(reports_view._prisma_diagram(counts()))
+        expected = ["101 records identified", "PubMed: 401", "102 duplicates removed before screening",
+                    "104 records after duplicates removed", "106 studies excluded at title/abstract",
+                    "107 awaiting a decision", "112 reports sought for retrieval",
+                    "114 reports not retrieved (no full text)", "115 full-text studies assessed for eligibility",
+                    "116 studies excluded, with reasons:", "Wrong population: 117", "Wrong design: 118",
+                    "119 awaiting a decision", "120 studies included"]
+        found = [text.find(s) for s in expected]
+        assert -1 not in found and found == sorted(found), list(zip(expected, found))
+
+    def test_reports_page_two_arms(self, counts):
+        text = component_text(reports_view._prisma_diagram(counts(two_arms=True)))
+        for s in ("101 records identified", "Via databases and registers: 201", "Via other methods: 301",
+                  "Citation searching: 402", "104 records after duplicates removed", "Records identified 301",
+                  "Duplicates removed 302", "Reports sought for retrieval 307",
+                  "Reports assessed for eligibility 310", "Studies included 314"):
+            assert s in text, s
 
 
 class TestReportText:
