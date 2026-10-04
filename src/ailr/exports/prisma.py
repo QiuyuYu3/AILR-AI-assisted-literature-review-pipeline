@@ -5,26 +5,50 @@ Generates a Markdown report. SVG diagram is a future enhancement.
 
 from typing import Any
 
+from ailr.core.config import extractors_for
 from ailr.core.project import Project
 
 
-def _arm_counts(db: Any, pid: int, route: str, workflow: str, ft_workflow: str) -> dict[str, int]:
+def _arm_counts(db: Any, pid: int, route: str, workflow: str, ft_workflow: str) -> dict[str, Any]:
     """The boxes PRISMA 2020 draws for one identification arm. The 'other methods' arm has no
     deduplication or title/abstract box in the template, but ailr screens both arms through the
-    same queue, so the same numbers are reported for each."""
+    same queue, so the same numbers are reported for each. `identified` is counted before
+    deduplication, as PRISMA reads it."""
     sought = db.count_final_includes(pid, "abstract", workflow=workflow, route=route)
     not_retrieved = db.count_final_includes(pid, "abstract", workflow=workflow, route=route, not_retrieved=True)
+    after_dedup = db.count_sources(pid, route=route, exclude_duplicates=True)
+    duplicates = db.count_duplicates(pid, route=route)
+    screened = db.count_sources_screened(pid, "human", stage="abstract", route=route, exclude_duplicates=True)
+    excluded_abstract = len(db.final_exclude_ids(pid, "abstract", workflow=workflow, route=route))
+    assessed = db.count_sources_screened(pid, "human", stage="full_text", route=route, exclude_duplicates=True)
+    excluded_full_text = db.count_full_text_excluded_reports(pid, workflow=ft_workflow, route=route)
+    included_reports = db.count_final_includes(pid, "full_text", workflow=ft_workflow, route=route)
     return {
-        "identified": db.count_sources(pid, route=route),
-        "screened": db.count_sources_screened(pid, "human", stage="abstract", route=route),
-        "excluded_abstract": db.screening_summary(pid, "human", stage="abstract", route=route)["exclude"],
+        "identified": after_dedup + duplicates,
+        "duplicates": duplicates,
+        "after_dedup": after_dedup,
+        "screened": screened,
+        "excluded_abstract": excluded_abstract,
+        "abstract_pending": max(screened - excluded_abstract - sought, 0),
         "sought": sought,
         "retrieved": max(sought - not_retrieved, 0),
         "not_retrieved": not_retrieved,
-        "assessed": db.count_sources_screened(pid, "human", stage="full_text", route=route),
+        "assessed": assessed,
+        "excluded_full_text": excluded_full_text,
+        "full_text_exclusion_reasons": db.full_text_exclusion_counts(pid, workflow=ft_workflow, route=route),
+        "full_text_pending": max(assessed - excluded_full_text - included_reports, 0),
         "included": db.count_final_include_studies(pid, workflow=ft_workflow, route=route),
-        "included_reports": db.count_final_includes(pid, "full_text", workflow=ft_workflow, route=route),
+        "included_reports": included_reports,
     }
+
+
+def _extraction_completed(db: Any, extraction_workflow: str, source_ids: set[int]) -> set[int]:
+    """Reports whose extraction has its final record: the checker's submission under verify, the
+    saved consensus when two extractors work independently."""
+    ids = list(source_ids)
+    if extractors_for(extraction_workflow) > 1:
+        return db.sources_with_consensus(ids)
+    return set(db.human_extractors_for_sources(ids))
 
 
 def prisma_counts(project: Project) -> dict[str, Any]:
@@ -36,29 +60,32 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     workflow = project.config.screening_workflow("abstract")
     ft_workflow = project.config.screening_workflow("full_text")
 
-    total_sources = db.count_sources(pid)
+    # A duplicate flagged by hand during screening was, in PRISMA terms, removed before screening
+    # like one dropped at import, so it is counted there and in none of the boxes below.
     duplicates_removed = db.count_duplicates(pid)
+    records_after_dedup = db.count_sources(pid, exclude_duplicates=True)
 
-    abstract = db.screening_summary(pid, "human", stage="abstract")
-    full_text = db.screening_summary(pid, "human", stage="full_text")
-    ai_abstract = db.screening_summary(pid, "ai", stage="abstract")
+    ai_abstract = db.screening_summary(pid, "ai", stage="abstract", exclude_duplicates=True)
 
     # Flow numbers count PAPERS (a paper two reviewers both decided counts once, and a
-    # reconciliation overrides the votes); the include/exclude/uncertain breakdowns stay
-    # decision-based (latest per reviewer) — identical in assisted mode (one human per paper).
-    abstract_screened = db.count_sources_screened(pid, "human", stage="abstract")
+    # reconciliation overrides the votes). Excluded and included alike hold only papers whose stage
+    # is settled, so every screened paper is excluded, carried forward, or still awaiting a decision.
+    abstract_screened = db.count_sources_screened(pid, "human", stage="abstract", exclude_duplicates=True)
+    abstract_excluded = len(db.final_exclude_ids(pid, "abstract", workflow=workflow))
     reports_sought = db.count_final_includes(pid, "abstract", workflow=workflow)
     # "Not retrieved" is what a human marked as unobtainable, not merely what has no markdown yet:
     # an unconverted PDF is work outstanding, which PRISMA does not report as a retrieval failure.
     reports_not_retrieved = db.count_final_includes(pid, "abstract", workflow=workflow, not_retrieved=True)
     reports_retrieved = max(reports_sought - reports_not_retrieved, 0)
-    full_text_assessed = db.count_sources_screened(pid, "human", stage="full_text")
+    full_text_assessed = db.count_sources_screened(pid, "human", stage="full_text", exclude_duplicates=True)
+    # Papers, not votes: two reviewers excluding the same report is one excluded report.
+    full_text_excluded_reports = db.count_full_text_excluded_reports(pid, workflow=ft_workflow)
     # PRISMA's included box counts studies and their reports separately: several publications of
     # one study are one study. The two are equal unless companion reports have been grouped.
     studies_included = db.count_final_include_studies(pid, workflow=ft_workflow)
-    reports_included = db.count_final_includes(pid, "full_text", workflow=ft_workflow)
-
-    sources_extracted = db.count_sources_with_extraction(pid, "ai")
+    included_report_ids = db.final_include_ids(pid, "full_text", workflow=ft_workflow)
+    reports_included = len(included_report_ids)
+    extracted = _extraction_completed(db, project.config.extraction.workflow, included_report_ids)
 
     return {
         "project_name": project.config.project.name,
@@ -69,12 +96,13 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         "by_route": db.sources_by_route_and_database(pid),
         "database_arm": _arm_counts(db, pid, "database", workflow, ft_workflow),
         "other_arm": _arm_counts(db, pid, "other", workflow, ft_workflow),
-        "records_identified": total_sources + duplicates_removed,
+        "records_identified": records_after_dedup + duplicates_removed,
         "duplicates_removed": duplicates_removed,
-        "records_after_dedup": total_sources,
+        "duplicates_flagged": len(db.list_manual_duplicates(pid)),
+        "records_after_dedup": records_after_dedup,
         "abstract_screened": abstract_screened,
-        "abstract_excluded": abstract["exclude"],
-        "abstract_uncertain": abstract["uncertain"],
+        "abstract_excluded": abstract_excluded,
+        "abstract_pending": max(abstract_screened - abstract_excluded - reports_sought, 0),
         "ai_abstract_screened": sum(ai_abstract.values()),
         "ai_abstract_included": ai_abstract["include"],
         "ai_abstract_excluded": ai_abstract["exclude"],
@@ -83,12 +111,13 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         "reports_retrieved": reports_retrieved,
         "reports_not_retrieved": reports_not_retrieved,
         "full_text_assessed": full_text_assessed,
-        "full_text_excluded": full_text["exclude"],
-        # Papers, not votes: two reviewers excluding the same report is one excluded report.
-        "full_text_excluded_reports": db.count_full_text_excluded_reports(pid),
+        "full_text_excluded_reports": full_text_excluded_reports,
+        "full_text_exclusion_reasons": db.full_text_exclusion_counts(pid, workflow=ft_workflow),
+        "full_text_pending": max(full_text_assessed - full_text_excluded_reports - reports_included, 0),
         "studies_included": studies_included,
         "reports_included": reports_included,
-        "studies_extracted": sources_extracted,
+        # Included reports whose extraction has its final record, not merely an AI pass.
+        "studies_extracted": len(extracted),
     }
 
 
@@ -135,7 +164,8 @@ def build_prisma_report(project: Project) -> str:
     lines.append("")
     lines.append(f"**Records screened:** {c['abstract_screened']}")
     lines.append(f"- excluded: {c['abstract_excluded']}")
-    lines.append(f"- uncertain: {c['abstract_uncertain']}")
+    if c["abstract_pending"]:
+        lines.append(f"- awaiting a decision: {c['abstract_pending']}")
     lines.append("")
     lines.append(
         f"_AI reference (separate from the human flow): {c['ai_abstract_screened']} screened "
@@ -148,9 +178,11 @@ def build_prisma_report(project: Project) -> str:
     lines.append(f"**Reports sought for retrieval:** {c['reports_sought']}")
     lines.append(f"**Reports not retrieved:** {c['reports_not_retrieved']}")
     lines.append(f"**Reports assessed for eligibility:** {c['full_text_assessed']}")
+    if c["full_text_pending"]:
+        lines.append(f"- awaiting a decision: {c['full_text_pending']}")
     lines.append("")
 
-    exclusion_counts = project.db.full_text_exclusion_counts(project.project_id)
+    exclusion_counts = c["full_text_exclusion_reasons"]
     if exclusion_counts:
         total_excluded = c["full_text_excluded_reports"]
         lines.append(f"**Full-text reports excluded, with reasons:** {total_excluded}")
@@ -168,6 +200,8 @@ def build_prisma_report(project: Project) -> str:
         lines.append("|---|---|---|")
         for label, key in (
             ("Records identified", "identified"),
+            ("Duplicates removed", "duplicates"),
+            ("Records after duplicates removed", "after_dedup"),
             ("Records screened", "screened"),
             ("Reports sought for retrieval", "sought"),
             ("Reports assessed for eligibility", "assessed"),
@@ -181,7 +215,7 @@ def build_prisma_report(project: Project) -> str:
     lines.append(f"**Studies included:** {c['studies_included']}")
     if c["reports_included"] != c["studies_included"]:
         lines.append(f"**Reports of included studies:** {c['reports_included']}")
-    lines.append(f"- with completed AI extraction: {c['studies_extracted']}")
+    lines.append(f"- with completed extraction: {c['studies_extracted']}")
     lines.append("")
 
     lines.append("---")
@@ -216,9 +250,22 @@ def _svg_box(x: float, y: float, w: float, text_lines: list[tuple[str, bool]], d
     return rect + text_el, h
 
 
+def _side_boxes(col: dict[str, Any]) -> tuple:
+    """The dashed boxes beside one flow column, all read from that column's own numbers."""
+    dup = [(f"{col['duplicates']} duplicates removed", False)] if col["duplicates"] else None
+    abstract = [(f"{col['excluded_abstract']} excluded at title/abstract", False)]
+    if col["abstract_pending"]:
+        abstract.append((f"{col['abstract_pending']} awaiting a decision", False))
+    notret = [(f"{col['not_retrieved']} reports not retrieved", False)] if col["not_retrieved"] else None
+    full_text = [(f"{col['excluded_full_text']} excluded, with reasons:", False)]
+    full_text += [(f"  {r['reason']}: {r['n']}", False) for r in col["full_text_exclusion_reasons"]]
+    if col["full_text_pending"]:
+        full_text.append((f"{col['full_text_pending']} awaiting a decision", False))
+    return dup, abstract, notret, full_text
+
+
 def build_prisma_svg(project: Project) -> str:
     c = prisma_counts(project)
-    ft_excl = project.db.full_text_exclusion_counts(project.project_id)
 
     # PRISMA 2020 draws a second identification arm for records found outside database searching.
     # With none of those, the diagram stays single-column and the main column carries the totals.
@@ -233,10 +280,17 @@ def build_prisma_svg(project: Project) -> str:
         ident_lines = [(f"{c['records_identified']} records identified", True)]
         ident_lines += [(f"{d['source_database']}: {d['n']}", False) for d in c["by_source_database"]]
 
-    dup_side = [(f"{c['duplicates_removed']} duplicates removed", False)] if c["duplicates_removed"] else None
-    abs_side = [(f"{c['abstract_excluded']} excluded at title/abstract", False)]
-    notret_side = [(f"{c['reports_not_retrieved']} reports not retrieved", False)] if c["reports_not_retrieved"] else None
-    ftx_side = [(f"{c['full_text_excluded_reports']} excluded, with reasons:", False)] + [(f"  {r['reason']}: {r['n']}", False) for r in ft_excl]
+    # In two-arm mode the main column is the database arm, so its side boxes are that arm's too.
+    column = main if two_arms else {
+        "duplicates": c["duplicates_removed"],
+        "excluded_abstract": c["abstract_excluded"],
+        "abstract_pending": c["abstract_pending"],
+        "not_retrieved": c["reports_not_retrieved"],
+        "excluded_full_text": c["full_text_excluded_reports"],
+        "full_text_exclusion_reasons": c["full_text_exclusion_reasons"],
+        "full_text_pending": c["full_text_pending"],
+    }
+    dup_side, abs_side, notret_side, ftx_side = _side_boxes(column)
 
     # PRISMA's included box names studies and their reports; the second line is dropped when no
     # companion reports have been grouped, since it would just repeat the first.
@@ -246,10 +300,9 @@ def build_prisma_svg(project: Project) -> str:
     included_box.append((f"of which extracted: {c['studies_extracted']}", False))
 
     if two_arms:
-        after_dedup = f"{max(main['identified'] - c['duplicates_removed'], 0)} records after duplicates removed"
         stage_rows = [
             ([("Via databases and registers", True)] + ident_lines[1:], dup_side),
-            ([(after_dedup, True)], abs_side),
+            ([(f"{main['after_dedup']} records after duplicates removed", True)], abs_side),
             ([(f"{main['sought']} reports sought for retrieval", True)], notret_side),
             ([(f"{main['assessed']} full-text studies assessed", True)], ftx_side),
             (included_box, None),

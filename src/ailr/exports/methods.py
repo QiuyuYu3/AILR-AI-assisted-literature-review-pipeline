@@ -2,7 +2,11 @@
 
 from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
-from ailr.ingest.dedup import TITLE_MATCH_THRESHOLD
+from ailr.ingest.dedup import (
+    TITLE_MATCH_MAX_YEAR_GAP,
+    TITLE_MATCH_SCORER_NAME,
+    TITLE_MATCH_THRESHOLD,
+)
 from ailr.metrics import (
     BINARY_CATEGORIES,
     binarize,
@@ -93,7 +97,7 @@ def _registration_lines(cfg, db, pid: int) -> list[str]:
 def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
     """Agreement for the reviewer pair with the most shared records at this stage, plus a short
     line for any further pairs. Votes are read pre-adjudication and `uncertain` counts as include
-    (an uncertain record carries forward), so the figures describe the screening decision itself."""
+    (an uncertain vote does not exclude), so the figures describe the screening decision itself."""
     rows = db.latest_decisions_by_rater(pid, stage)
     overlaps = rater_overlaps(rows)
     if not overlaps:
@@ -114,8 +118,9 @@ def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
         f"{label} was Cohen's κ = {_fmt(kappa)} (95% CI {_fmt_ci(ci)}, Fleiss-Cohen-Everitt "
         f"asymptotic variance; prevalence-adjusted κ = {_fmt(pb)}; percent "
         f"agreement = {agree_str}), computed on the votes as first cast, before conflicts were "
-        f"reconciled. Records voted uncertain were counted as includes, since an uncertain record "
-        f"carries forward to the next stage.",
+        f"reconciled. Records voted uncertain were counted as includes when computing agreement, "
+        f"since an uncertain vote does not exclude a record; such records did not advance until "
+        f"the uncertainty was resolved.",
     ]
     if len(overlaps) > 1:
         others = [(x, y, n, _stats(x, y)) for x, y, n in overlaps[1:]]
@@ -160,11 +165,18 @@ def build_methods_skeleton(
     lines.append("")
     lines.extend(_registration_lines(cfg, db, pid))
     lines.append("## Search and ingestion")
-    lines.append(
+    ingestion = (
         f"Records were identified through searches of {db_str} (N = {counts['records_identified']} retrieved). "
-        f"Deduplication was performed at ingestion using exact DOI matching followed by rapidfuzz token-set ratio "
-        f"on titles (threshold = {TITLE_MATCH_THRESHOLD})."
+        f"Deduplication was performed at ingestion using exact DOI matching followed by rapidfuzz "
+        f"{TITLE_MATCH_SCORER_NAME} on titles (threshold = {TITLE_MATCH_THRESHOLD}); title matches whose "
+        f"publication years differed by more than {TITLE_MATCH_MAX_YEAR_GAP} year were not merged."
     )
+    if counts["duplicates_flagged"]:
+        ingestion += (
+            f" A further {counts['duplicates_flagged']} records were flagged by hand as duplicates during "
+            f"screening and are reported among the duplicates removed."
+        )
+    lines.append(ingestion)
     strategies = db.list_search_strategies(pid)
     if strategies:
         lines.append("")
@@ -190,7 +202,7 @@ def build_methods_skeleton(
         lines.append(
             "Titles and abstracts were screened independently by two human reviewers (Cochrane dual-blind design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score and "
-            f"supporting quotes from the abstract. {counts['abstract_screened']} human screening decisions were recorded."
+            f"supporting quotes from the abstract. {counts['abstract_screened']} records were screened by human reviewers."
         )
         if counts["ai_abstract_screened"] > 0:
             lines.append("")
@@ -237,6 +249,12 @@ def build_methods_skeleton(
         f"Full-text PDFs of included records were converted to markdown using the {cfg.preprocess.pdf_backend} backend"
         + (", with references sections stripped." if cfg.preprocess.strip_references else ".")
     )
+    # Completed means the extraction has its final record (see prisma._extraction_completed).
+    included_noun = "reports" if counts["reports_included"] != counts["studies_included"] else "studies"
+    completed = (
+        f"Extraction was completed for {counts['studies_extracted']} of the "
+        f"{counts['reports_included']} included {included_noun}."
+    )
     if cfg.extraction.workflow == "verify":
         lines.append(
             f"Structured extraction was performed by {extract_model} using the project's schema (see `schema.yaml`), "
@@ -244,16 +262,17 @@ def build_methods_skeleton(
             f"where necessary, corrected the AI-extracted fields against the full text (AI-extract + human-verify design). "
             f"After extraction, inclusion criteria were re-verified against the full text "
             f"({'enabled' if cfg.extraction.flag_check else 'disabled'} for this project). "
-            f"{counts['studies_included']} studies completed extraction."
+            f"{completed}"
         )
     else:
         lines.append(
-            f"Structured extraction was performed independently by a human reviewer and by {extract_model} "
-            f"using the project's schema (see `schema.yaml`), each blinded to the other until human submission. "
-            f"Each leaf field was paired with a verbatim quote from the paper. "
+            f"Structured extraction was performed independently by two human reviewers using the project's schema "
+            f"(see `schema.yaml`), each blinded to the other and to the AI extraction ({extract_model}) until they "
+            f"had submitted. Each leaf field was paired with a verbatim quote from the paper, and disagreements were "
+            f"reconciled into a single consensus record. "
             f"After extraction, inclusion criteria were re-verified against the full text "
             f"({'enabled' if cfg.extraction.flag_check else 'disabled'} for this project). "
-            f"{counts['studies_included']} studies completed extraction."
+            f"{completed}"
         )
     lines.append("")
     lines.append("## Reporting")

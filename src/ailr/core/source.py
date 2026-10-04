@@ -34,7 +34,7 @@ class Source:
 
 
 _RECORD_FIELDS = ("title", "doi", "pmid", "abstract", "authors", "year", "journal",
-                  "source_database", "metadata")
+                  "source_database", "identification_route", "metadata")
 
 
 def source_to_record(src: "Source") -> dict[str, Any]:

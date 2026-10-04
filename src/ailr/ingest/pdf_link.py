@@ -10,13 +10,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import rispy
-from rapidfuzz import fuzz
 
 from ailr.core.pdf_paths import portable_path
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.exceptions import InputNotFoundError
-from ailr.ingest.dedup import normalize_title
+from ailr.ingest.dedup import TITLE_MATCH_SCORER, normalize_title
 from ailr.ingest.ris import pdf_attachment_from_record
 
 _TITLE_THRESHOLD = 90
@@ -181,7 +180,7 @@ def _match_source(
     if not title:
         return None
     new_norm = normalize_title(title)
-    scored = [(fuzz.token_set_ratio(new_norm, ex_norm), ex_src) for ex_norm, ex_src in existing_norms]
+    scored = [(TITLE_MATCH_SCORER(new_norm, ex_norm), ex_src) for ex_norm, ex_src in existing_norms]
     if not scored:
         return None
     best_score = max(s for s, _ in scored)

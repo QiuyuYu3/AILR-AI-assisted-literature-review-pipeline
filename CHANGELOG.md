@@ -3,6 +3,21 @@
 ---
 ## [Unreleased]
 
+### Changed
+- Calibration κ counts uncertain as include, as the methods text and Reports do; the three-way κ is shown beside it on the calibration page and in Reports.
+
+### Fixed
+- PRISMA excluded boxes counted votes, not papers: two reviewers excluding one record counted it twice, and a paper still in conflict counted as excluded. They now follow the settled rule of the included boxes, and the flow lists papers awaiting a decision.
+- Duplicates flagged by hand stayed in PRISMA's after-deduplication, screened, and sought counts; they now count as duplicates removed.
+- Two-arm PRISMA: the SVG subtracted the duplicates twice, and an arm's records identified left out its own duplicates. Arms are counted before deduplication, and a duplicate dropped at import keeps its arm.
+- Methods text printed the records screened as "human screening decisions" and the included studies as "studies completed extraction"; it now says "N of M included studies" with a final extraction record.
+- Title deduplication scored a title that is a word subset of another as a perfect match, so a short title could merge with, and be overwritten by, a different paper. It uses token-sort ratio now and refuses title matches more than a year apart; PDF linking uses the same scorer.
+- RIS export and AI extraction candidates took any include ever cast, AI-only and later-reversed ones included; both now follow the full-text queue.
+- The final extraction export included drafts nobody had submitted.
+
+---
+## [0.36.0] – 2026-10-04
+
 ### Added
 - Full-text queue: an "In progress (mine)" status filter for papers you have saved but not submitted. It is a subset of "To extract", which keeps listing drafts.
 - Cross-check now covers title/abstract screening on the same principle as extraction: the deterministic layer matches evidence quotes against the abstract and checks the record's own consistency (criterion IDs, per-criterion verdicts, decision against those verdicts), and the LLM layer asks a second model whether the abstract supports the recorded decision. Runs from the AI screening page; findings appear as a badge and a Cross-check link on the card, and as a "Cross-check flagged" queue filter.

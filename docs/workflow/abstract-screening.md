@@ -24,7 +24,7 @@ Calibration tests the prompt on a small sample, so you trust it before spending 
 
 **Quick test** runs the prompt on a few abstracts and lets you read the AI's reasoning *without* touching your real decisions. Use it while you are still editing the wording. Choose **Random sample** (N) or **Pick specific papers** (search by author / title / DOI / id) to test on cases you care about.
 
-To judge those same papers yourself, go to **Screening → status "Last quick test"**: it lists exactly the papers the most recent quick test covered, without showing you the AI's verdict. Decide them, then compare against the AI's output on the calibration page. Cohen's κ against every AI decision in the review is on the [Reports](reports.md) page.
+To judge those same papers yourself, go to **Screening → status "Last quick test"**: it lists exactly the papers the most recent quick test covered, without showing you the AI's verdict. Decide them, then compare against the AI's output on the calibration page. The calibration κ counts uncertain as include, the way the methods text reports κ, and the stricter three-way κ is shown beside it. Cohen's κ against every AI decision in the review is on the [Reports](reports.md) page.
 
 Iterate the prompt until agreement is acceptable. Each run snapshots a **prompt version**, so every later decision can be traced back to the exact wording that produced it, and you never lose track of which prompt screened which papers.
 

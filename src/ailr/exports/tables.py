@@ -70,13 +70,18 @@ def _cell_value(field_name: str, owning: FieldSpec, value: Any, *, is_leaf: bool
 
 
 def _source_extraction_rows(db: Any, source_id: int, extractor_type: str) -> list[dict]:
-    """Rows for one source. `final` means the adjudicated record when there is one, else the raw
-    human record(s) — so a reconciled paper exports as one agreed row, and an unreconciled one
-    still exports every reviewer separately rather than silently picking a winner."""
+    """Rows for one source. `final` means the adjudicated record when there is one, else the
+    submitted human record(s) — so a reconciled paper exports as one agreed row, and an
+    unreconciled one still exports every reviewer separately rather than silently picking a
+    winner. A draft nobody has submitted is work in progress, not a record, and stays out."""
     if extractor_type != "final":
         return db.list_extractions(source_id, extractor_type=extractor_type)
     consensus = db.list_extractions(source_id, extractor_type="consensus")
-    return consensus or db.list_extractions(source_id, extractor_type="human")
+    if consensus:
+        return consensus
+    human = db.list_extractions(source_id, extractor_type="human")
+    submitted = {r["extractor_id"] for r in human if r["field_name"] == "_submitted"}
+    return [r for r in human if r["extractor_id"] in submitted]
 
 
 def _group_by_extractor(ex_rows: list[dict]) -> dict[str, dict[str, Any]]:

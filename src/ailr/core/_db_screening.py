@@ -73,22 +73,15 @@ def _last_quick_test_sql(stage: str) -> tuple[str, str]:
     )
 
 
-def stage_final_include_sql(stage: str, team_size: int = 1) -> str:
-    """The `_FINAL_INCLUDE_PREDICATE` rule for one stage, as a parameterless fragment (the stage is
-    a literal here and team_size is an int this module controls) so callers can drop it into a
-    larger WHERE without disturbing their own placeholder order.
-
-    Reads the latest vote PER REVIEWER, not the single most recent row for the paper: with two
-    reviewers the latter made the answer depend on who happened to vote last. Papers whose
-    reviewers disagree still pass; the caller subtracts unresolved_conflict_ids.
-    """
+def _stage_final_sql(stage: str, team_size: int, verdict: str) -> str:
+    """A stage finished for the paper and settled on `verdict`, as a parameterless fragment."""
     rec_stage = reconcile_stage_for(stage)
     return f"""(
     EXISTS (SELECT 1 FROM reconciliations r
-            WHERE r.source_id = s.id AND r.stage = '{rec_stage}' AND r.final_value = 'include')
+            WHERE r.source_id = s.id AND r.stage = '{rec_stage}' AND r.final_value = '{verdict}')
     OR (EXISTS (SELECT 1 FROM screening_decisions d
                 WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = '{stage}'
-                  AND d.decision = 'include'
+                  AND d.decision = '{verdict}'
                   AND d.id = (SELECT MAX(id) FROM screening_decisions
                               WHERE source_id = d.source_id AND reviewer_id = d.reviewer_id
                                 AND reviewer_type = 'human' AND stage = '{stage}'))
@@ -99,9 +92,30 @@ def stage_final_include_sql(stage: str, team_size: int = 1) -> str:
 )"""
 
 
+def stage_final_include_sql(stage: str, team_size: int = 1) -> str:
+    """The `_FINAL_INCLUDE_PREDICATE` rule for one stage, as a parameterless fragment (the stage is
+    a literal here and team_size is an int this module controls) so callers can drop it into a
+    larger WHERE without disturbing their own placeholder order.
+
+    Reads the latest vote PER REVIEWER, not the single most recent row for the paper: with two
+    reviewers the latter made the answer depend on who happened to vote last. Papers whose
+    reviewers disagree still pass; the caller subtracts unresolved_conflict_ids.
+    """
+    return _stage_final_sql(stage, team_size, "include")
+
+
+def stage_final_exclude_sql(stage: str, team_size: int = 1) -> str:
+    """The mirror of stage_final_include_sql; the caller subtracts unresolved_conflict_ids too."""
+    return _stage_final_sql(stage, team_size, "exclude")
+
+
 def ft_final_include_md_sql(team_size: int = 1) -> str:
     """Full-text final-include plus "markdown present": what gates the to-extract queue."""
     return f"(s.markdown_path IS NOT NULL AND {stage_final_include_sql('full_text', team_size)})"
+
+
+# Sources flagged by hand as duplicates were, for PRISMA, removed before screening.
+_NOT_DUPLICATE = "AND COALESCE(s.is_duplicate, 0) = 0"
 
 
 def _route_filter(route: str | None) -> str:
@@ -403,7 +417,7 @@ class ScreeningMixin:
         return self._conn.execute(sql, params).fetchone()["n"]
 
     def screening_summary(self, project_id: int, reviewer_type: str = "ai", stage: str = "abstract",
-                          route: str | None = None) -> dict[str, int]:
+                          route: str | None = None, exclude_duplicates: bool = False) -> dict[str, int]:
         # Count only the latest decision per (source, reviewer); superseded re-votes are excluded.
         rows = self._conn.execute(
             f"""
@@ -411,7 +425,7 @@ class ScreeningMixin:
             FROM screening_decisions d
             JOIN sources s ON d.source_id = s.id
             WHERE s.project_id = ? AND d.reviewer_type = ? AND d.stage = ?
-              {_route_filter(route)}
+              {_route_filter(route)} {_NOT_DUPLICATE if exclude_duplicates else ""}
               AND d.id = (
                   SELECT MAX(id) FROM screening_decisions
                   WHERE source_id = d.source_id
@@ -429,14 +443,14 @@ class ScreeningMixin:
         return out
 
     def count_sources_screened(self, project_id: int, reviewer_type: str = "human", stage: str = "abstract",
-                               route: str | None = None) -> int:
+                               route: str | None = None, exclude_duplicates: bool = False) -> int:
         return self._conn.execute(
             f"""
             SELECT COUNT(DISTINCT d.source_id) AS n
             FROM screening_decisions d
             JOIN sources s ON d.source_id = s.id
             WHERE s.project_id = ? AND d.reviewer_type = ? AND d.stage = ?
-              {_route_filter(route)}
+              {_route_filter(route)} {_NOT_DUPLICATE if exclude_duplicates else ""}
             """,
             (project_id, reviewer_type, stage),
         ).fetchone()["n"]
@@ -892,11 +906,23 @@ class ScreeningMixin:
             nr = f"AND COALESCE(s.full_text_not_retrieved, 0) = {1 if not_retrieved else 0}"
         sql = f"""
             SELECT s.id FROM sources s
-            WHERE s.project_id = ? {md} {nr} {_route_filter(route)}
+            WHERE s.project_id = ? {md} {nr} {_route_filter(route)} {_NOT_DUPLICATE}
               AND ({_FINAL_INCLUDE_PREDICATE})
         """
         params = (project_id, reconcile_stage, stage, reconcile_stage, stage, team_size_for(workflow))
         settled = {r["id"] for r in self._conn.execute(sql, params).fetchall()}
+        return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
+
+    def final_exclude_ids(self, project_id: int, stage: str = "abstract", *, workflow: str,
+                          route: str | None = None) -> set[int]:
+        """PAPERS whose review at this stage is FINISHED and settled on exclude: the mirror of
+        final_include_ids, so a paper sits in one of the two boxes or, while unfinished, in neither."""
+        sql = f"""
+            SELECT s.id FROM sources s
+            WHERE s.project_id = ? {_route_filter(route)} {_NOT_DUPLICATE}
+              AND {stage_final_exclude_sql(stage, team_size_for(workflow))}
+        """
+        settled = {r["id"] for r in self._conn.execute(sql, (project_id,)).fetchall()}
         return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
 
     def count_final_include_studies(self, project_id: int, *, workflow: str,

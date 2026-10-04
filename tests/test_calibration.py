@@ -26,6 +26,14 @@ from ailr.tasks.calibrate import (
     _latest_by_reviewer_type,
     quick_test_agreement,
 )
+from ailr.ui import calibration_view
+
+# 12 AI/human pairs on which the two readings differ, worked by hand: binary p_o = 10/12,
+# p_e = 74/144, κ = 23/35; three-way p_o = 8/12, p_e = 51/144, κ = 15/31.
+_HAND_TABLE = (
+    [("include", "include")] * 3 + [("exclude", "exclude")] * 4 + [("uncertain", "include")] * 2
+    + [("uncertain", "uncertain")] + [("include", "exclude")] + [("exclude", "uncertain")]
+)
 
 
 def _pairs(matrix, categories):
@@ -34,6 +42,35 @@ def _pairs(matrix, categories):
             for i, row in enumerate(matrix)
             for j, count in enumerate(row)
             for _ in range(count)]
+
+
+def _component_text(node) -> str:
+    """Visible text of a Dash component tree, whitespace-normalised."""
+    parts: list[str] = []
+
+    def walk(x):
+        if isinstance(x, str):
+            parts.append(x)
+            return
+        children = getattr(x, "children", None)
+        for child in children if isinstance(children, (list, tuple)) else [children]:
+            if child is not None:
+                walk(child)
+
+    walk(node)
+    return " ".join(" ".join(parts).split())
+
+
+class TestCalibrationReadsKappaLikeTheManuscript:
+    """The calibration κ is the figure the manuscript reports (uncertain counts as include), so the
+    target a prompt is tuned against is the number that gets published."""
+
+    def test_agreement_stats_use_the_binary_reading_and_carry_the_three_way_one(self):
+        stats = _agreement_stats({sid: {"ai": ai, "human": h} for sid, (ai, h) in enumerate(_HAND_TABLE, 1)})
+        assert math.isclose(stats["kappa"], 23 / 35)
+        assert math.isclose(stats["agreement"], 10 / 12)
+        assert math.isclose(stats["kappa_three_way"], 15 / 31)
+        assert math.isclose(stats["agreement_three_way"], 8 / 12)
 
 
 class TestMetrics:
@@ -253,6 +290,16 @@ class TestQuickTestAgreement:
                 run_id=run_id, source_id=sid, full_text_decision=verdict, fields=[], flag_check=None,
             )
         return run_id
+
+    def test_the_page_shows_the_binary_kappa_with_the_three_way_one_beside_it(self, tmp_project):
+        s1, s2 = _add_source(tmp_project, "A"), _add_source(tmp_project, "B")
+        run_id = self._abstract_run(tmp_project, {s1: "uncertain", s2: "exclude"})
+        _vote(tmp_project.db, s1, "include", "amber", "human")
+        _vote(tmp_project.db, s2, "exclude", "amber", "human")
+
+        text = _component_text(calibration_view._agreement_block(tmp_project, run_id, "abstract"))
+        assert "κ 1.00" in text             # uncertain vs include agrees once uncertain reads as include
+        assert "three-way κ 0.33" in text   # p_o 1/2, p_e 1/4
 
     def test_pairs_run_verdicts_with_human_decisions(self, tmp_project):
         s1, s2 = _add_source(tmp_project, "A"), _add_source(tmp_project, "B")

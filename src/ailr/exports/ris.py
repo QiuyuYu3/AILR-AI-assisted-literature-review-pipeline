@@ -1,4 +1,4 @@
-"""Export abstract-stage includes as a RIS file, for re-importing into Zotero to fetch PDFs."""
+"""Export the records carried into full-text review as a RIS file, for Zotero to fetch PDFs."""
 
 import rispy
 
@@ -29,6 +29,9 @@ def _source_to_record(src: Source) -> dict:
 
 
 def export_includes_ris(project: Project) -> str:
-    sources = project.db.list_abstract_includes(project.project_id)
+    # The full-text queue's rule: abstract screening settled on include, duplicates left out.
+    sources = project.db.list_full_text_candidates(
+        project.project_id, workflow=project.config.screening_workflow("abstract")
+    )
     records = [_source_to_record(s) for s in sources]
     return rispy.dumps(records, implementation=_NoHeaderWriter)

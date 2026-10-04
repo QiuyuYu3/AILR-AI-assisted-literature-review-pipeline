@@ -233,11 +233,14 @@ class ExtractionTask:
         return summary
 
     def _select_candidates(self, only_includes: bool) -> list[Source]:
-        # Candidates = papers that passed *screening* inclusion and have full-text markdown.
-        # The full-text inclusion verdict is an OUTPUT of extraction (the AI's _flag_check
-        # re-checks the full text), so it can't be a precondition here.
+        # Candidates = papers in the full-text queue (abstract screening settled on include) that
+        # have full-text markdown. The full-text inclusion verdict is an OUTPUT of extraction (the
+        # AI's _flag_check re-checks the full text), so it can't be a precondition here.
         if only_includes:
-            return self.project.db.list_abstract_includes_with_markdown(self.project.project_id)
+            queue = self.project.db.list_full_text_candidates(
+                self.project.project_id, workflow=self.project.config.screening_workflow("abstract")
+            )
+            return [s for s in queue if s.markdown_path]
         return self.project.db.list_sources_with_markdown(self.project.project_id)
 
 

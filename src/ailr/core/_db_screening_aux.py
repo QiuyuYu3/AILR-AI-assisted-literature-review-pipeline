@@ -5,28 +5,8 @@ from pathlib import Path
 
 from ailr.exceptions import DatabaseError
 
-# A report counts as excluded at full text when adjudication says so, or, with no adjudication,
-# when a human vote says so. Anchored on sources like the final-include rule, so PRISMA's excluded
-# and included boxes are read the same way and a reconciled disagreement is not counted on both
-# sides. Anchoring on screening_decisions instead used to drop every report whose exclusion came
-# only from adjudication (assisted AI-exclude vs human-include, or two 'uncertain' votes): there is
-# no human exclude row to hang the count on, so the report vanished from the flow diagram.
-_FT_FINAL_EXCLUDED_SOURCES_SQL = """
-    SELECT s.id AS source_id FROM sources s
-    WHERE s.project_id = ?
-      AND (
-        EXISTS (SELECT 1 FROM reconciliations r
-                WHERE r.source_id = s.id AND r.stage = 'full_text_screening'
-                  AND r.final_value = 'exclude')
-        OR (
-          NOT EXISTS (SELECT 1 FROM reconciliations r
-                      WHERE r.source_id = s.id AND r.stage = 'full_text_screening')
-          AND EXISTS (SELECT 1 FROM screening_decisions d
-                      WHERE d.source_id = s.id AND d.stage = 'full_text'
-                        AND d.decision = 'exclude' AND d.reviewer_type = 'human')
-        )
-      )
-"""
+# How a stashed import duplicate from the 'other' identification arm reads in its full_record_json.
+_STASHED_OTHER_ROUTE = ('%"identification_route": "other"%', '%"identification_route":"other"%')
 
 
 class ScreeningAuxMixin:
@@ -237,11 +217,21 @@ class ScreeningAuxMixin:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def count_duplicates(self, project_id: int) -> int:
-        row = self._conn.execute(
-            "SELECT COUNT(*) AS n FROM duplicates WHERE project_id = ?", (project_id,)
-        ).fetchone()
-        return row["n"] if row else 0
+    def count_duplicates(self, project_id: int, route: str | None = None) -> int:
+        """Records removed as duplicates, as PRISMA reports them: dropped at import plus flagged by
+        hand later. A row stashed before the route was recorded counts for the database arm."""
+        stashed_sql = "SELECT COUNT(*) AS n FROM duplicates WHERE project_id = ?"
+        stashed_params: list = [project_id]
+        flagged_sql = "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND COALESCE(is_duplicate, 0) = 1"
+        if route is not None:
+            other = "(COALESCE(full_record_json, '') LIKE ? OR COALESCE(full_record_json, '') LIKE ?)"
+            stashed_sql += f" AND {'NOT ' if route == 'database' else ''}{other}"
+            stashed_params += list(_STASHED_OTHER_ROUTE)
+            op = "=" if route == "database" else "!="
+            flagged_sql += f" AND COALESCE(identification_route, 'database') {op} 'database'"
+        stashed = self._conn.execute(stashed_sql, stashed_params).fetchone()
+        flagged = self._conn.execute(flagged_sql, (project_id,)).fetchone()
+        return (stashed["n"] if stashed else 0) + (flagged["n"] if flagged else 0)
 
     def results_by_stage(self, project_id: int, stage: str) -> list[dict]:
         """Latest human decision per source at a stage, with title + reasoning. For the Results view."""
@@ -290,8 +280,12 @@ class ScreeningAuxMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete exclusion reason: {e}") from e
 
-    def full_text_exclusion_counts(self, project_id: int) -> list[dict]:
+    def full_text_exclusion_counts(self, project_id: int, *, workflow: str,
+                                   route: str | None = None) -> list[dict]:
         """Full-text exclusions counted per reason (human reviewers), for PRISMA reporting.
+
+        The reports counted are final_exclude_ids at full text, so an unresolved disagreement or a
+        stage still waiting on its second reviewer contributes no reason.
 
         The exclude dialog joins a multi-select with "; ", so a report excluded for two reasons is
         stored as one string. PRISMA wants it counted under each reason, so the string is split
@@ -303,11 +297,9 @@ class ScreeningAuxMixin:
 
         An adjudicated exclusion takes its reason from the adjudicator's rationale, which overrides
         the individual votes: the adjudication is the final call, and in assisted mode it is often
-        the only place a reason exists at all.
+        the only place a reason exists at all. Otherwise each reviewer's latest vote supplies it.
         """
-        excluded = {r["source_id"] for r in self._conn.execute(
-            _FT_FINAL_EXCLUDED_SOURCES_SQL, (project_id,)
-        ).fetchall()}
+        excluded = self.final_exclude_ids(project_id, "full_text", workflow=workflow, route=route)
         if not excluded:
             return []
 
@@ -331,6 +323,9 @@ class ScreeningAuxMixin:
             WHERE s.project_id = ? AND d.stage = 'full_text'
               AND d.decision = 'exclude' AND d.reviewer_type = 'human'
               AND TRIM(COALESCE(d.reasoning, '')) <> ''
+              AND d.id = (SELECT MAX(id) FROM screening_decisions
+                          WHERE source_id = d.source_id AND reviewer_id = d.reviewer_id
+                            AND reviewer_type = 'human' AND stage = 'full_text')
             """,
             (project_id,),
         ).fetchall():
@@ -354,14 +349,11 @@ class ScreeningAuxMixin:
             for reason, sources in sorted(per_reason.items(), key=lambda kv: (-len(kv[1]), kv[0]))
         ]
 
-    def count_full_text_excluded_reports(self, project_id: int) -> int:
+    def count_full_text_excluded_reports(self, project_id: int, *, workflow: str,
+                                         route: str | None = None) -> int:
         """Distinct reports excluded at full text. The PRISMA box needs this, not the sum of the
         per-reason counts, which double-counts a report excluded for more than one reason."""
-        row = self._conn.execute(
-            f"SELECT COUNT(*) AS n FROM ({_FT_FINAL_EXCLUDED_SOURCES_SQL})",
-            (project_id,),
-        ).fetchone()
-        return row["n"] if row else 0
+        return len(self.final_exclude_ids(project_id, "full_text", workflow=workflow, route=route))
 
     def screening_disagreements(self, project_id: int, stage: str = "abstract") -> list[dict]:
         """Paired AI+human decisions where verdicts differ, at ONE stage. Includes title + both

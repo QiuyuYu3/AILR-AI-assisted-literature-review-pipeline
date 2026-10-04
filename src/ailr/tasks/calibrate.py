@@ -8,7 +8,14 @@ from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.criteria import load_screening_inputs, resolve_criteria
 from ailr.exceptions import AILRError
-from ailr.metrics import cohen_kappa, cohen_kappa_ci, percent_agreement
+from ailr.metrics import (
+    BINARY_CATEGORIES,
+    THREE_WAY_CATEGORIES,
+    binarize,
+    cohen_kappa,
+    cohen_kappa_ci,
+    percent_agreement,
+)
 from ailr.reviewers import LLMReviewer, Reviewer, ScreeningDecision
 
 ProgressCallback = Callable[[int, int, ScreeningDecision | None, Exception | None], None]
@@ -129,7 +136,9 @@ def _latest_by_reviewer_type(project: Project, sample_ids: list[int], stage: str
 
 
 def _agreement_stats(by_source: dict[int, dict[str, str]]) -> dict:
-    """AI-vs-human κ, percent agreement, per-side counts, and the disagreeing sources."""
+    """AI-vs-human κ, percent agreement, per-side counts, and the disagreeing sources. κ and
+    agreement count `uncertain` as include, as the manuscript reports them, so the target a prompt
+    is calibrated against is the figure that gets published; the three-way reading rides along."""
     ai_counts = {c: 0 for c in _KAPPA_CATEGORIES}
     human_counts = {c: 0 for c in _KAPPA_CATEGORIES}
     for v in by_source.values():
@@ -139,12 +148,16 @@ def _agreement_stats(by_source: dict[int, dict[str, str]]) -> dict:
             human_counts[v["human"]] += 1
 
     pairs = [(v["ai"], v["human"]) for v in by_source.values() if "ai" in v and "human" in v]
+    binary = binarize(pairs)
+    nan = float("nan")
     return {
         "paired_count": len(pairs),
-        "kappa": cohen_kappa(pairs, categories=_KAPPA_CATEGORIES) if pairs else float("nan"),
+        "kappa": cohen_kappa(binary, categories=BINARY_CATEGORIES) if pairs else nan,
         # Wide on a handful of papers, which is the point: it stops a κ from 8 records reading as settled.
-        "kappa_ci": cohen_kappa_ci(pairs, categories=_KAPPA_CATEGORIES) if pairs else (float("nan"), float("nan")),
-        "agreement": percent_agreement(pairs) if pairs else float("nan"),
+        "kappa_ci": cohen_kappa_ci(binary, categories=BINARY_CATEGORIES) if pairs else (nan, nan),
+        "agreement": percent_agreement(binary) if pairs else nan,
+        "kappa_three_way": cohen_kappa(pairs, categories=THREE_WAY_CATEGORIES) if pairs else nan,
+        "agreement_three_way": percent_agreement(pairs) if pairs else nan,
         "ai_counts": ai_counts,
         "human_counts": human_counts,
         "disagreements": [

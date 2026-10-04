@@ -409,18 +409,6 @@ class ExtractionMixin:
             )
         return n
 
-    def list_abstract_includes(self, project_id: int) -> list[Source]:
-        """Sources flagged include at the abstract stage (by any reviewer). For RIS export to Zotero."""
-        sql = """
-            SELECT DISTINCT s.* FROM sources s
-            JOIN screening_decisions d ON d.source_id = s.id
-            WHERE s.project_id = ?
-              AND d.stage = 'abstract'
-              AND d.decision = 'include'
-            ORDER BY s.id
-        """
-        return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
-
     def count_screening_includes_with_markdown(self, project_id: int, stage: str = "abstract") -> int:
         return self._conn.execute(
             """
@@ -451,22 +439,6 @@ class ExtractionMixin:
             JOIN screening_decisions d ON d.source_id = s.id
             WHERE s.project_id = ?
               AND d.stage = 'full_text'
-              AND d.decision = 'include'
-              AND s.markdown_path IS NOT NULL
-            ORDER BY s.id
-        """
-        return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
-
-    def list_abstract_includes_with_markdown(self, project_id: int) -> list[Source]:
-        """Sources included at the ABSTRACT stage (by any reviewer) AND with markdown.
-        These are the extraction candidates: in the assisted workflow the AI does the
-        full-text judgment (_flag_check) DURING extraction, so full-text inclusion is an
-        output of extraction, never a precondition for it."""
-        sql = """
-            SELECT DISTINCT s.* FROM sources s
-            JOIN screening_decisions d ON d.source_id = s.id
-            WHERE s.project_id = ?
-              AND d.stage = 'abstract'
               AND d.decision = 'include'
               AND s.markdown_path IS NOT NULL
             ORDER BY s.id

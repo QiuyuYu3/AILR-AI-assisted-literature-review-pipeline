@@ -10,7 +10,7 @@ Before you can review full text, each included paper needs a PDF and a markdown 
 
 ailr does not download PDFs. You gather them in Zotero, then **drop the export into the project's `data/pdfs/` folder**, where ailr links them automatically. The round trip:
 
-1. **Export the included set as RIS.** On the **Reports** page, export the papers that passed abstract screening as **RIS**.
+1. **Export the included set as RIS.** On the **Reports** page, export the papers whose abstract screening is settled on include as **RIS**. It is the set the full-text queue holds, so papers still in conflict or flagged as duplicates are left out.
 2. **Import that RIS into Zotero.** Zotero now holds exactly the included references.
 3. **Get the full-text PDFs in Zotero.** Use Zotero's *Find Full Text*, or attach them manually, so each reference has its PDF.
 4. **Export from Zotero into `data/pdfs/`, with files.** Select the collection → right-click → **Export**, choose format **RIS**, tick **Export Files**, and save it **inside the project's `data/pdfs/` folder**. Zotero writes the `.ris` plus subfolders of PDFs there.

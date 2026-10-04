@@ -254,11 +254,13 @@ class SourcesMixin:
         ).fetchall()
         return [_row_to_source(r) for r in rows]
 
-    def count_sources(self, project_id: int, route: str | None = None) -> int:
+    def count_sources(self, project_id: int, route: str | None = None, exclude_duplicates: bool = False) -> int:
         clause = ""
         if route is not None:
             op = "=" if route == "database" else "!="
             clause = f" AND COALESCE(identification_route, 'database') {op} 'database'"
+        if exclude_duplicates:
+            clause += " AND COALESCE(is_duplicate, 0) = 0"
         row = self._conn.execute(
             f"SELECT COUNT(*) AS n FROM sources WHERE project_id = ?{clause}", (project_id,)
         ).fetchone()

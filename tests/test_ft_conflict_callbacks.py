@@ -272,7 +272,7 @@ class TestFullTextExcludeKeepsPrismaReasonsClean:
             audit_rationale="Wrong population; No full text — only a conference abstract",
         )
 
-        counts = {r["reason"]: r["n"] for r in db.full_text_exclusion_counts(pid)}
+        counts = {r["reason"]: r["n"] for r in db.full_text_exclusion_counts(pid, workflow="independent")}
         assert counts == {"Wrong population": 1, "No full text": 1}
         [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
         assert row["rationale"] == "Wrong population; No full text — only a conference abstract"
@@ -287,4 +287,4 @@ class TestFullTextExcludeKeepsPrismaReasonsClean:
 
         [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
         assert row["rationale"] == "Wrong population"
-        assert {r["reason"] for r in db.full_text_exclusion_counts(pid)} == {"Wrong population"}
+        assert {r["reason"] for r in db.full_text_exclusion_counts(pid, workflow="independent")} == {"Wrong population"}

@@ -50,6 +50,29 @@ class TestExtractionRun:
         assert ft is not None and ft["decision"] == "include"  # synth verdicts are all PASS
         assert ft["reviewer_id"] == "mock:mock-extract"
 
+    def test_candidates_are_papers_whose_abstract_screening_settled_on_include(self, tmp_project):
+        """The full-text queue's rule: a vote changed to exclude, an adjudicated exclusion, an
+        AI-only include and a flagged duplicate are not extracted."""
+        db = tmp_project.db
+
+        def vote(sid, decision, rid="amber", rtype="human"):
+            db.insert_screening_decision(ScreeningDecision(
+                decision=decision, reasoning="t", reviewer_type=rtype, reviewer_id=rid,
+                source_id=sid, stage="abstract",
+            ))
+
+        settled = _add_source(tmp_project, "settled include")
+        vote(_add_source(tmp_project, "include changed to exclude"), "exclude")
+        adjudicated = _add_source(tmp_project, "adjudicated out")
+        vote(adjudicated, "exclude", "gpt", "ai")
+        db.insert_screening_reconciliation(adjudicated, "exclude", "pi", "", stage="abstract")
+        vote(_add_source(tmp_project, "AI include only", include=False), "include", "gpt", "ai")
+        db.mark_source_duplicate(_add_source(tmp_project, "flagged duplicate"), True)
+
+        summary = ExtractionTask(tmp_project, _mock_reviewer()).run()
+        assert summary.total_candidates == 1
+        assert db.has_extraction(settled, extractor_type="ai")
+
     def test_candidates_are_abstract_includes_with_markdown(self, tmp_project):
         _add_source(tmp_project, "not included", include=False)          # md but no include
         _add_source(tmp_project, "included, no md path", md_path=False)  # include but no markdown

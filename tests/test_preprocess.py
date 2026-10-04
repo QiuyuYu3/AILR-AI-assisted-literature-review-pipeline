@@ -72,6 +72,10 @@ class TestPdfMatchSource:
         assert _match_source({"title": "LAEO-Net++: gaze detection", "year": "2020"}, norms, {}) is new
         assert _match_source({"title": "LAEO-Net: gaze detection", "year": "2019"}, norms, {}) is old
 
+    def test_a_short_title_does_not_claim_a_longer_one_containing_its_words(self):
+        src = Source(id=1, title="Editorial: special issue on infant cognition")
+        assert _match_source({"title": "Editorial"}, _norms([src]), {}) is None
+
     def test_record_without_title_is_unmatched(self):
         assert _match_source({}, _norms([Source(id=1, title="T")]), {}) is None
 

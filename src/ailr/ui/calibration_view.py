@@ -426,6 +426,7 @@ def _agreement_block(project: Any, run_id: int, stage: str) -> Any:
     lo, hi = stats["kappa_ci"]
     lo_s, hi_s = _fmt(lo), _fmt(hi)
     agreement = stats["agreement"]
+    k3 = _fmt(stats["kappa_three_way"])
     rows: list[Any] = [
         html.Div([
             dbc.Badge(f"κ {k}" if k else "κ undefined", color="info", className="me-2"),
@@ -433,6 +434,10 @@ def _agreement_block(project: Any, run_id: int, stage: str) -> Any:
             html.Span(
                 f"agreement {agreement * 100:.0f}% · {paired} paired"
                 if agreement == agreement else f"{paired} paired",
+                className="text-muted small me-2",
+            ),
+            html.Span(
+                f"three-way κ {k3 or 'undefined'} (stricter: uncertain kept apart)",
                 className="text-muted small",
             ),
         ]),

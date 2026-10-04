@@ -27,7 +27,7 @@ PRISMA 2020 reports studies found by **citation searching** (snowballing), **han
 Both arms then run through exactly the same screening and full-text queues — the split only affects reporting. If a review has no such records, the flow diagram stays single-column as before.
 
 :::{note}
-Deduplication runs across both arms together, so the "duplicates removed" number is reported once, on the database arm. If a citation-searched record was already in your database results, it is dropped as a duplicate rather than counted twice.
+Deduplication runs across both arms together. If a citation-searched record was already in your database results, it is dropped as a duplicate rather than counted twice, and it is counted under the arm it was imported through, so each arm's "records identified" is its count before deduplication, as PRISMA 2020 reads it.
 :::
 
 ## Record your search strategy
@@ -41,9 +41,9 @@ This is optional but worth doing at import, while the details are fresh.
 Duplicates are flagged **automatically** on import, by two rules:
 
 - exact match on **DOI**
-- fuzzy match on **title** (catches the same paper with slightly different punctuation or casing across databases)
+- fuzzy match on **title**: catches the same paper with different punctuation, casing, word order, or a typo across databases. Extra words lower the score, so a short title contained in a longer one (an editorial, a correction notice) is not mistaken for it, and records whose publication years are more than a year apart are never merged on title.
 
-Review them on the **Duplicates** page. Each flagged pair is shown side by side so you can **confirm** it is the same paper or **clear** a false match. Confirmed duplicates are marked so they drop out of the screening queue and are counted on the PRISMA flow diagram (so your "duplicates removed" number is auditable, not a manual guess). Dropped the wrong one? A **"Removed at import"** list lets you **restore** it as a source; the full record is kept, so it comes back complete.
+Review them on the **Duplicates** page. Each flagged pair is shown side by side so you can **confirm** it is the same paper or **clear** a false match. Confirmed duplicates are marked so they drop out of the screening queue and are counted in the PRISMA flow's "duplicates removed" box and in no box below it (so that number is auditable, not a manual guess). Dropped the wrong one? A **"Removed at import"** list lets you **restore** it as a source; the full record is kept, so it comes back complete.
 
 ![duplicates](../figures/duplicates.png)
 

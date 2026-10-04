@@ -12,8 +12,10 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import rispy
 
 from ailr.core.source import Source
+from ailr.exports.ris import export_includes_ris
 from ailr.exports.tables import (
     extraction_per_paper_zip,
     extraction_table_csv,
@@ -164,8 +166,38 @@ class TestFinalExport:
     def test_final_falls_back_to_the_reviewers_when_unreconciled(self, export_project):
         sid = _add_included_source(export_project)
         _seed_two_human_extractions(export_project.db, sid)
+        for rid in ("amber", "lin"):
+            export_project.db.mark_extraction_submitted(sid, rid)
         rows = list(csv.DictReader(io.StringIO(extraction_table_csv(export_project, extractor_type="final"))))
         assert sorted(r["extractor_id"] for r in rows) == ["amber", "lin"]
+
+    def test_final_leaves_out_a_draft_nobody_submitted(self, export_project):
+        """A saved draft is work in progress, not a record; only a submission is final."""
+        sid = _add_included_source(export_project)
+        _seed_two_human_extractions(export_project.db, sid)
+        export_project.db.mark_extraction_submitted(sid, "amber")
+        rows = list(csv.DictReader(io.StringIO(extraction_table_csv(export_project, extractor_type="final"))))
+        assert [(r["extractor_id"], r["design"]) for r in rows] == [("amber", "observational")]
+
+    def test_ris_carries_only_settled_includes_for_the_pdf_hunt(self, export_project):
+        """The RIS file goes to Zotero to fetch full texts, so it lists what full-text review will
+        need: a vote changed to exclude, a paper still in conflict and a flagged duplicate stay out."""
+        db = export_project.db
+
+        def vote(sid, decision, rid="amber", rtype="human"):
+            db.insert_screening_decision(ScreeningDecision(
+                decision=decision, reasoning="t", reviewer_type=rtype, reviewer_id=rid,
+                source_id=sid, stage="abstract",
+            ))
+
+        _add_included_source(export_project, "settled include")
+        vote(_add_included_source(export_project, "include changed to exclude"), "exclude")
+        in_conflict = _add_included_source(export_project, "AI include, human exclude", include=False)
+        vote(in_conflict, "include", "gpt", "ai")
+        vote(in_conflict, "exclude")
+        db.mark_source_duplicate(_add_included_source(export_project, "flagged duplicate"), True)
+
+        assert [r["title"] for r in rispy.loads(export_includes_ris(export_project))] == ["settled include"]
 
     def test_submit_markers_never_reach_the_export(self, export_project):
         sid = _add_included_source(export_project)

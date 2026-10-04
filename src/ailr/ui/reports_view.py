@@ -113,12 +113,18 @@ def _reliability_body(rows: list, pair_value: Any, cats_mode: str) -> Any:
     ci = rel["cohen_kappa_ci"]
     if kappa_shown is not None and ci:
         kappa_shown = f"{kappa_shown}  [{ci[0]}, {ci[1]}]"
+    # The binary reading is the one the manuscript reports; the three-way κ sits beside it.
+    three_way = (
+        [_stat("Three-way κ (stricter)", _reliability(raw, THREE_WAY_CATEGORIES)["cohen_kappa"])]
+        if cats_mode == "binary" else []
+    )
     return html.Div(
         [
             html.Div(
                 [
                     _stat("Records judged by both", rel["n_pairs"]),
                     _stat("Cohen's κ (95% CI)", kappa_shown),
+                    *three_way,
                     _stat("PABAK", rel["pabak"]),
                     _stat("% agreement", None if pct is None else round(pct * 100, 1), "%"),
                 ],
@@ -198,21 +204,26 @@ def _stage_row(main: Any, side: Any) -> Any:
     )
 
 
+def _source_list(listed: list[dict]) -> Any:
+    return html.Ul(
+        [html.Li(f"{d['source_database']}: {d['n']}", className="small") for d in listed],
+        className="mb-0 mt-1",
+    )
+
+
 def _identification_box(c: dict) -> Any:
-    two_arms = c["other_arm"]["identified"] > 0
-    n = c["database_arm"]["identified"] if two_arms else c["records_identified"]
-    listed = c["by_route"].get("database", []) if two_arms else c["by_source_database"]
-    children: list[Any] = []
-    if two_arms:
-        children.append(html.Div("Via databases and registers", className="small text-muted"))
-    children.append(html.Div([html.Strong(f"{n} ", className="me-1"), "records identified"]))
-    if listed:
-        children.append(
-            html.Ul(
-                [html.Li(f"{d['source_database']}: {d['n']}", className="small") for d in listed],
-                className="mb-0 mt-1",
-            )
-        )
+    """The column below carries both arms' totals, so this box does too, broken down by arm."""
+    children: list[Any] = [
+        html.Div([html.Strong(f"{c['records_identified']} ", className="me-1"), "records identified"])
+    ]
+    if c["other_arm"]["identified"] > 0:
+        for label, arm, route in (("Via databases and registers", c["database_arm"], "database"),
+                                  ("Via other methods", c["other_arm"], "other")):
+            children.append(html.Div(f"{label}: {arm['identified']}", className="small text-muted mt-1"))
+            if c["by_route"].get(route):
+                children.append(_source_list(c["by_route"][route]))
+    elif c["by_source_database"]:
+        children.append(_source_list(c["by_source_database"]))
     return html.Div(children, style=_MAIN_BOX)
 
 
@@ -223,6 +234,7 @@ def _other_arm_block(c: dict) -> Any:
         return None
     rows = [
         ("Records identified", other["identified"]),
+        ("Duplicates removed", other["duplicates"]),
         ("Reports sought for retrieval", other["sought"]),
         ("Reports assessed for eligibility", other["assessed"]),
         ("Studies included", other["included"]),
@@ -249,11 +261,19 @@ def _other_arm_block(c: dict) -> Any:
     )
 
 
-def _prisma_diagram(db: Any, pid: int, c: dict) -> Any:
-    ft_excl_counts = db.full_text_exclusion_counts(pid)
+def _pending_line(n: int) -> list[Any]:
+    return [html.Div(f"{n} awaiting a decision", className="small text-muted mt-1")] if n else []
+
+
+def _prisma_diagram(c: dict) -> Any:
+    ft_excl_counts = c["full_text_exclusion_reasons"]
 
     dup_side = _box(f"{c['duplicates_removed']}", "duplicates removed before screening", _SIDE_BOX) if c["duplicates_removed"] else None
-    abs_side = _box(f"{c['abstract_excluded']}", "studies excluded at title/abstract", _SIDE_BOX)
+    abs_side = html.Div(
+        [html.Div([html.Strong(f"{c['abstract_excluded']}", className="me-1"), "studies excluded at title/abstract"])]
+        + _pending_line(c["abstract_pending"]),
+        style=_SIDE_BOX,
+    )
     retrieval_side = _box(f"{c['reports_not_retrieved']}", "reports not retrieved (no full text)", _SIDE_BOX) if c["reports_not_retrieved"] else None
 
     ft_side_children: list[Any] = [html.Div([html.Strong(f"{c['full_text_excluded_reports']} "), "studies excluded, with reasons:"])]
@@ -261,7 +281,7 @@ def _prisma_diagram(db: Any, pid: int, c: dict) -> Any:
         ft_side_children.append(
             html.Ul([html.Li(f"{r['reason']}: {r['n']}", className="small") for r in ft_excl_counts], className="mb-0 mt-1")
         )
-    ft_side = html.Div(ft_side_children, style=_SIDE_BOX)
+    ft_side = html.Div(ft_side_children + _pending_line(c["full_text_pending"]), style=_SIDE_BOX)
 
     return html.Div(
         [
@@ -294,7 +314,7 @@ def layout() -> Any:
     prisma_block = [
         html.H4("PRISMA flow"),
         html.P("Auto-generated from your decisions. AI and human reviewers are reported separately.", className="text-muted small"),
-        _prisma_diagram(db, pid, counts),
+        _prisma_diagram(counts),
         html.Div(
             dbc.ButtonGroup(
                 [

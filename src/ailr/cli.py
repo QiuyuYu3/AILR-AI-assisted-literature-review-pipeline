@@ -472,7 +472,7 @@ def metrics(
         human_counts = proj.db.screening_summary(proj.project_id, "human")
 
         # One entry per reviewer pair per stage. `uncertain` is folded into include (an uncertain
-        # record carries forward) and votes are read before adjudication.
+        # vote does not exclude) and votes are read before adjudication.
         categories = BINARY_CATEGORIES
         agreement_by_stage: dict[str, list[dict]] = {}
         for stage in ("abstract", "full_text"):
