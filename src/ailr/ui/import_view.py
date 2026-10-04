@@ -99,7 +99,7 @@ def layout() -> Any:
             html.H4("Import references"),
             html.P(
                 "Upload a RIS / BibTeX / CSV export (WoS, Scopus, PubMed, Zotero…). "
-                "Duplicates are detected automatically by DOI and fuzzy title.",
+                "Duplicates are removed automatically by DOI or identical title.",
                 className="text-muted small",
             ),
             dbc.Label("Where these records came from", className="fw-bold small"),

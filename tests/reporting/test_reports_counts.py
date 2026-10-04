@@ -639,6 +639,7 @@ class TestEveryBoxShowsItsOwnNumber:
                      "- Wrong population: 117", "- Wrong design: 118", "**Studies included:** 120",
                      "**Reports of included studies:** 121", "- with completed extraction: 122"):
             assert line in report, line
+        assert "fuzzy" not in report
 
     def test_markdown_report_two_arms(self, tmp_project, counts):
         counts(two_arms=True)

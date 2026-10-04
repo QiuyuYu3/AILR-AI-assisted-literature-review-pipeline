@@ -155,7 +155,7 @@ def build_prisma_report(project: Project) -> str:
         lines.append("")
     lines.append(f"**Total records identified:** {c['records_identified']}")
     lines.append("")
-    lines.append(f"**Duplicates removed:** {c['duplicates_removed']} (at ingest, by DOI + fuzzy title)")
+    lines.append(f"**Duplicates removed:** {c['duplicates_removed']} (at import by DOI or identical title, or flagged by hand)")
     lines.append("")
     lines.append(f"**Records after deduplication:** {c['records_after_dedup']}")
     lines.append("")

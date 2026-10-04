@@ -90,7 +90,7 @@ def ingest(
                 typer.echo(f"  - {f['title'][:80]}: {f['error']}", err=True)
         if result.title_matches:
             typer.echo("")
-            typer.echo("Fuzzy title matches (skipped, please verify manually):")
+            typer.echo("Merged on identical titles (the other record of each pair is under Duplicates):")
             for m in result.title_matches:
                 typer.echo(f"  - NEW:  {m['new_title'][:80]}")
                 typer.echo(f"    DB:   {m['existing_title'][:80]} (id={m['existing_id']})")

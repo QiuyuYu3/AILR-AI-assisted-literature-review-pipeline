@@ -78,7 +78,7 @@ def layout() -> Any:
             html.Hr(className="my-3"),
             html.H6("Removed at import"),
             html.P(
-                f"{len(ingest_rows)} record(s) dropped during ingest (DOI or fuzzy title; never imported as sources). "
+                f"{len(ingest_rows)} record(s) dropped during ingest (same DOI or identical title; never imported as sources). "
                 "Select rows and Restore to bring a wrongly-dropped record back as a source.",
                 className="text-muted small",
             ),
