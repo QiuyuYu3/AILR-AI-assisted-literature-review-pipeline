@@ -7,6 +7,7 @@ import threading
 import weakref
 from contextlib import contextmanager
 from datetime import date, datetime
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -140,10 +141,11 @@ def _is_disconnect(e) -> bool:
 
 
 def _coerce_row(mapping) -> dict:
-    """Row as a plain dict, with datetime/date coerced to strings so the rest of the codebase
-    sees timestamps as strings regardless of dialect (Postgres returns datetime objects)."""
+    """Row as a plain dict, with datetime/date coerced to strings and Decimal to float, so the rest
+    of the codebase sees the same types regardless of dialect (Postgres returns datetime objects,
+    and AVG over an integer column as a Decimal, which json.dumps refuses)."""
     return {
-        k: (v.isoformat(sep=" ") if isinstance(v, (datetime, date)) else v)
+        k: (v.isoformat(sep=" ") if isinstance(v, (datetime, date)) else float(v) if isinstance(v, Decimal) else v)
         for k, v in mapping.items()
     }
 

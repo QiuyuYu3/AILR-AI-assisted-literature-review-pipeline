@@ -17,6 +17,7 @@
 - RIS export and AI extraction candidates now follow the full-text queue.
 - The final extraction export included unsubmitted drafts.
 - Agreement figures and the reliability CSV now leave out records flagged as duplicates.
+- `ailr metrics --json` failed on Postgres: the average latency came back as a Decimal.
 
 ---
 ## [0.36.0] – 2026-10-04
