@@ -319,3 +319,35 @@ def test_the_two_layers_are_stored_side_by_side(db, tmp_project):
     kinds = {r["check_kind"] for r in db.get_cross_checks(sid)}
     assert kinds == {"deterministic", "llm"}
     assert db.cross_check_counts([sid]) == {sid: 1}  # only the disagreeing one is open
+
+
+def test_each_quick_test_run_keeps_its_findings_under_its_own_name(tmp_project):
+    """Read back without quick_test_target_id: a constant run id would let run B replace run A's
+    findings while each lookup through the helper still found one row."""
+    from ailr.crosschecker import LLMCrossChecker
+    from ailr.tasks.crosscheck import QuickTestCrossCheckTask
+
+    sid, run_a = _seed_quick_test(tmp_project, [{"field": "design", "value": "within", "quote": "q"}])
+    run_b = tmp_project.db.create_test_run(tmp_project.project_id, "extraction", 1, "p2", "c")
+    tmp_project.db.insert_test_extraction(run_b, sid, "include",
+                                          [{"field": "design", "value": "between", "quote": "q"}], None)
+    for run in (run_a, run_b):
+        client = _StubClient({"design": _verdict("disagree", f"run {run}")})
+        QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run).run_for_run()
+
+    stored = sorted((r["target_id"], r["reason"]) for r in tmp_project.db.get_cross_checks(sid))
+    assert stored == [(f"run:{run_a}", f"run {run_a}"), (f"run:{run_b}", f"run {run_b}")]
+
+
+def test_the_guard_reads_each_stages_own_model():
+    """A per-stage override decides which model did the work: a checker on that model is blocked
+    even though it differs from the top-level one, and only for that stage."""
+    cc = {"llm_enabled": True, "llm": {"model": "stage-model"}}
+    base = {"project": {"name": "t"}, "llm": {"provider": "anthropic", "model": "default-model"}, "crosscheck": cc}
+
+    extraction = Config(**base, extraction={"llm": {"model": "stage-model"}})
+    assert "same as the extraction model" in crosscheck_llm_blocked(extraction)
+
+    screening = Config(**base, screening={"llm": {"model": "stage-model"}})
+    assert "same as the abstract model" in crosscheck_llm_blocked(screening, stage="abstract")
+    assert crosscheck_llm_blocked(screening, stage="extraction") is None

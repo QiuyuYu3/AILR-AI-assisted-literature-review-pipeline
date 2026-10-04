@@ -285,3 +285,80 @@ def test_cross_check_counts_ignores_stale_findings(db, tmp_project):
         value="between-subjects", source_quote="a later run", source_id=sid,
     ))
     assert db.cross_check_counts([sid]) == {}
+
+
+# ----- Whose record a finding belongs to -----
+
+def test_a_humans_finding_goes_stale_only_when_that_human_saves_again(db, tmp_project):
+    sid, amber_row = _seed_extraction(db, tmp_project.project_id, "human", "amber")
+    _store(db, sid, [_finding(sid, amber_row, target_type="human", target_id="amber")],
+           target_type="human", target_id="amber")
+
+    db.insert_extraction(ExtractionResult(
+        extractor_type="human", extractor_id="bo", field_name="design",
+        value="between", source_quote="q", source_id=sid,
+    ))
+    assert db.get_cross_checks(sid)[0]["stale"] is False   # bo's save is not amber's record
+
+    db.insert_extraction(ExtractionResult(
+        extractor_type="human", extractor_id="amber", field_name="design",
+        value="between", source_quote="q", source_id=sid,
+    ))
+    assert db.get_cross_checks(sid)[0]["stale"] is True
+
+
+def test_an_ai_finding_goes_stale_after_a_re_run_by_any_model(db, tmp_project):
+    """There is one live AI extraction per paper, whichever model wrote the newest row."""
+    sid, row_id = _seed_extraction(db, tmp_project.project_id)
+    _store(db, sid, [_finding(sid, row_id)])
+    db.insert_extraction(ExtractionResult(
+        extractor_type="ai", extractor_id="openai:y", field_name="design",
+        value="between", source_quote="q", source_id=sid,
+    ))
+    assert db.get_cross_checks(sid)[0]["stale"] is True
+
+
+def test_without_explicit_targets_the_run_follows_the_setting(tmp_project):
+    """The UI starts a run without passing targets. With the setting on humans only, each human
+    gets findings of their own and the AI's rows are left alone."""
+    import yaml
+
+    from ailr.core.project import Project
+    from ailr.tasks.crosscheck import DeterministicCrossCheckTask
+
+    cfg_path = tmp_project.root / "lit_review.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    cfg.setdefault("crosscheck", {})["targets"] = ["human"]
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    project = Project(tmp_project.root)
+
+    db = project.db
+    sid = db.insert_source(Source(title="A paper", project_id=project.project_id))
+    _write_markdown(project, sid)
+    for etype, eid in (("ai", AI_ID), ("human", "amber"), ("human", "bo")):
+        db.insert_extraction(ExtractionResult(
+            extractor_type=etype, extractor_id=eid, field_name="primary_research_goal",
+            value="synchrony", source_quote="a quote that is not in the paper", source_id=sid,
+        ))
+
+    DeterministicCrossCheckTask(project).run([sid])
+    assert {(r["target_type"], r["target_id"]) for r in db.get_cross_checks(sid)} == {("human", "amber"), ("human", "bo")}
+
+
+def test_the_task_judges_the_newest_row_of_a_field(tmp_project):
+    """Saving again appends a row; a finding pinned to the older one would be born stale and drop
+    out of the badges and counts."""
+    from ailr.tasks.crosscheck import DeterministicCrossCheckTask
+
+    db = tmp_project.db
+    sid = db.insert_source(Source(title="A paper", project_id=tmp_project.project_id))
+    _write_markdown(tmp_project, sid)
+    for value in ("first draft", "second draft"):
+        newest = db.insert_extraction(ExtractionResult(
+            extractor_type="human", extractor_id="amber", field_name="primary_research_goal",
+            value=value, source_quote="a quote that is not in the paper", source_id=sid,
+        ))
+
+    DeterministicCrossCheckTask(tmp_project).run([sid], targets=["human"])
+    [finding] = [r for r in db.get_cross_checks(sid) if r["field_name"] == "primary_research_goal"]
+    assert (finding["target_row_id"], finding["stale"]) == (newest, False)

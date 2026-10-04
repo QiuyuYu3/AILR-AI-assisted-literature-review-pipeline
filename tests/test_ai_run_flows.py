@@ -9,7 +9,7 @@
 import json
 
 from ailr.core.source import Source
-from ailr.llm.mock import MockLLMClient
+from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
 from ailr.reviewers import LLMReviewer, ScreeningDecision
 from ailr.tasks.screen import ScreeningTask
 
@@ -47,6 +47,28 @@ class TestScreeningRun:
         summary = ScreeningTask(tmp_project, _mock_reviewer()).run()
         assert summary.screened == 1
         assert db.get_latest_ai_decision(sid, "abstract")["decision"] == "include"
+
+    def test_the_models_quotes_and_criteria_are_stored_with_the_decision(self, tmp_project):
+        """The canned response elsewhere carries empty lists, so nothing showed these being kept,
+        and the screening cross-check has nothing to verify without them."""
+        sid = _add_source(tmp_project)
+        response = {**_INCLUDE_RESPONSE, "evidence_quotes": ["mothers and infants were filmed"],
+                    "matched_criteria": ["B1"]}
+        ScreeningTask(tmp_project, _mock_reviewer(response)).run()
+        stored = tmp_project.db.get_latest_ai_decision(sid, "abstract")
+        assert stored["evidence_quotes"] == ["mothers and infants were filmed"]
+        assert stored["matched_criteria"] == ["B1"]
+
+    def test_per_criterion_verdicts_are_asked_for_unless_switched_off(self, tmp_project):
+        db = tmp_project.db
+        reviewer = LLMReviewer(MockLLMClient(response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts)))
+        asked = _add_source(tmp_project, "default run")
+        ScreeningTask(tmp_project, reviewer).run()
+        not_asked = _add_source(tmp_project, "run with flag_check off")
+        ScreeningTask(tmp_project, reviewer).run(flag_check=False)
+
+        checks = db.get_screening_flag_checks([asked, not_asked], stage="abstract")
+        assert checks.get(asked) and not checks.get(not_asked)
 
     def test_run_screens_all_unscreened(self, tmp_project):
         db = tmp_project.db

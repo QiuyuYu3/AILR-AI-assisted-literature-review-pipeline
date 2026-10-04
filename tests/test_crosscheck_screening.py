@@ -99,7 +99,7 @@ def test_criterion_id_that_does_not_exist_is_flagged():
 
 def test_exclude_without_citing_a_criterion_is_flagged():
     d = _decision(decision="exclude", matched_criteria=[])
-    assert EMPTY_REQUIRED in _codes(check_screening_decision(d, CRITERIA, ABSTRACT))
+    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [EMPTY_REQUIRED]
 
 
 # ----- flag_check -----
@@ -116,7 +116,7 @@ def test_criterion_without_a_verdict_is_flagged():
 
 def test_invalid_flag_verdict_is_flagged():
     d = _decision(flag_check=_flags(("C1", "MAYBE"), ("C2", "PASS"), ("C3", "PASS")))
-    assert INVALID_ENUM in _codes(check_screening_decision(d, CRITERIA, ABSTRACT))
+    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [INVALID_ENUM]
 
 
 def test_flag_check_quote_absent_from_the_abstract_is_flagged():
@@ -130,12 +130,22 @@ def test_flag_check_quote_absent_from_the_abstract_is_flagged():
 
 def test_include_despite_a_failed_criterion_is_flagged():
     d = _decision(flag_check=_flags(("C1", "PASS"), ("C2", "FAIL"), ("C3", "PASS")))
-    assert DECISION_FLAG_MISMATCH in _codes(check_screening_decision(d, CRITERIA, ABSTRACT))
+    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [DECISION_FLAG_MISMATCH]
 
 
 def test_exclude_with_everything_passing_is_flagged():
     d = _decision(decision="exclude", flag_check=_flags(("C1", "PASS"), ("C2", "PASS"), ("C3", "PASS")))
-    assert DECISION_FLAG_MISMATCH in _codes(check_screening_decision(d, CRITERIA, ABSTRACT))
+    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [DECISION_FLAG_MISMATCH]
+
+
+def test_a_well_supported_exclude_is_clean():
+    """Cites the criterion it fails and quotes the abstract, with or without per-criterion verdicts
+    (which it agrees with when present): nothing to flag."""
+    with_verdicts = _decision(decision="exclude", matched_criteria=["C2"],
+                              flag_check=_flags(("C1", "PASS"), ("C2", "FAIL"), ("C3", "PASS")))
+    citing_only = _decision(decision="exclude", matched_criteria=["C2"])
+    for d in (with_verdicts, citing_only):
+        assert check_screening_decision(d, CRITERIA, ABSTRACT) == []
 
 
 def test_uncertain_verdicts_do_not_contradict_either_decision():
@@ -298,6 +308,22 @@ def test_a_finding_goes_stale_when_the_decision_it_judged_is_re_screened(tmp_pro
     assert db.cross_check_counts([sid], stage="abstract") == {}
 
 
+def test_another_reviewers_vote_leaves_a_finding_live(tmp_project):
+    """Only the reviewer whose decision was judged can retire a finding by re-screening: a human
+    screening the paper after the AI must leave the AI's finding live, counted and listed."""
+    db = tmp_project.db
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, quotes=["participants completed an fMRI scan"])
+    _run(tmp_project, [sid])
+    _decide(tmp_project, sid, reviewer_type="human", reviewer_id="amber")
+    _decide(tmp_project, sid, reviewer_id="openai:another-model")   # same type, another reviewer
+
+    assert db.get_cross_checks(sid, stage="abstract")[0]["stale"] is False
+    assert db.cross_check_counts([sid], stage="abstract") == {sid: 1}
+    rows, _, _ = db.list_sources_page(tmp_project.project_id, "amber", stage="abstract", status="crosscheck_flagged")
+    assert [s.id for s in rows] == [sid]
+
+
 def test_the_queue_filter_lists_flagged_papers_and_drops_them_once_re_screened(tmp_project):
     db = tmp_project.db
     flagged = _seed_source(tmp_project)
@@ -404,3 +430,26 @@ def test_the_project_can_override_the_built_in_screening_prompt(tmp_path):
     rel = "prompts/crosscheck_screening.txt"
     assert load_prompt(tmp_path, rel, BUILT_IN_SCREENING_PROMPT) == "my own prompt"
     assert "abstract" in load_prompt(tmp_path, "prompts/absent.txt", BUILT_IN_SCREENING_PROMPT).lower()
+
+
+def test_the_llm_task_stores_a_verdict_against_the_decision_it_judged(tmp_project):
+    """The paid screening layer end to end: one call per decision, stored as an llm row pinned to
+    that decision, with the project's criteria and additional instructions in the prompt."""
+    from ailr.tasks.crosscheck import ScreeningLLMCrossCheckTask
+
+    _seed_criteria(tmp_project)
+    additional = tmp_project.root / tmp_project.config.crosscheck.screening_additional
+    additional.parent.mkdir(parents=True, exist_ok=True)
+    additional.write_text("be lenient at this stage", encoding="utf-8")
+    sid = _seed_source(tmp_project)
+    decision_id = _decide(tmp_project, sid)
+    client = _StubClient({"verdict": "disagree", "reason": "the abstract never mentions gaze",
+                          "suggested_value": None, "confidence": 7})
+
+    summary = ScreeningLLMCrossCheckTask(tmp_project, ScreeningCrossChecker(client)).run([sid], targets=["ai"])
+    assert (summary.checked, summary.findings) == (1, 1)
+    [row] = tmp_project.db.get_cross_checks(sid, stage="abstract")
+    assert (row["check_kind"], row["verdict"], row["target_row_id"]) == ("llm", "disagree", decision_id)
+    assert row["reason"] == "the abstract never mentions gaze"
+    system = client.calls[0]["system"]
+    assert "be lenient at this stage" in system and "Criterion C1" in system
