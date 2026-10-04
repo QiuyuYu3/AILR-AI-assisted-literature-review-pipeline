@@ -101,10 +101,10 @@ class TestSubmittedMarker:
         sid = add_source(tmp_project)
         db.mark_extraction_submitted(sid, "amber")
         db.insert_flag_check(sid, "human", "amber", [{"criterion_id": "C1", "verdict": "PASS"}])
-        assert db.has_extraction(sid, extractor_type="human") is False
+        assert (sid in db.sources_with_extraction([sid], "human")) is False
         assert db.sources_with_extraction([sid], extractor_type="human") == set()
         _field(db, sid, "amber")
-        assert db.has_extraction(sid, extractor_type="human") is True
+        assert (sid in db.sources_with_extraction([sid], "human")) is True
         assert db.sources_with_extraction([sid], extractor_type="human") == {sid}
 
 

@@ -196,15 +196,3 @@ class CrossCheckMixin:
         ).fetchall()
         return {r["source_id"]: r["n"] for r in rows}
 
-    def delete_cross_checks(self, source_id: int, stage: str | None = None) -> int:
-        sql = "DELETE FROM cross_checks WHERE source_id = ?"
-        params: list = [source_id]
-        if stage:
-            sql += " AND stage = ?"
-            params.append(stage)
-        try:
-            cur = self._conn.execute(sql, params)
-            self._conn.commit()
-            return cur.rowcount
-        except sqlite3.Error as e:
-            raise DatabaseError(f"Failed to delete cross-checks: {e}") from e

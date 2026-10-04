@@ -15,7 +15,7 @@ from ailr.extraction import FieldSpec
 from ailr.ingest.results_import import import_ai_results, import_ai_screening_results
 from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult, ScreeningDecision, _unwrap_value_quote
 from ailr.tasks.extract import _derive_ft_decision
-from tests.helpers import add_source
+from tests.helpers import add_source, count_decisions
 
 _LIST_FIELD = FieldSpec(name="study_design", type="list", item_type="string")
 _INT_FIELD = FieldSpec(name="n_dyads", type="integer")
@@ -154,7 +154,7 @@ class TestImportAiScreening:
         import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "include"}])
         import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "exclude"}])
         assert db.get_latest_ai_decision(sid, "abstract")["decision"] == "exclude"
-        assert db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
+        assert count_decisions(db, tmp_project.project_id, reviewer_type="ai") == 1
 
     def test_reimport_leaves_an_in_app_ai_verdict_alone(self, tmp_project):
         db = tmp_project.db
@@ -165,7 +165,7 @@ class TestImportAiScreening:
         ))
         import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "exclude"}])
         import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "exclude"}])
-        assert db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 2
+        assert count_decisions(db, tmp_project.project_id, reviewer_type="ai") == 2
 
 
 class TestImportAiExtraction:

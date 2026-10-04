@@ -27,7 +27,7 @@ from ailr.metrics import (
 )
 from ailr.reviewers import ExtractionResult, ScreeningDecision
 from ailr.ui import reports_view
-from tests.helpers import add_source, component_text, set_config, vote
+from tests.helpers import add_source, component_text, set_config, stash_duplicate, vote
 
 
 def _add_source(project, title, with_md=False):
@@ -42,7 +42,7 @@ def _pipeline_state(project):
     s2 = _add_source(project, "S2 excluded on revote")
     s3 = _add_source(project, "S3 include without pdf")
     _add_source(project, "S4 unscreened")
-    db.insert_duplicate(project.project_id, "dropped dup", None, "doi")
+    stash_duplicate(db, project.project_id, "dropped dup", None, "doi")
 
     vote(db, s1, "include", "amber", stage="abstract")
     vote(db, s2, "include", "amber", stage="abstract")
@@ -922,7 +922,7 @@ class TestIdentificationArms:
         self._add(project, "cit1", "other", "Citation searching")
         for i in range(2):
             record = {"title": f"cit dup {i}", "identification_route": "other"}
-            db.insert_duplicate(project.project_id, record["title"], None, "doi", full_record_json=json.dumps(record))
+            stash_duplicate(db, project.project_id, record["title"], None, "doi", full_record_json=json.dumps(record))
 
     def test_each_arm_counts_its_records_before_deduplication(self, tmp_project):
         self._two_arms_with_duplicates(tmp_project)
@@ -936,7 +936,7 @@ class TestIdentificationArms:
     def test_a_duplicate_stashed_before_routes_were_recorded_counts_for_databases(self, tmp_project):
         self._add(tmp_project, "db1", "database", "PubMed")
         self._add(tmp_project, "cit1", "other", "Citation searching")
-        tmp_project.db.insert_duplicate(tmp_project.project_id, "old dup", None, "doi")
+        stash_duplicate(tmp_project.db, tmp_project.project_id, "old dup", None, "doi")
         c = prisma_counts(tmp_project)
         assert (c["database_arm"]["identified"], c["other_arm"]["identified"]) == (2, 1)
 

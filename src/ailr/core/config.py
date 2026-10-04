@@ -310,24 +310,6 @@ def save_crosscheck_config(
     _edit_config_block(project_dir, "crosscheck", mutate)
 
 
-def save_llm_config(
-    project_dir: Path,
-    provider: str,
-    model: str,
-    temperature: float,
-    seed: int | None = None,
-) -> None:
-    """Update the top-level `llm:` block in lit_review.yaml (used by AI screening/extraction)."""
-    def mutate(llm: dict) -> None:
-        llm["provider"] = provider
-        llm["model"] = model
-        llm["temperature"] = temperature
-        if seed is not None:
-            llm["seed"] = seed
-
-    _edit_config_block(project_dir, "llm", mutate)
-
-
 def save_stage_llm_config(
     project_dir: Path,
     stage: Literal["screening", "extraction"],

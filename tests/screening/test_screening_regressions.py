@@ -6,7 +6,7 @@
 """
 
 from ailr.reviewers import ScreeningDecision
-from tests.helpers import add_source
+from tests.helpers import add_source, count_decisions
 
 
 def _decision(sid, decision, reviewer_id, reviewer_type="human", stage="abstract"):
@@ -50,13 +50,13 @@ class TestBatchInsertChunking:
         sids = [add_source(tmp_project, f"P{i}") for i in range(7)]
         decisions = [_decision(sid, "include", "mock:ai", reviewer_type="ai") for sid in sids]
         db.insert_screening_decisions_batch(decisions, chunk=3)  # 3 + 3 + 1
-        assert db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 7
+        assert count_decisions(db, tmp_project.project_id, reviewer_type="ai") == 7
 
     def test_empty_and_missing_source_id_are_skipped(self, tmp_project):
         db = tmp_project.db
         db.insert_screening_decisions_batch([])
         db.insert_screening_decisions_batch([_decision(None, "include", "mock:ai", reviewer_type="ai")])
-        assert db.count_screening_decisions(tmp_project.project_id) == 0
+        assert count_decisions(db, tmp_project.project_id) == 0
 
 
 class TestSummaryCountsLatestOnly:

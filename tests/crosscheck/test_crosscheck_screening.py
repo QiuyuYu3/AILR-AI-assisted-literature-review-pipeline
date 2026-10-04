@@ -18,7 +18,7 @@ from ailr.criteria import save_criteria
 from ailr.crosschecker import BUILT_IN_SCREENING_PROMPT, ScreeningCrossChecker, load_prompt
 from ailr.exceptions import LLMError
 from ailr.reviewers import ScreeningDecision
-from tests.helpers import StubClient, add_source, codes
+from tests.helpers import StubClient, add_source, clear_cross_checks, codes
 
 ABSTRACT = (
     "Thirty-two dyads completed a joint attention task while gaze was recorded with a mobile "
@@ -266,7 +266,7 @@ def test_targets_decides_whose_decision_is_checked(tmp_project):
     _run(tmp_project, [sid], targets=("ai", "human"))
     assert {r["target_type"] for r in tmp_project.db.get_cross_checks(sid)} == {"ai", "human"}
 
-    tmp_project.db.delete_cross_checks(sid)
+    clear_cross_checks(tmp_project.db, sid)
     _run(tmp_project, [sid], targets=("ai",))
     assert {r["target_type"] for r in tmp_project.db.get_cross_checks(sid)} == {"ai"}
 

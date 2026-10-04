@@ -247,13 +247,6 @@ class SourcesMixin:
         ).fetchone()
         return _row_to_source(row) if row else None
 
-    def find_by_title(self, project_id: int, title: str) -> list[Source]:
-        rows = self._conn.execute(
-            "SELECT * FROM sources WHERE project_id = ? AND title = ?",
-            (project_id, title),
-        ).fetchall()
-        return [_row_to_source(r) for r in rows]
-
     def count_sources(self, project_id: int, route: str | None = None, exclude_duplicates: bool = False) -> int:
         clause = ""
         if route is not None:

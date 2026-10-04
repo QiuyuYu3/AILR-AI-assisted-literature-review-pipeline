@@ -11,7 +11,7 @@ import json
 from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
 from ailr.reviewers import LLMReviewer, ScreeningDecision
 from ailr.tasks.screen import ScreeningTask
-from tests.helpers import INCLUDE_RESPONSE, add_source, screen_reviewer
+from tests.helpers import INCLUDE_RESPONSE, add_source, count_decisions, screen_reviewer
 
 _EXCLUDE_RESPONSE = {**INCLUDE_RESPONSE, "decision": "exclude", "reasoning": "mock says no"}
 
@@ -72,7 +72,7 @@ class TestScreeningRun:
         ScreeningTask(tmp_project, screen_reviewer()).run()
         again = ScreeningTask(tmp_project, screen_reviewer()).run()
         assert again.total == 0 and again.screened == 0
-        assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
+        assert count_decisions(tmp_project.db, tmp_project.project_id, reviewer_type="ai") == 1
 
     def test_human_votes_do_not_block_the_ai(self, tmp_project):
         db = tmp_project.db
@@ -100,7 +100,7 @@ class TestScreeningRun:
         [_add_source(tmp_project, f"P{i}") for i in range(4)]
         summary = ScreeningTask(tmp_project, screen_reviewer()).run(batch=True)
         assert summary.screened == 4
-        assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 4
+        assert count_decisions(tmp_project.db, tmp_project.project_id, reviewer_type="ai") == 4
 
     def test_limit_caps_the_run(self, tmp_project):
         [_add_source(tmp_project, f"P{i}") for i in range(3)]
@@ -133,7 +133,7 @@ class TestForcedRescreen:
         _add_source(tmp_project)
         ScreeningTask(tmp_project, screen_reviewer()).run()
         ScreeningTask(tmp_project, screen_reviewer(_EXCLUDE_RESPONSE)).run(force=True)
-        assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 2
+        assert count_decisions(tmp_project.db, tmp_project.project_id, reviewer_type="ai") == 2
 
     def test_without_force_the_second_run_still_skips(self, tmp_project):
         _add_source(tmp_project)
@@ -146,7 +146,7 @@ class TestForcedRescreen:
         ScreeningTask(tmp_project, screen_reviewer()).run()
         summary = ScreeningTask(tmp_project, screen_reviewer()).run(force=True)
         assert summary.skipped_no_abstract == 1 and summary.screened == 0
-        assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
+        assert count_decisions(tmp_project.db, tmp_project.project_id, reviewer_type="ai") == 1
 
     def test_force_reaches_sources_that_were_never_screened(self, tmp_project):
         _add_source(tmp_project, "first")

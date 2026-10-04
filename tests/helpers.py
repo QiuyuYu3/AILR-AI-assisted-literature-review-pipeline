@@ -40,6 +40,26 @@ def vote(db, sid, decision, reviewer_id, *, stage, reviewer_type="human", reason
     ))
 
 
+def count_decisions(db, project_id, reviewer_type=None) -> int:
+    """Every screening_decisions row of the project, optionally of one reviewer type."""
+    sql = "SELECT COUNT(*) AS n FROM screening_decisions d JOIN sources s ON s.id = d.source_id WHERE s.project_id = ?"
+    params: list = [project_id]
+    if reviewer_type:
+        sql += " AND d.reviewer_type = ?"
+        params.append(reviewer_type)
+    return db._conn.execute(sql, params).fetchone()["n"]
+
+
+def stash_duplicate(db, project_id, title, doi=None, reason="doi", full_record_json=None) -> int:
+    """A record dropped at import, logged the way ingest logs it; returns its duplicates id."""
+    db.insert_duplicates([(project_id, title, None, doi, reason, None, full_record_json)])
+    return db._conn.execute("SELECT MAX(id) AS id FROM duplicates WHERE project_id = ?", (project_id,)).fetchone()["id"]
+
+
+def clear_cross_checks(db, source_id) -> None:
+    db._conn.execute("DELETE FROM cross_checks WHERE source_id = ?", (source_id,))
+
+
 def set_config(project, section, **values):
     """Rewrite one section of lit_review.yaml and return the project as the UI now loads it."""
     cfg = project.root / "lit_review.yaml"

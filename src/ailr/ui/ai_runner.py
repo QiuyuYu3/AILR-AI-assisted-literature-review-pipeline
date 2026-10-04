@@ -32,11 +32,6 @@ def get_status(key: str) -> dict:
         return dict(_jobs.get(key, _default()))
 
 
-def is_running(key: str) -> bool:
-    with _lock:
-        return bool(_jobs.get(key, {}).get("running"))
-
-
 def _make_client(project: Any, stage: str, mock: bool, synth: bool = False):
     if mock:
         if stage == "extract" or synth:

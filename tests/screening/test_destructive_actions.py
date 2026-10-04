@@ -8,7 +8,7 @@ from ailr.core._db_screening import reconcile_stage_for
 from ailr.core.source import Source, source_to_record
 from ailr.exceptions import DatabaseError
 from ailr.ui import duplicates_view, extract_view, full_text_view, sources_view
-from tests.helpers import add_source, callbacks_of, component_text, vote
+from tests.helpers import add_source, callbacks_of, component_text, stash_duplicate, vote
 
 STAGES = ("abstract", "full_text")
 
@@ -144,7 +144,7 @@ class TestDuplicates:
     def _stash(self, project) -> int:
         record = source_to_record(Source(title="Dropped twin", doi="10.1/twin", year=2020,
                                          identification_route="other", source_database="Citation searching"))
-        return project.db.insert_duplicate(project.project_id, record["title"], record["doi"], "doi",
+        return stash_duplicate(project.db, project.project_id, record["title"], record["doi"], "doi",
                                            full_record_json=json.dumps(record))
 
     def test_restoring_a_record_dropped_at_import_brings_it_back_whole(self, tmp_project):

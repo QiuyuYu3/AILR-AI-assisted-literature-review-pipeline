@@ -5,6 +5,12 @@
 
 ### Changed
 - Calibration κ counts uncertain as include; the three-way κ is shown beside it.
+- Methods text: the calibration paragraph reports the quick tests actually run.
+- PRISMA diagram labels say records and reports, as PRISMA 2020 does.
+- Extraction exports are one ZIP; "included" now means the PRISMA included box.
+- Titles repeated inside one import file are deduplicated by the same rule as across imports.
+- Importing AI results archives the earlier AI extraction instead of deleting it.
+- Schema sub-fields can no longer be named value, quote or confidence.
 
 ### Fixed
 - PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.
@@ -18,6 +24,7 @@
 - The final extraction export included unsubmitted drafts.
 - Agreement figures and the reliability CSV now leave out records flagged as duplicates.
 - `ailr metrics --json` failed on Postgres: the average latency came back as a Decimal.
+- The dashboard, CLI counts and Conflicts queue now leave out records flagged as duplicates.
 
 ---
 ## [0.36.0] – 2026-10-04

@@ -35,7 +35,7 @@ def test_database_roundtrip(db):
     # Extraction mixin
     db.insert_extraction(ExtractionResult(extractor_type="human", extractor_id="amber",
                                           field_name="sample_size", value=42, source_id=sid))
-    assert db.has_extraction(sid, extractor_type="human")
+    assert (sid in db.sources_with_extraction([sid], "human"))
     assert any(e["field_name"] == "sample_size" for e in db.list_extractions(sid, extractor_type="human"))
 
     # Admin/Tags mixin

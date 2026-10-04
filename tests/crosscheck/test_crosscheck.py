@@ -12,7 +12,7 @@ from ailr.core.crosscheck import (
 from ailr.core.source import Source
 from ailr.extraction import FieldSpec
 from ailr.reviewers import ExtractionResult
-from tests.helpers import codes, set_config
+from tests.helpers import clear_cross_checks, codes, set_config
 
 PAPER = """
 # Method
@@ -255,7 +255,7 @@ def test_targets_decides_whose_extraction_is_checked(tmp_project):
     assert summary.sources == 1
     assert {r["target_type"] for r in db.get_cross_checks(sid)} == {"ai", "human"}
 
-    db.delete_cross_checks(sid)
+    clear_cross_checks(db, sid)
     DeterministicCrossCheckTask(tmp_project).run([sid], targets=["ai"])
     assert {r["target_type"] for r in db.get_cross_checks(sid)} == {"ai"}
 

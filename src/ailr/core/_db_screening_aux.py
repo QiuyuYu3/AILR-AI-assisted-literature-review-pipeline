@@ -137,27 +137,6 @@ class ScreeningAuxMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete search strategy: {e}") from e
 
-    def insert_duplicate(
-        self,
-        project_id: int,
-        title: str | None,
-        doi: str | None,
-        reason: str,
-        matched_source_id: int | None = None,
-        authors: str | None = None,
-        full_record_json: str | None = None,
-    ) -> int:
-        try:
-            cur = self._conn.execute(
-                "INSERT INTO duplicates (project_id, title, authors, doi, reason, matched_source_id, full_record_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (project_id, title, authors, doi, reason, matched_source_id, full_record_json),
-            )
-            self._conn.commit()
-            return cur.lastrowid
-        except sqlite3.Error as e:
-            raise DatabaseError(f"Failed to insert duplicate: {e}") from e
-
     def insert_duplicates(self, rows: list[tuple]) -> None:
         """Bulk-insert duplicate rows in one transaction. Each row is
         (project_id, title, authors, doi, reason, matched_source_id, full_record_json)."""
@@ -233,22 +212,6 @@ class ScreeningAuxMixin:
         flagged = self._conn.execute(flagged_sql, (project_id,)).fetchone()
         return (stashed["n"] if stashed else 0) + (flagged["n"] if flagged else 0)
 
-    def results_by_stage(self, project_id: int, stage: str) -> list[dict]:
-        """Latest human decision per source at a stage, with title + reasoning. For the Results view."""
-        sql = """
-            SELECT s.id AS source_id, s.title, s.year,
-                   d.decision, d.reasoning, d.reviewer_id, d.timestamp
-            FROM screening_decisions d
-            JOIN sources s ON s.id = d.source_id
-            WHERE s.project_id = ? AND d.stage = ? AND d.reviewer_type = 'human'
-              AND d.id = (
-                  SELECT MAX(id) FROM screening_decisions
-                  WHERE source_id = d.source_id AND stage = d.stage AND reviewer_type = 'human'
-              )
-            ORDER BY d.decision, s.id
-        """
-        return [dict(r) for r in self._conn.execute(sql, (project_id, stage)).fetchall()]
-
     def create_exclusion_reason(self, project_id: int, name: str) -> int:
         """Idempotent: returns the id, creating the reason if it doesn't exist yet."""
         try:
@@ -271,14 +234,6 @@ class ScreeningAuxMixin:
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
-
-    def delete_exclusion_reason(self, reason_id: int) -> int:
-        try:
-            cur = self._conn.execute("DELETE FROM exclusion_reasons WHERE id = ?", (reason_id,))
-            self._conn.commit()
-            return cur.rowcount
-        except sqlite3.Error as e:
-            raise DatabaseError(f"Failed to delete exclusion reason: {e}") from e
 
     def full_text_exclusion_counts(self, project_id: int, *, workflow: str,
                                    route: str | None = None) -> list[dict]:
@@ -359,8 +314,8 @@ class ScreeningAuxMixin:
         """Paired AI+human decisions where verdicts differ, at ONE stage. Includes title + both
         reasoning fields.
 
-        Exactly one pair per source: the latest AI verdict against the latest human verdict, same
-        pairing rule as paired_screening_decisions. The plain join this replaced matched every AI
+        Exactly one pair per source: the latest AI verdict against the latest human verdict. The
+        plain join this replaced matched every AI
         row against every human row, so a re-run or a changed vote multiplied the output, and an
         abstract verdict could be paired against a full-text one.
         """

@@ -4,8 +4,6 @@ import json
 import sqlite3
 from typing import Any
 
-from ailr.core._db_facade import _row_to_source
-from ailr.core.source import Source
 from ailr.exceptions import DatabaseError, DuplicateError
 
 
@@ -309,12 +307,3 @@ class AdminMixin:
             )
         return result
 
-    def get_sources_for_tag(self, tag_id: int) -> list[Source]:
-        sql = """
-            SELECT s.* FROM sources s
-            JOIN source_tags st ON st.source_id = s.id
-            WHERE st.tag_id = ?
-            ORDER BY s.id
-        """
-        rows = self._conn.execute(sql, (tag_id,)).fetchall()
-        return [_row_to_source(r) for r in rows]

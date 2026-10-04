@@ -397,27 +397,6 @@ class ScreeningMixin:
         rows = self._conn.execute(sql, params).fetchall()
         return [_row_to_source(r) for r in rows]
 
-    def count_screening_decisions(
-        self,
-        project_id: int,
-        reviewer_type: str | None = None,
-    ) -> int:
-        if reviewer_type:
-            sql = """
-                SELECT COUNT(*) AS n FROM screening_decisions d
-                JOIN sources s ON d.source_id = s.id
-                WHERE s.project_id = ? AND d.reviewer_type = ?
-            """
-            params = (project_id, reviewer_type)
-        else:
-            sql = """
-                SELECT COUNT(*) AS n FROM screening_decisions d
-                JOIN sources s ON d.source_id = s.id
-                WHERE s.project_id = ?
-            """
-            params = (project_id,)
-        return self._conn.execute(sql, params).fetchone()["n"]
-
     def screening_summary(self, project_id: int, reviewer_type: str = "ai", stage: str = "abstract",
                           route: str | None = None, exclude_duplicates: bool = False) -> dict[str, int]:
         # Count only the latest decision per (source, reviewer); superseded re-votes are excluded.
@@ -456,51 +435,6 @@ class ScreeningMixin:
             """,
             (project_id, reviewer_type, stage),
         ).fetchone()["n"]
-
-    def list_sources_unreviewed_by(
-        self,
-        project_id: int,
-        reviewer_id: str,
-        only_with_abstract: bool = True,
-    ) -> list[Source]:
-        """Sources without a human decision from this specific reviewer."""
-        sql = """
-            SELECT s.* FROM sources s
-            WHERE s.project_id = ?
-              AND NOT EXISTS (
-                  SELECT 1 FROM screening_decisions d
-                  WHERE d.source_id = s.id
-                    AND d.reviewer_type = 'human'
-                    AND d.reviewer_id = ?
-              )
-        """
-        params: list = [project_id, reviewer_id]
-        if only_with_abstract:
-            sql += " AND s.abstract IS NOT NULL AND s.abstract != ''"
-        sql += " ORDER BY s.id"
-        return [_row_to_source(r) for r in self._conn.execute(sql, params).fetchall()]
-
-    def list_calibration_unreviewed_by(
-        self,
-        project_id: int,
-        reviewer_id: str,
-        stage: str = "screening",
-    ) -> list[Source]:
-        sql = """
-            SELECT DISTINCT s.* FROM sources s
-            JOIN calibration_samples cs ON cs.source_id = s.id
-            WHERE s.project_id = ?
-              AND cs.stage = ?
-              AND NOT EXISTS (
-                  SELECT 1 FROM screening_decisions d
-                  WHERE d.source_id = s.id
-                    AND d.reviewer_type = 'human'
-                    AND d.reviewer_id = ?
-              )
-            ORDER BY cs.sample_round, s.id
-        """
-        rows = self._conn.execute(sql, (project_id, stage, reviewer_id)).fetchall()
-        return [_row_to_source(r) for r in rows]
 
     def get_latest_ai_decision(self, source_id: int, stage: str = "abstract") -> dict | None:
         row = self._conn.execute(
@@ -1254,23 +1188,6 @@ class ScreeningMixin:
             out[r["source_id"]] = (bool(r["mine"] or 0), int(r["others"] or 0))
         return out
 
-    def count_other_human_reviewers(self, source_id: int, stage: str, reviewer_id: str) -> int:
-        """Distinct humans OTHER than reviewer_id who have decided this source at this stage.
-        Used to cap a paper at the team size (1 human in assisted, 2 in independent)."""
-        row = self._conn.execute(
-            "SELECT COUNT(DISTINCT reviewer_id) AS n FROM screening_decisions "
-            "WHERE source_id = ? AND stage = ? AND reviewer_type = 'human' AND reviewer_id != ?",
-            (source_id, stage, reviewer_id),
-        ).fetchone()
-        return row["n"]
-
-    def has_human_decision(self, source_id: int, reviewer_id: str, stage: str = "abstract") -> bool:
-        row = self._conn.execute(
-            "SELECT 1 FROM screening_decisions WHERE source_id = ? AND reviewer_type = 'human' AND reviewer_id = ? AND stage = ? LIMIT 1",
-            (source_id, reviewer_id, stage),
-        ).fetchone()
-        return row is not None
-
     def latest_decisions_by_rater(self, project_id: int, stage: str = "abstract") -> list[dict]:
         """Latest decision per (source, rater) at this stage, one row per rater. Raters are the AI
         (one per provider:model that ran) and each human reviewer_id.
@@ -1296,42 +1213,6 @@ class ScreeningMixin:
             rid = r["reviewer_id"] or "(unnamed)"
             r["rater"] = f"AI: {rid}" if r["reviewer_type"] == "ai" else rid
         return rows
-
-    def paired_screening_decisions(self, project_id: int, stage: str = "abstract") -> list[dict]:
-        """Per-source AI+human paired decisions (only where both exist): exactly ONE pair per
-        source — the latest AI verdict vs the latest human verdict at this stage. Same pairing
-        rule as calibration's _compute_agreement, so Reports κ and calibration κ agree
-        (superseded re-votes, AI re-runs, and other stages' decisions never skew the pairing)."""
-        sql = """
-            WITH latest_ai AS (
-                SELECT sd.source_id, sd.decision, sd.confidence, sd.reviewer_id
-                FROM screening_decisions sd
-                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
-                      WHERE reviewer_type = 'ai' AND stage = ? GROUP BY source_id) m
-                  ON m.source_id = sd.source_id AND m.mid = sd.id
-            ),
-            latest_human AS (
-                SELECT sd.source_id, sd.decision, sd.confidence, sd.reviewer_id
-                FROM screening_decisions sd
-                JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
-                      WHERE reviewer_type = 'human' AND stage = ? GROUP BY source_id) m
-                  ON m.source_id = sd.source_id AND m.mid = sd.id
-            )
-            SELECT
-                s.id AS source_id,
-                ai.decision AS ai_decision,
-                hum.decision AS human_decision,
-                ai.confidence AS ai_confidence,
-                hum.confidence AS human_confidence,
-                ai.reviewer_id AS ai_reviewer_id,
-                hum.reviewer_id AS human_reviewer_id
-            FROM sources s
-            JOIN latest_ai ai ON ai.source_id = s.id
-            JOIN latest_human hum ON hum.source_id = s.id
-            WHERE s.project_id = ?
-            ORDER BY s.id
-        """
-        return [dict(r) for r in self._conn.execute(sql, (stage, stage, project_id)).fetchall()]
 
     def list_screening_conflicts(self, project_id: int, stage: str = "abstract") -> list[Source]:
         """Independent mode: both humans have voted but there is no clean agreed include/exclude —
@@ -1483,33 +1364,3 @@ class ScreeningMixin:
         sql = _assisted_conflict_sql("COUNT(*) AS n")
         return self._conn.execute(sql, (stage, stage, project_id, reconcile_stage)).fetchone()["n"]
 
-    def count_human_decisions_per_source(
-        self,
-        project_id: int,
-        stage: str = "abstract",
-    ) -> dict[int, int]:
-        sql = """
-            SELECT s.id AS source_id,
-                   (SELECT COUNT(DISTINCT reviewer_id)
-                    FROM screening_decisions
-                    WHERE source_id = s.id AND reviewer_type = 'human' AND stage = ?) AS n
-            FROM sources s
-            WHERE s.project_id = ?
-        """
-        return {r["source_id"]: r["n"] for r in self._conn.execute(sql, (stage, project_id)).fetchall()}
-
-    def list_sources_for_full_text(self, project_id: int, require_markdown: bool = True) -> list[Source]:
-        """Sources qualifying for full-text review: 'include' at abstract stage.
-        With require_markdown=False, also returns include'd papers still awaiting full text."""
-        md_clause = "AND s.markdown_path IS NOT NULL" if require_markdown else ""
-        sql = f"""
-            SELECT DISTINCT s.* FROM sources s
-            JOIN screening_decisions d ON d.source_id = s.id
-            WHERE s.project_id = ?
-              AND d.stage = 'abstract'
-              AND d.decision = 'include'
-              {md_clause}
-              AND COALESCE(s.is_duplicate, 0) = 0
-            ORDER BY s.id
-        """
-        return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]

@@ -143,18 +143,6 @@ class ExtractionMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert flag_check: {e}") from e
 
-    def delete_extractions(self, source_id: int, extractor_type: str = "ai") -> int:
-        """Remove a source's extractions for one extractor (e.g. before re-importing AI results)."""
-        try:
-            cur = self._conn.execute(
-                "DELETE FROM extractions WHERE source_id = ? AND extractor_type = ?",
-                (source_id, extractor_type),
-            )
-            self._conn.commit()
-            return cur.rowcount
-        except sqlite3.Error as e:
-            raise DatabaseError(f"Failed to delete extractions: {e}") from e
-
     def max_ai_extraction_id(self, source_id: int) -> int | None:
         row = self._conn.execute(
             "SELECT MAX(id) AS m FROM extractions WHERE source_id = ? AND extractor_type = 'ai'",
@@ -215,13 +203,6 @@ class ExtractionMixin:
             return cur.rowcount
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete reviewer extractions: {e}") from e
-
-    def has_extraction(self, source_id: int, extractor_type: str = "ai") -> bool:
-        row = self._conn.execute(
-            "SELECT 1 FROM extractions WHERE source_id = ? AND extractor_type = ? AND field_name NOT IN ('_flag_check', '_submitted') LIMIT 1",
-            (source_id, extractor_type),
-        ).fetchone()
-        return row is not None
 
     def sources_with_extraction(self, source_ids: list[int], extractor_type: str = "human") -> set[int]:
         """Subset of source_ids that have at least one extraction field (excluding reserved markers) for this extractor."""
@@ -410,29 +391,6 @@ class ExtractionMixin:
                 (project_id,),
             )
         return n
-
-    def count_screening_includes_with_markdown(self, project_id: int, stage: str = "abstract") -> int:
-        return self._conn.execute(
-            """
-            SELECT COUNT(DISTINCT s.id) AS n FROM sources s
-            JOIN screening_decisions d ON d.source_id = s.id
-            WHERE s.project_id = ? AND d.stage = ? AND d.decision = 'include'
-              AND s.markdown_path IS NOT NULL
-            """,
-            (project_id, stage),
-        ).fetchone()["n"]
-
-    def list_includes_with_markdown(self, project_id: int) -> list[Source]:
-        """Sources flagged include (by any reviewer) AND with markdown available."""
-        sql = """
-            SELECT DISTINCT s.* FROM sources s
-            JOIN screening_decisions d ON d.source_id = s.id
-            WHERE s.project_id = ?
-              AND d.decision = 'include'
-              AND s.markdown_path IS NOT NULL
-            ORDER BY s.id
-        """
-        return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
     def list_full_text_includes_with_markdown(self, project_id: int) -> list[Source]:
         """Sources included at the FULL-TEXT stage (by any reviewer) AND with markdown. Extraction candidates."""

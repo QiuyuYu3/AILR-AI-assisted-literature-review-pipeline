@@ -9,7 +9,7 @@ from ailr.core.crosscheck import CrossCheckRecord
 from ailr.core.source import Source
 from ailr.llm.base import CallMetadata
 from ailr.reviewers import ExtractionResult, ScreeningDecision
-from tests.helpers import vote
+from tests.helpers import count_decisions, stash_duplicate, vote
 
 
 def _seed(project):
@@ -46,7 +46,7 @@ class TestDeleteProjectData:
         db.delete_project_data(pid)
 
         assert db.count_sources(pid) == 0
-        assert db.count_screening_decisions(pid, reviewer_type="human") == 0
+        assert count_decisions(db, pid, reviewer_type="human") == 0
         assert db.get_or_create_project(tmp_project.config.project.name) == pid
 
 
@@ -67,7 +67,7 @@ def _seed_every_table(db, pid):
     db.tag_source(sid, db.create_tag(pid, "to-revisit"))
     db.insert_screening_action(sid, "amber", action="vote", decision="include")
     db.add_note(sid, "amber", "check the supplement")
-    db.insert_duplicate(pid, "a dropped copy", None, "doi")
+    stash_duplicate(db, pid, "a dropped copy", None, "doi")
     db.create_exclusion_reason(pid, "Wrong population")
     db.create_calibration_sample(pid, [sid], "screening", 1)
     db.insert_api_call(pid, CallMetadata(provider="anthropic", model="claude-x", input_tokens=10, output_tokens=5))

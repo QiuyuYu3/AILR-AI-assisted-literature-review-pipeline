@@ -16,7 +16,7 @@ from ailr.reviewers import LLMReviewer, Reviewer
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.preprocess import PreprocessTask
 from ailr.tasks.screen import ScreeningTask
-from tests.helpers import add_source, extract_reviewer, screen_reviewer, vote
+from tests.helpers import add_source, count_decisions, extract_reviewer, screen_reviewer, vote
 
 
 class _BoomReviewer(Reviewer):
@@ -68,7 +68,7 @@ class TestScreeningFailures:
         assert summary.total == 3 and summary.screened == 0 and summary.failed == 3
         assert {f["source_id"] for f in summary.failures} == set(sids)
         assert all("provider said no" in f["error"] for f in summary.failures)
-        assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 0
+        assert count_decisions(tmp_project.db, tmp_project.project_id, reviewer_type="ai") == 0
 
     def test_one_bad_paper_does_not_take_the_run_down(self, tmp_project):
         db = tmp_project.db
@@ -115,7 +115,7 @@ class TestScreeningFailures:
         summary = ScreeningTask(tmp_project, _BoomReviewer(screen_reviewer(), {"boom"})).run(batch=True)
 
         assert summary.screened == 1 and summary.failed == 1
-        assert db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
+        assert count_decisions(db, tmp_project.project_id, reviewer_type="ai") == 1
         assert db.get_latest_ai_decision(ok, "abstract")["decision"] == "include"
 
 
@@ -130,7 +130,7 @@ class TestExtractionFailures:
         [failure] = summary.failures
         assert failure["source_id"] == sid and failure["title"] == "boom"
         assert failure["error"].startswith("RuntimeError: ")
-        assert tmp_project.db.has_extraction(sid, extractor_type="ai") is False
+        assert (sid in tmp_project.db.sources_with_extraction([sid], "ai")) is False
         assert tmp_project.db.get_latest_ai_decision(sid, stage="full_text") is None
 
     def test_a_parse_failure_is_reported_as_an_llm_error(self, tmp_project):
@@ -166,7 +166,7 @@ class TestExtractionFailures:
         assert (summary.extracted, summary.failed) == (0, 1)
         assert summary.failures[0]["error"].startswith("LLMError: ")
         assert "example_list_of_objects" in summary.failures[0]["error"]
-        assert tmp_project.db.has_extraction(sid, extractor_type="ai") is False
+        assert (sid in tmp_project.db.sources_with_extraction([sid], "ai")) is False
 
     def test_a_forced_re_extract_that_fails_leaves_the_previous_run_alone(self, tmp_project):
         """extract.py notes where the previous AI run ends BEFORE writing and retires it only once
@@ -202,8 +202,8 @@ class TestExtractionFailures:
         summary = ExtractionTask(tmp_project, _BoomReviewer(extract_reviewer(), {"boom"})).run(batch=True)
 
         assert summary.extracted == 1 and summary.failed == 1
-        assert db.has_extraction(ok, extractor_type="ai") is True
-        assert db.has_extraction(bad, extractor_type="ai") is False
+        assert (ok in db.sources_with_extraction([ok], "ai")) is True
+        assert (bad in db.sources_with_extraction([bad], "ai")) is False
         assert db.get_latest_ai_decision(ok, stage="full_text") is not None
         assert db.get_latest_ai_decision(bad, stage="full_text") is None
 

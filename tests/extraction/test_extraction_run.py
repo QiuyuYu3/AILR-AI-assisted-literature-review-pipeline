@@ -111,7 +111,7 @@ class TestExtractionRun:
         sid = _add_source(tmp_project, "Candidate")
         summary = ExtractionTask(tmp_project, extract_reviewer()).run()
         assert summary.total_candidates == 1 and summary.extracted == 1 and summary.failed == 0
-        assert db.has_extraction(sid, extractor_type="ai") is True
+        assert (sid in db.sources_with_extraction([sid], "ai")) is True
         assert db.get_flag_check(sid, extractor_type="ai")  # '_flag_check' row landed
         ft = db.get_latest_ai_decision(sid, stage="full_text")
         assert ft is not None and ft["decision"] == "include"  # synth verdicts are all PASS
@@ -164,7 +164,7 @@ class TestExtractionRun:
 
         summary = ExtractionTask(tmp_project, extract_reviewer()).run()
         assert summary.total_candidates == 1
-        assert db.has_extraction(settled, extractor_type="ai")
+        assert (settled in db.sources_with_extraction([settled], "ai"))
 
     def test_candidates_are_abstract_includes_with_markdown(self, tmp_project):
         _add_source(tmp_project, "not included", include=False)          # md but no include
@@ -173,7 +173,7 @@ class TestExtractionRun:
         summary = ExtractionTask(tmp_project, extract_reviewer()).run()
         assert summary.total_candidates == 1  # only the md-file-deleted one qualifies as candidate
         assert summary.skipped_no_markdown == 1 and summary.extracted == 0
-        assert tmp_project.db.has_extraction(gone, extractor_type="ai") is False
+        assert (gone in tmp_project.db.sources_with_extraction([gone], "ai")) is False
 
     def test_second_run_skips_done_and_force_redoes(self, tmp_project):
         _add_source(tmp_project, "Candidate")
@@ -188,7 +188,7 @@ class TestExtractionRun:
         assert ExtractionTask(tmp_project, extract_reviewer()).run().total_candidates == 0
         summary = ExtractionTask(tmp_project, extract_reviewer()).run(only_includes=False)
         assert summary.extracted == 1
-        assert tmp_project.db.has_extraction(sid, extractor_type="ai")
+        assert (sid in tmp_project.db.sources_with_extraction([sid], "ai"))
 
     def test_batch_mode_lands_rows_and_ft_decisions(self, tmp_project):
         db = tmp_project.db
@@ -196,7 +196,7 @@ class TestExtractionRun:
         summary = ExtractionTask(tmp_project, extract_reviewer()).run(batch=True)
         assert summary.extracted == 3
         for sid in sids:
-            assert db.has_extraction(sid, extractor_type="ai")
+            assert (sid in db.sources_with_extraction([sid], "ai"))
             assert db.get_latest_ai_decision(sid, stage="full_text") is not None
 
     def test_clear_mock_makes_the_source_extractable_again(self, tmp_project):
@@ -205,7 +205,7 @@ class TestExtractionRun:
         sid = _add_source(tmp_project, "Candidate")
         ExtractionTask(tmp_project, extract_reviewer()).run()
         db.clear_mock_ai_extractions(tmp_project.project_id)
-        assert db.has_extraction(sid, extractor_type="ai") is False
+        assert (sid in db.sources_with_extraction([sid], "ai")) is False
         assert db.get_latest_ai_decision(sid, stage="full_text") is None  # derived decision gone too
         rerun = ExtractionTask(tmp_project, extract_reviewer()).run()
         assert rerun.extracted == 1 and rerun.skipped_already_done == 0
