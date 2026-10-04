@@ -17,7 +17,7 @@ from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.exports.methods import build_methods_skeleton
 from ailr.exports.prisma import build_prisma_report, build_prisma_svg, prisma_counts
-from ailr.ingest.dedup import TITLE_MATCH_THRESHOLD
+from ailr.ingest.dedup import TITLE_MATCH_MAX_YEAR_GAP, TITLE_MIN_WORDS
 from ailr.llm.base import CallMetadata
 from ailr.metrics import (
     BINARY_CATEGORIES,
@@ -307,18 +307,15 @@ class TestFlaggedDuplicates:
 
 class TestMethodsSkeleton:
     """A placeholder: the methods text is prose that changes often, so this only checks it
-    reports the dedup threshold actually in force and names the full-text design."""
+    describes the dedup rule actually in force and names the full-text design."""
 
-    def test_reports_the_real_dedup_threshold(self, tmp_project):
+    def test_describes_the_title_rule_and_the_guards_in_force(self, tmp_project):
         _add_source(tmp_project, "S1")
         text = build_methods_skeleton(tmp_project)
-        assert f"threshold = {TITLE_MATCH_THRESHOLD}" in text
-
-    def test_names_the_title_matcher_and_year_check_in_force(self, tmp_project):
-        _add_source(tmp_project, "S1")
-        text = build_methods_skeleton(tmp_project)
-        assert "token-sort ratio" in text and "token-set" not in text
-        assert "publication years differed by more than 1 year" in text
+        assert "by exact DOI matching, then by exact title matching" in text
+        assert f"fewer than {TITLE_MIN_WORDS} words, when the two records had different DOIs" in text
+        assert f"differed by more than {TITLE_MATCH_MAX_YEAR_GAP} year, or when their first authors shared no name" in text
+        assert "fuzzy" not in text and "threshold" not in text
 
     def test_describes_the_full_text_design(self, tmp_project):
         _add_source(tmp_project, "S1")
@@ -779,7 +776,7 @@ class TestAgreementReporting:
         text = build_methods_skeleton(tmp_project)
         assert text.startswith("# Methods")
         # the sections still render off zero counts rather than the header alone coming back
-        assert f"threshold = {TITLE_MATCH_THRESHOLD}" in text
+        assert "exact title matching" in text
         assert "Full texts" in text
 
 

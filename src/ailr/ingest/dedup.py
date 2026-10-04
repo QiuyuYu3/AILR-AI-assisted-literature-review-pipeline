@@ -1,17 +1,18 @@
-"""Deduplication: exact DOI match first, then fuzzy title match via rapidfuzz."""
+"""Deduplication: exact DOI match first, then exact title match, each guarded against merging distinct records."""
 
 import re
+import unicodedata
 
-from rapidfuzz import fuzz, process
+from rapidfuzz import fuzz
 
 from ailr.core.source import Source
 
-# Fuzzy-title match cutoff used at ingest. Named so the methods export reports the value
-# actually in force instead of a hardcoded copy of it.
-TITLE_MATCH_THRESHOLD = 95
-TITLE_MATCH_SCORER = fuzz.token_sort_ratio      # extra words lower the score, unlike token-set
-TITLE_MATCH_SCORER_NAME = "token-sort ratio"
+# PDF linking picks the best-scoring record for a file; deduplication merges identical titles only.
+TITLE_MATCH_SCORER = fuzz.token_sort_ratio
 TITLE_MATCH_MAX_YEAR_GAP = 1      # online-first and print years of one paper can differ by one
+TITLE_MIN_WORDS = 4               # "Editorial", "Introduction", "Reply": too generic to merge on title alone
+
+_DOI_PREFIX = re.compile(r"^(?:https?://)?(?:dx\.)?doi\.org/|^doi:\s*", re.IGNORECASE)
 
 
 def normalize_title(title: str) -> str:
@@ -21,16 +22,22 @@ def normalize_title(title: str) -> str:
     return title.strip()
 
 
+def normalize_doi(doi: str | None) -> str | None:
+    """One DOI written as a URL, with a doi: prefix, or in another case compares equal."""
+    if not doi or not doi.strip():
+        return None
+    return _DOI_PREFIX.sub("", doi.strip()).strip().lower() or None
+
+
 def dedup_by_doi(sources: list[Source]) -> tuple[list[Source], list[Source]]:
     seen: dict[str, Source] = {}
     unique: list[Source] = []
     duplicates: list[Source] = []
     for s in sources:
-        if not s.doi:
+        key = normalize_doi(s.doi)
+        if key is None:
             unique.append(s)
-            continue
-        key = s.doi.lower().strip()
-        if key in seen:
+        elif key in seen:
             duplicates.append(s)
         else:
             seen[key] = s
@@ -42,33 +49,39 @@ def _years_agree(a: int | None, b: int | None) -> bool:
     return a is None or b is None or abs(a - b) <= TITLE_MATCH_MAX_YEAR_GAP
 
 
+def _first_author_words(src: Source) -> set[str]:
+    first = str(src.authors[0]) if src.authors else ""
+    ascii_text = unicodedata.normalize("NFKD", first).encode("ascii", "ignore").decode().lower()
+    return {w for w in re.findall(r"[a-z]+", ascii_text) if len(w) > 1 and w != "and"}
+
+
+def _nothing_tells_them_apart(a: Source, b: Source) -> bool:
+    doi_a, doi_b = normalize_doi(a.doi), normalize_doi(b.doi)
+    if doi_a and doi_b and doi_a != doi_b:
+        return False
+    if not _years_agree(a.year, b.year):
+        return False
+    words_a, words_b = _first_author_words(a), _first_author_words(b)
+    return not (words_a and words_b and words_a.isdisjoint(words_b))
+
+
 def dedup_by_title(
     sources: list[Source],
     existing: list[Source],
-    threshold: int = TITLE_MATCH_THRESHOLD,
 ) -> tuple[list[Source], list[tuple[Source, Source]]]:
-    if not existing:
-        return sources, []
+    """Merge only identical titles that nothing else tells apart; the rest is left for screening."""
+    by_title: dict[str, list[Source]] = {}
+    for e in existing:
+        by_title.setdefault(normalize_title(e.title), []).append(e)
 
-    # process.extract runs the scorer loop in C with score_cutoff pruning —
-    # much faster than a Python loop when both lists are in the thousands.
-    existing_norms = [normalize_title(e.title) for e in existing]
     kept: list[Source] = []
     matched: list[tuple[Source, Source]] = []
-
     for new in sources:
-        hits = process.extract(
-            normalize_title(new.title),
-            existing_norms,
-            scorer=TITLE_MATCH_SCORER,
-            score_cutoff=threshold,
-            limit=None,
-        )
-        # Best score first, so a same-titled paper from another year falls through to the next.
-        match = next((existing[i] for _, _, i in hits if _years_agree(new.year, existing[i].year)), None)
+        norm = normalize_title(new.title)
+        candidates = by_title.get(norm, []) if len(norm.split()) >= TITLE_MIN_WORDS else []
+        match = next((e for e in candidates if _nothing_tells_them_apart(new, e)), None)
         if match is not None:
             matched.append((new, match))
         else:
             kept.append(new)
-
     return kept, matched

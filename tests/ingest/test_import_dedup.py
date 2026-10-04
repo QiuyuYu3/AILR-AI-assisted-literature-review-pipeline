@@ -2,9 +2,13 @@
 - blank DOIs are stored as NULL so they never collide on the (project_id, doi) unique key (0.19)
 - a title match keeps the MORE COMPLETE record (DOI first, then authors) and logs the drop (0.19)
 - DOI dedup within an import and against existing rows
+- title dedup is conservative: a wrong merge hides a paper, while a missed one is screened twice
+  and can still be flagged by hand
 """
 
 import json
+
+import pytest
 
 from ailr.core.project import _record_score
 from ailr.core.source import Source
@@ -14,6 +18,13 @@ from ailr.ingest import dedup
 class TestDedupFunctions:
     def test_normalize_title(self):
         assert dedup.normalize_title("LAEO-Net++:  A   Deep Model!") == "laeo net a deep model"
+
+    def test_a_doi_written_as_a_url_or_with_a_prefix_is_the_same_doi(self):
+        a = Source(title="A", doi="10.1/abc")
+        b = Source(title="A from another database", doi="https://doi.org/10.1/ABC")
+        c = Source(title="A once more", doi="doi: 10.1/abc")
+        unique, dups = dedup.dedup_by_doi([a, b, c])
+        assert unique == [a] and dups == [b, c]
 
     def test_doi_dedup_is_case_insensitive(self):
         a = Source(title="A", doi="10.1/ABC")
@@ -31,7 +42,7 @@ class TestDedupFunctions:
         existing = [Source(id=1, title="Dyadic gaze coordination in infancy")]
         new = [Source(title="Dyadic gaze coordination in infancy."),
                Source(title="A completely different topic entirely")]
-        kept, matched = dedup.dedup_by_title(new, existing, threshold=95)
+        kept, matched = dedup.dedup_by_title(new, existing)
         assert [s.title for s in kept] == ["A completely different topic entirely"]
         assert [(n.title[:10], e.id) for n, e in matched] == [("Dyadic gaz", 1)]
 
@@ -46,20 +57,52 @@ class TestDedupFunctions:
         kept, matched = dedup.dedup_by_title(new, existing)
         assert matched == [] and kept == new
 
-    def test_titles_scoring_below_the_threshold_stay_apart(self):
-        """One changed word in a short title scores about 92: close, but a different paper."""
-        existing = [Source(id=1, title="Maternal sensitivity and infant attachment", year=2019)]
-        new = [Source(title="Maternal sensitivity and infant attention", year=2019)]
+    def test_case_punctuation_and_spacing_do_not_hide_a_duplicate(self):
+        existing = [Source(id=1, title="Neural synchrony during parent-child interaction")]
+        new = [Source(title="NEURAL SYNCHRONY  during parent child interaction.")]
         kept, matched = dedup.dedup_by_title(new, existing)
-        assert kept == new and matched == []
+        assert kept == [] and [e.id for _, e in matched] == [1]
 
-    def test_title_dedup_still_catches_typos_case_and_word_order(self):
+    def test_a_typo_or_reordered_words_are_left_for_screening(self):
+        """Who gazes and who speaks is a different paper; a typo may be one too. Neither is merged."""
         existing = [Source(id=1, title="Neural synchrony during parent-child interaction"),
                     Source(id=2, title="Infant gaze and maternal speech")]
         new = [Source(title="Neural synchrony during parent-child interation"),
-               Source(title="MATERNAL SPEECH AND INFANT GAZE")]
+               Source(title="Maternal gaze and infant speech")]
         kept, matched = dedup.dedup_by_title(new, existing)
-        assert kept == [] and [e.id for _, e in matched] == [1, 2]
+        assert kept == new and matched == []
+
+    def test_one_changed_word_keeps_two_titles_apart(self):
+        existing = [Source(id=1, title="Infant gaze and maternal speech", year=2019)]
+        new = [Source(title="Infant gaze and paternal speech", year=2019)]
+        kept, matched = dedup.dedup_by_title(new, existing)
+        assert kept == new and matched == []
+
+    def test_different_dois_mean_different_records_whatever_the_title(self):
+        existing = [Source(id=1, title="Dyadic gaze coordination in infancy", doi="10.1/first")]
+        other_doi = Source(title="Dyadic gaze coordination in infancy", doi="10.1/second")
+        same_doi_other_notation = Source(title="Dyadic gaze coordination in infancy", doi="https://doi.org/10.1/FIRST")
+        no_doi = Source(title="Dyadic gaze coordination in infancy")
+        kept, matched = dedup.dedup_by_title([other_doi, same_doi_other_notation, no_doi], existing)
+        assert kept == [other_doi]
+        assert [n for n, _ in matched] == [same_doi_other_notation, no_doi]
+
+    def test_first_authors_with_no_name_in_common_veto_a_title_match(self):
+        existing = [Source(id=1, title="Dyadic gaze coordination in infancy", authors=["Lee, Jae-Hyun", "Park, S"])]
+        other_author = Source(title="Dyadic gaze coordination in infancy", authors=["Garcia, M"])
+        formats = [Source(title="Dyadic gaze coordination in infancy", authors=[a])
+                   for a in ("Lee JH", "J.-H. Lee", "Lee, J.")]
+        no_authors = Source(title="Dyadic gaze coordination in infancy")
+        kept, matched = dedup.dedup_by_title([other_author, *formats, no_authors], existing)
+        assert kept == [other_author]
+        assert [n for n, _ in matched] == [*formats, no_authors]
+
+    def test_short_titles_are_never_merged_on_title_alone(self):
+        """Editorials, introductions and replies share their titles across journals and years."""
+        existing = [Source(id=1, title="Editorial", year=2020), Source(id=2, title="Joint attention", year=2015)]
+        new = [Source(title="Editorial", year=2020), Source(title="Joint attention", year=2015)]
+        kept, matched = dedup.dedup_by_title(new, existing)
+        assert kept == new and matched == []
 
     def test_publication_years_more_than_a_year_apart_veto_a_title_match(self):
         existing = [Source(id=1, title="Dyadic gaze coordination in infancy", year=2010)]
@@ -184,6 +227,21 @@ class TestIngestPipeline:
         dups = tmp_project.db.list_duplicates(tmp_project.project_id)
         assert [(d["reason"], d["matched_source_id"]) for d in dups] == [("title", kept_before.id)]
         assert json.loads(tmp_project.db.get_duplicate_record(dups[0]["id"]))["doi"] is None
+
+    @pytest.mark.parametrize("stored,incoming", [
+        ("10.1/dyad", "https://doi.org/10.1/dyad"),
+        ("https://doi.org/10.1/dyad", "10.1/DYAD"),     # a link kept from an earlier import
+    ])
+    def test_an_existing_doi_in_another_notation_blocks_a_reimport(self, tmp_project, tmp_path, stored, incoming):
+        first = _RIS_A.replace("DO  - 10.1/dyad", f"DO  - {stored}")
+        tmp_project.ingest(_write_ris(tmp_path / "a.ris", [first]), source_database="test")
+        [kept] = tmp_project.db.list_sources(tmp_project.project_id)
+        renamed = (_RIS_A.replace("TI  - Dyadic gaze coordination in infancy", "TI  - A different title altogether")
+                   .replace("DO  - 10.1/dyad", f"DO  - {incoming}"))
+        result = tmp_project.ingest(_write_ris(tmp_path / "b.ris", [renamed]), source_database="test")
+        assert (result.imported, result.deduplicated) == (0, 1)
+        [dup] = tmp_project.db.list_duplicates(tmp_project.project_id)
+        assert (dup["reason"], dup["matched_source_id"]) == ("doi", kept.id)
 
     def test_an_existing_doi_blocks_a_reimport_under_another_title(self, tmp_project, tmp_path):
         """A different title takes title matching out of the picture, so only the DOI can catch it."""

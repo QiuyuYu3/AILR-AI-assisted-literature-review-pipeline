@@ -38,12 +38,14 @@ This is optional but worth doing at import, while the details are fresh.
 
 ## Deduplicate
 
-Duplicates are flagged **automatically** on import, by two rules:
+Duplicates are removed **automatically** on import, by two rules. Both are deliberately cautious: merging two different papers quietly drops one of them, while a duplicate that slips through only costs an extra screening decision.
 
-- exact match on **DOI**
-- fuzzy match on **title**: catches the same paper with different punctuation, casing, word order, or a typo across databases. Extra words lower the score, so a short title contained in a longer one (an editorial, a correction notice) is not mistaken for it, and records whose publication years are more than a year apart are never merged on title.
+- **DOI**: the same DOI, however it is written (bare, as a `https://doi.org/` link, or with a `doi:` prefix).
+- **Title**: the same title once case, punctuation and spacing are ignored. Even then the two records are kept apart if the title is shorter than four words (an editorial, an introduction), if both carry DOIs and they differ, if their publication years are more than a year apart, or if their first authors share no name. A typo, a spelling variant or a reordered title is not merged.
 
-Review them on the **Duplicates** page. Each flagged pair is shown side by side so you can **confirm** it is the same paper or **clear** a false match. Confirmed duplicates are marked so they drop out of the screening queue and are counted in the PRISMA flow's "duplicates removed" box and in no box below it (so that number is auditable, not a manual guess). Dropped the wrong one? A **"Removed at import"** list lets you **restore** it as a source; the full record is kept, so it comes back complete.
+When two records are merged on title, the more complete one is kept (DOI first, then authors, then the other fields) and the other is logged. A duplicate that gets through shows up in screening, where the card's **Duplicate** button flags it. Flagged records drop out of the queues and are counted in the PRISMA flow's "duplicates removed" box and in no box below it, so that number is auditable rather than a manual guess.
+
+The **Duplicates** page lists both kinds: the records you flagged by hand and the records **removed at import**. Either can be **restored** if it was not a duplicate after all; a record removed at import keeps its full content, so it comes back complete.
 
 ![duplicates](../figures/duplicates.png)
 

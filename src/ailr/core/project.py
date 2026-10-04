@@ -190,9 +190,10 @@ class Project:
         unique_sources: list[Source] = []
 
         # Cross-import DOI dedup against existing rows, using one query instead of one per record.
-        existing_doi_index = self._db.existing_doi_index(self._project_id)
+        existing_doi_index = {dedup.normalize_doi(doi): sid
+                              for doi, sid in self._db.existing_doi_index(self._project_id).items()}
         for src in sources:
-            matched_id = existing_doi_index.get(src.doi.lower().strip()) if src.doi else None
+            matched_id = existing_doi_index.get(dedup.normalize_doi(src.doi)) if src.doi else None
             if matched_id is not None:
                 cross_dups += 1
                 dup_rows.append(_dup_row(src, "doi", matched_id))
@@ -200,9 +201,7 @@ class Project:
             unique_sources.append(src)
 
         existing = self._db.list_sources(project_id=self._project_id)
-        candidates_for_insert, title_matches_raw = dedup.dedup_by_title(
-            unique_sources, existing, threshold=dedup.TITLE_MATCH_THRESHOLD
-        )
+        candidates_for_insert, title_matches_raw = dedup.dedup_by_title(unique_sources, existing)
 
         title_matches: list[dict[str, Any]] = [
             {

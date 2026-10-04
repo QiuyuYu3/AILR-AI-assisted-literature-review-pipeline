@@ -15,7 +15,7 @@ from ailr.core.pdf_paths import portable_path
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.exceptions import InputNotFoundError
-from ailr.ingest.dedup import TITLE_MATCH_SCORER, normalize_title
+from ailr.ingest.dedup import TITLE_MATCH_SCORER, normalize_doi, normalize_title
 from ailr.ingest.ris import pdf_attachment_from_record
 
 _TITLE_THRESHOLD = 90
@@ -43,9 +43,7 @@ def link_pdfs_from_ris(project: Project, ris_path: Path) -> PdfLinkSummary:
     base = ris_path.parent
     existing = project.db.list_sources(project.project_id)
     existing_norms = [(normalize_title(s.title), s) for s in existing]
-    existing_by_doi = {
-        s.doi.strip().lower(): s for s in existing if isinstance(s.doi, str) and s.doi.strip()
-    }
+    existing_by_doi = {normalize_doi(s.doi): s for s in existing if isinstance(s.doi, str) and normalize_doi(s.doi)}
 
     summary = PdfLinkSummary(total_records=len(records))
 
@@ -172,7 +170,7 @@ def _match_source(
 ) -> Source | None:
     doi = rec.get("doi")
     if isinstance(doi, str) and doi.strip():
-        hit = existing_by_doi.get(doi.strip().lower())
+        hit = existing_by_doi.get(normalize_doi(doi))
         if hit is not None:
             return hit
 

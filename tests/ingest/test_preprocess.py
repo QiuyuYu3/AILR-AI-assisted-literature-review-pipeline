@@ -54,6 +54,12 @@ class TestPdfMatchSource:
                             _norms([by_title, by_doi]), {"10.1/a": by_title, "10.1/b": by_doi})
         assert got is by_doi
 
+    def test_a_doi_in_another_notation_still_matches(self):
+        by_doi = Source(id=2, title="Something else entirely", doi="10.1/B")
+        got = _match_source({"doi": "https://doi.org/10.1/b", "title": "No title match here"},
+                            _norms([by_doi]), {"10.1/b": by_doi})
+        assert got is by_doi
+
     def test_title_match_above_threshold(self):
         src = Source(id=1, title="Dyadic gaze coordination in infancy")
         got = _match_source({"title": "Dyadic gaze coordination in infancy"}, _norms([src]), {})
