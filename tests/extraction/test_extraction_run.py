@@ -5,8 +5,10 @@
 - batch mode lands everything; clearing mock results makes sources re-extractable
 """
 
+from ailr.criteria import save_criteria
 from ailr.exceptions import DatabaseError
-from ailr.reviewers import ExtractionResult, ScreeningDecision
+from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
+from ailr.reviewers import ExtractionResult, LLMReviewer, ScreeningDecision
 from ailr.tasks.extract import ExtractionTask
 from tests.helpers import add_source, extract_reviewer, vote
 
@@ -20,6 +22,27 @@ def _add_source(project, title, include=True, md_file=True, md_path=True):
 
 def _count(db, sql, *params) -> int:
     return db._conn.execute(sql, params).fetchone()["n"]
+
+
+class TestFlagCheckWithCriteria:
+    """Once the project has criteria, the run asks for one verdict per criterion, keyed by its ID."""
+
+    def test_verdicts_come_back_keyed_by_the_projects_criterion_ids(self, tmp_project):
+        save_criteria(tmp_project.root / tmp_project.config.screening.criteria_structured,
+                      [{"id": cid, "name": f"Criterion {cid}", "pass_if": "yes", "fail_if": "no"} for cid in ("C1", "C2")])
+        asked = []
+
+        def respond(_system, _user, tool_schema):
+            asked.append(tool_schema)
+            return synth_from_tool_schema(tool_schema)
+
+        sid = _add_source(tmp_project, "Candidate")
+        ExtractionTask(tmp_project, LLMReviewer(MockLLMClient(model="mock-extract", response_fn=respond))).run()
+        [schema] = asked
+        slots = schema.input_schema["properties"]["_flag_check"]
+        assert sorted(slots["properties"]) == ["C1", "C2"] and sorted(slots["required"]) == ["C1", "C2"]
+        assert sorted(item["criterion_id"] for item in tmp_project.db.get_flag_check(sid)) == ["C1", "C2"]
+        assert tmp_project.db.get_latest_ai_decision(sid, stage="full_text")["decision"] == "include"
 
 
 class TestForcedReExtraction:

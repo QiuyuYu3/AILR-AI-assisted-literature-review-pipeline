@@ -63,6 +63,17 @@ class TestAccounting:
         a = audit_fields([("tools", value, None)], _TEXT)
         assert (a.values, a.quoted, a.checked, a.verbatim) == (1, 1, 1, 1)
 
+    def test_a_sub_field_named_value_is_not_taken_for_the_quote_wrapper(self):
+        """The schema template's list-of-objects example has a sub-field called value."""
+        item = {"tool": {"value": "TO-ComboSAD", "quote": "We used TO-ComboSAD for speech activity detection"},
+                "value": {"value": "LENA", "quote": "recorded with LENA units"}}
+        a = audit_fields([("tools", [item], None)], _TEXT)
+        assert (a.values, a.quoted, a.checked, a.verbatim) == (1, 1, 2, 2)
+
+    def test_a_wrapped_null_is_no_value_but_an_object_with_content_is(self):
+        assert audit_fields([("f", {"value": None, "quote": None}, None)], _TEXT).values == 0
+        assert audit_fields([("design", {"type": {"value": "within", "quote": None}}, None)], _TEXT).values == 1
+
     def test_merge_aggregates(self):
         a = audit_fields([("f", "x", "made-up quote one two")], _TEXT, source_id=1)
         b = audit_fields([("f", "y", "Coefficient of variation was calculated per channel")], _TEXT, source_id=2)

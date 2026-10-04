@@ -60,11 +60,6 @@ def test_expected_form_keys_per_field_type():
     assert grids == {"tasks"}
 
 
-def test_expected_form_keys_skips_unverified_fields():
-    values, _ = _expected_form_keys([f for f in _fields() if f.verify])
-    assert "doi_note" not in values
-
-
 def test_no_missing_fields_when_form_matches_schema():
     assert _missing_form_fields(_fields(), _ALL_VALUE_IDS, _ALL_GRID_IDS) == []
 
@@ -381,7 +376,8 @@ def _do_save(db, src, *, include_autoaccept, ai_rows=None):
 
 
 def test_draft_writes_only_the_fields_a_human_verifies(tmp_project, source):
-    saved = _do_save(tmp_project.db, source, include_autoaccept=False)
+    ai_rows = {"doi_note": {"value": "10.1/x", "source_quote": "in the abstract"}}
+    saved = _do_save(tmp_project.db, source, include_autoaccept=False, ai_rows=ai_rows)
     assert set(saved) == {"design", "n_dyads", "modality", "sample", "tasks"}
 
 

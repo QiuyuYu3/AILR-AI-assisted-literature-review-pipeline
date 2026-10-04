@@ -90,11 +90,11 @@ class TestSubmittedMarker:
     def test_submitters_in_submit_order_and_latest_shown(self, tmp_project):
         db = tmp_project.db
         sid = add_source(tmp_project)
+        db.mark_extraction_submitted(sid, "bob")      # not alphabetical, so order by name would differ
         db.mark_extraction_submitted(sid, "amber")
-        db.mark_extraction_submitted(sid, "bob")
-        assert db.extraction_submitters(sid) == ["amber", "bob"]
+        assert db.extraction_submitters(sid) == ["bob", "amber"]
         # the "Extracted by" badge shows the LATEST submitter
-        assert db.human_extractors_for_sources([sid]) == {sid: "bob"}
+        assert db.human_extractors_for_sources([sid]) == {sid: "amber"}
 
     def test_reserved_markers_do_not_count_as_extraction_fields(self, tmp_project):
         db = tmp_project.db
@@ -212,6 +212,15 @@ class TestConsensusQueue:
         assert db.extraction_submitters(sid) == ["amber"]
         assert db.sources_needing_consensus([sid]) == set()
 
+    def test_markers_doubled_before_submit_was_idempotent_still_count_one_reviewer(self, tmp_project):
+        db = tmp_project.db
+        sid = add_source(tmp_project, with_md=True)
+        _field(db, sid, "amber")
+        db.insert_extractions([ExtractionResult(
+            extractor_type="human", extractor_id="amber", source_id=sid, field_name="_submitted", value=True,
+        ) for _ in range(2)])
+        assert db.sources_needing_consensus([sid]) == set()
+
     def test_two_submitters_queue_for_reconciliation(self, tmp_project):
         db = tmp_project.db
         sid = add_source(tmp_project, with_md=True)
@@ -314,6 +323,21 @@ class TestConsensusComparison:
         assert agreed == [] and len(cards) == 1
         assert sorted(state["n"]) == ["24", "26"]
         assert state["n"]["24"] == {"value": 24, "quote": "amber:n"}
+
+    def test_an_agreed_field_keeps_the_first_submitters_quote(self, tmp_project):
+        """Submission order, not name order: lin submits before amber here."""
+        from ailr.ui.consensus_view import _compare
+
+        self._schema(tmp_project, [{"name": "design", "type": "string"}])
+        sid = add_source(tmp_project, with_md=True)
+        for rid in ("lin", "amber"):
+            tmp_project.db.insert_extraction(ExtractionResult(
+                extractor_type="human", extractor_id=rid, field_name="design",
+                value="obs", source_quote=f"{rid}:design", source_id=sid,
+            ))
+            tmp_project.db.mark_extraction_submitted(sid, rid)
+        [(_field_spec, value, quote)] = _compare(tmp_project, sid)[0]
+        assert (value, quote) == ("obs", "lin:design")
 
     def test_list_order_is_not_a_disagreement(self, tmp_project):
         """Two reviewers typing the same multi-select in a different order agree."""

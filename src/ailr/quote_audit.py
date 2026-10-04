@@ -74,9 +74,17 @@ def _split_quote_cell(cell: Any) -> list[str]:
     return [p.strip() for p in str(cell).split(QUOTE_SEPARATOR) if p.strip()]
 
 
+# An object item can have a sub-field named "value"; only a dict with no other keys is a {value, quote} cell.
+_CELL_KEYS = {"value", "quote", "confidence"}
+
+
+def _is_cell(v: Any) -> bool:
+    return isinstance(v, dict) and "value" in v and set(v) <= _CELL_KEYS
+
+
 def _collect_nested_quotes(v: Any, out: list[str]) -> None:
     if isinstance(v, dict):
-        if "value" in v:
+        if _is_cell(v):
             if v.get("quote"):
                 out.append(str(v["quote"]))
             _collect_nested_quotes(v.get("value"), out)
@@ -89,7 +97,7 @@ def _collect_nested_quotes(v: Any, out: list[str]) -> None:
 
 
 def _has_value(v: Any) -> bool:
-    if isinstance(v, dict) and "value" in v:
+    if _is_cell(v):
         return _has_value(v.get("value"))
     return v is not None and v != "" and v != [] and v != {}
 
