@@ -4,16 +4,17 @@
 ## [Unreleased]
 
 ### Changed
-- Calibration κ counts uncertain as include, as the methods text and Reports do; the three-way κ is shown beside it on the calibration page and in Reports.
+- Calibration κ counts uncertain as include; the three-way κ is shown beside it.
 
 ### Fixed
-- PRISMA excluded boxes counted votes, not papers: two reviewers excluding one record counted it twice, and a paper still in conflict counted as excluded. They now follow the settled rule of the included boxes, and the flow lists papers awaiting a decision.
-- Duplicates flagged by hand stayed in PRISMA's after-deduplication, screened, and sought counts; they now count as duplicates removed.
-- Two-arm PRISMA: the SVG subtracted the duplicates twice, and an arm's records identified left out its own duplicates. Arms are counted before deduplication, and a duplicate dropped at import keeps its arm.
-- Methods text printed the records screened as "human screening decisions" and the included studies as "studies completed extraction"; it now says "N of M included studies" with a final extraction record.
-- Title deduplication merged different papers whose titles were only similar (a short title inside a longer one, or "maternal" against "paternal"), and could overwrite one with the other. It now merges identical titles only, never under four words, and never when the DOIs differ, the years are over a year apart, or the first authors share no name. DOIs written as links or with a doi: prefix now match their bare form, in deduplication and PDF linking.
-- RIS export and AI extraction candidates took any include ever cast, AI-only and later-reversed ones included; both now follow the full-text queue.
-- The final extraction export included drafts nobody had submitted.
+- PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.
+- Hand-flagged duplicates now count as duplicates removed in PRISMA.
+- Two-arm PRISMA: the SVG subtracted duplicates twice; each arm is counted before deduplication.
+- Methods text used the wrong numbers for records screened and completed extractions.
+- Title deduplication merged papers with merely similar titles; it now needs identical titles and no conflicting DOI, year or first author.
+- DOIs written as links now match the bare DOI.
+- RIS export and AI extraction candidates now follow the full-text queue.
+- The final extraction export included unsubmitted drafts.
 
 ---
 ## [0.36.0] – 2026-10-04
