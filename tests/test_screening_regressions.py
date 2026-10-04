@@ -20,6 +20,34 @@ def _decision(sid, decision, reviewer_id, reviewer_type="human", stage="abstract
     )
 
 
+class TestDeletingHumanVotesKeepsTheAi:
+    """Move-back and move-to-screening delete by reviewer type, and that filter is the only thing
+    keeping the AI's verdicts (and with them the conflicts and the audit trail) alive."""
+
+    def _both_stages(self, project):
+        sid = _add_source(project)
+        for stage in ("abstract", "full_text"):
+            for rtype, rid in (("ai", "gpt"), ("human", "amber")):
+                project.db.insert_screening_decision(_decision(sid, "include", rid, reviewer_type=rtype, stage=stage))
+        return sid
+
+    def test_moving_back_to_full_text_drops_only_the_human_full_text_vote(self, tmp_project):
+        db = tmp_project.db
+        sid = self._both_stages(tmp_project)
+        assert db.delete_stage_decisions(sid, "full_text", reviewer_type="human") == 1
+        assert db.get_human_decisions(sid, stage="full_text") == []
+        assert db.get_latest_ai_decision(sid, stage="full_text")["reviewer_id"] == "gpt"
+        assert [d["reviewer_id"] for d in db.get_human_decisions(sid, stage="abstract")] == ["amber"]
+
+    def test_moving_back_to_screening_drops_the_human_votes_at_both_stages_only(self, tmp_project):
+        db = tmp_project.db
+        sid = self._both_stages(tmp_project)
+        assert db.delete_all_screening_decisions(sid, reviewer_type="human") == 2
+        for stage in ("abstract", "full_text"):
+            assert db.get_human_decisions(sid, stage=stage) == []
+            assert db.get_latest_ai_decision(sid, stage=stage)["reviewer_id"] == "gpt"
+
+
 class TestBatchInsertChunking:
     def test_all_rows_land_across_chunks(self, tmp_project):
         db = tmp_project.db

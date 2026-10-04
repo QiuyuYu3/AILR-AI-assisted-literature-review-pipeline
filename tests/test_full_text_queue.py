@@ -218,6 +218,17 @@ class TestMyDraftFilter:
         assert _page(db, pid, "amber", status="my_draft", workflow="assisted", team_size=1) == set()
         assert _page(db, pid, "amber", status="extracted_mine", workflow="assisted", team_size=1) == {sid}
 
+    def test_extracted_by_me_keeps_the_first_of_two_submitters(self, tmp_project):
+        """Independent extraction: a second reviewer's submission must not take the paper out of
+        the first reviewer's own "Extracted by me" list."""
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _submit(db, sid, "amber")
+        _submit(db, sid, "bob")
+        for rid in ("amber", "bob"):
+            assert _page(db, pid, rid, status="extracted_mine", workflow="assisted", team_size=1,
+                         extractors_required=2) == {sid}
+
     def test_someone_elses_draft_is_not_mine(self, tmp_project):
         db, pid = tmp_project.db, tmp_project.project_id
         sid = _extraction_ready(tmp_project)

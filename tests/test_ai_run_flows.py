@@ -35,6 +35,19 @@ def _mock_reviewer(response=_INCLUDE_RESPONSE):
 
 
 class TestScreeningRun:
+    def test_a_full_text_ai_verdict_does_not_hide_a_paper_from_abstract_screening(self, tmp_project):
+        """Extraction writes the AI's full-text verdict; a paper with one but no abstract verdict
+        still needs abstract screening."""
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        db.insert_screening_decision(ScreeningDecision(
+            decision="include", reasoning="derived from extraction", reviewer_type="ai",
+            reviewer_id="gpt", source_id=sid, stage="full_text",
+        ))
+        summary = ScreeningTask(tmp_project, _mock_reviewer()).run()
+        assert summary.screened == 1
+        assert db.get_latest_ai_decision(sid, "abstract")["decision"] == "include"
+
     def test_run_screens_all_unscreened(self, tmp_project):
         db = tmp_project.db
         sids = [_add_source(tmp_project, f"P{i}") for i in range(3)]

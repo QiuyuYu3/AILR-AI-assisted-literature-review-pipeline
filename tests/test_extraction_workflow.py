@@ -215,6 +215,18 @@ class TestConsensusQueue:
         db.mark_extraction_submitted(sid, "amber")
         assert db.sources_needing_consensus([sid]) == set()
 
+    def test_submitting_twice_leaves_one_submission(self, tmp_project):
+        """Submit can be pressed again after an edit; one reviewer must not become two."""
+        db = tmp_project.db
+        sid = _add_source(tmp_project, with_md=True)
+        _field(db, sid, "amber")
+        db.mark_extraction_submitted(sid, "amber")
+        db.mark_extraction_submitted(sid, "amber")
+        markers = [r for r in db.list_extractions(sid, extractor_type="human") if r["field_name"] == "_submitted"]
+        assert len(markers) == 1
+        assert db.extraction_submitters(sid) == ["amber"]
+        assert db.sources_needing_consensus([sid]) == set()
+
     def test_two_submitters_queue_for_reconciliation(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, with_md=True)

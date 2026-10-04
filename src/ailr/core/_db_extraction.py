@@ -253,6 +253,8 @@ class ExtractionMixin:
     # All "extracted / by whom / done" logic keys off the marker, not the presence of fields.
 
     def mark_extraction_submitted(self, source_id: int, reviewer_id: str) -> None:
+        if self.has_submitted(source_id, reviewer_id):
+            return      # a re-submit after an edit is still one reviewer's submission
         try:
             self._conn.execute(
                 "INSERT INTO extractions (source_id, extractor_type, extractor_id, field_name, value, prompt_version) "

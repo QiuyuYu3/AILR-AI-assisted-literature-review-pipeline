@@ -988,9 +988,9 @@ def _ai_grid_rows(fields: list[FieldSpec], ai_data: dict[str, Any] | None) -> di
 
 
 def _ai_data_from_rows(rows: Any) -> dict[str, Any]:
-    """Extraction rows -> the {field: cell} shape the form reads. Scalar fields AND scalar lists
-    keep their quote in the separate source_quote column; wrap them as {value, quote} so the form
-    can show it. Object / list-of-object values stay raw (quotes are nested at the leaves)."""
+    """Extraction rows -> the {field: cell} shape the form reads. Every value except an object is
+    wrapped as {value, quote, confidence}, lists of objects included, so the form can show the
+    row's source_quote; an object stays raw because its quotes sit at its leaves."""
     out: dict[str, Any] = {}
     for r in rows or []:
         v = r["value"]

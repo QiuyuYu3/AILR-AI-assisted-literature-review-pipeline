@@ -71,6 +71,7 @@ class ScreeningTask:
             un_screened = self.project.db.list_unscreened(
                 project_id=self.project.project_id,
                 reviewer_type=self.reviewer.reviewer_type,
+                stage="abstract",
             )
         if limit is not None:
             un_screened = un_screened[:limit]

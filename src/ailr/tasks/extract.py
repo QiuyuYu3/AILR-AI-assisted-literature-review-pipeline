@@ -102,7 +102,7 @@ class ExtractionTask:
                 on_progress(done, len(candidates), source, None)
 
         # Mock runs buffer everything and write it in a few multi-row INSERTs at the end (fast, no
-        # per-row Neon round trips); real runs keep the per-row, per-commit path for durability.
+        # per-row Neon round trips); real runs commit paper by paper for durability.
         all_results: list[ExtractionResult] = []
         all_ft_decisions: list[ScreeningDecision] = []
         # Telemetry is buffered either way: not review data, so no need for per-row durability.
@@ -184,27 +184,29 @@ class ExtractionTask:
                             if force and self.reviewer.reviewer_type == "ai"
                             else None
                         )
-                        for result in extraction.results:
-                            self.project.db.insert_extraction(result)
-                        if extraction.flag_check is not None:
-                            self.project.db.insert_flag_check(
-                                source_id=source.id,
-                                extractor_type=self.reviewer.reviewer_type,
-                                extractor_id=self.reviewer.reviewer_id,
-                                flag_check=extraction.flag_check,
-                            )
-                            if force:
-                                # This run derives a new full-text verdict for the same paper and
-                                # reviewer; drop the one its own earlier run wrote rather than
-                                # leaving two verdicts that only MAX(id) can tell apart.
-                                self.project.db.delete_stage_decisions(
-                                    source.id, "full_text", reviewer_type=self.reviewer.reviewer_type
+                        # One transaction per paper: a failure part-way through leaves none of it.
+                        with self.project.db._conn.transaction():
+                            for result in extraction.results:
+                                self.project.db.insert_extraction(result)
+                            if extraction.flag_check is not None:
+                                self.project.db.insert_flag_check(
+                                    source_id=source.id,
+                                    extractor_type=self.reviewer.reviewer_type,
+                                    extractor_id=self.reviewer.reviewer_id,
+                                    flag_check=extraction.flag_check,
                                 )
-                            self.project.db.insert_screening_decision(ft_decision)
-                        if previous_max is not None:
-                            summary.archived += self.project.db.archive_ai_extractions_upto(
-                                source.id, previous_max
-                            )
+                                if force:
+                                    # This run derives a new full-text verdict for the same paper and
+                                    # reviewer; drop the one its own earlier run wrote rather than
+                                    # leaving two verdicts that only MAX(id) can tell apart.
+                                    self.project.db.delete_stage_decisions(
+                                        source.id, "full_text", reviewer_type=self.reviewer.reviewer_type
+                                    )
+                                self.project.db.insert_screening_decision(ft_decision)
+                            if previous_max is not None:
+                                summary.archived += self.project.db.archive_ai_extractions_upto(
+                                    source.id, previous_max
+                                )
 
                     if not batch and meta is not None:
                         call_metas.append(meta)

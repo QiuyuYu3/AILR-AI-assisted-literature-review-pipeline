@@ -378,17 +378,19 @@ class ScreeningMixin:
         reviewer_type: str = "ai",
         limit: int | None = None,
         offset: int = 0,
+        stage: str = "abstract",
     ) -> list[Source]:
+        # One stage only: the full-text verdict extraction writes says nothing about the abstract.
         sql = """
             SELECT s.* FROM sources s
             WHERE s.project_id = ?
               AND NOT EXISTS (
                   SELECT 1 FROM screening_decisions d
-                  WHERE d.source_id = s.id AND d.reviewer_type = ?
+                  WHERE d.source_id = s.id AND d.reviewer_type = ? AND d.stage = ?
               )
             ORDER BY s.id
         """
-        params: list = [project_id, reviewer_type]
+        params: list = [project_id, reviewer_type, stage]
         if limit is not None:
             sql += " LIMIT ? OFFSET ?"
             params.extend([limit, offset])
@@ -783,9 +785,8 @@ class ScreeningMixin:
                          "AND e.extractor_type = 'human' AND e.extractor_id = ? AND e.field_name = '_submitted')")
             params.append(reviewer_id)
         elif status == "extracted_mine":
-            where.append("(SELECT extractor_id FROM extractions e WHERE e.source_id = s.id "
-                         "AND e.extractor_type = 'human' AND e.field_name = '_submitted' "
-                         "ORDER BY e.id DESC LIMIT 1) = ?")
+            where.append("EXISTS (SELECT 1 FROM extractions e WHERE e.source_id = s.id "
+                         "AND e.extractor_type = 'human' AND e.extractor_id = ? AND e.field_name = '_submitted')")
             params.append(reviewer_id)
         elif status in ("quick_test", "calibration"):  # 'calibration': the old value, still in saved sessions
             sql, test_stage = _last_quick_test_sql("full_text")
