@@ -176,6 +176,25 @@ class TestExtractionFailures:
         assert summary.failures[0]["error"].startswith("LLMError: ")
         assert "Re-run this paper" in summary.failures[0]["error"]
 
+    def test_a_structured_field_returned_as_broken_json_fails_the_paper(self, tmp_project):
+        """The test above stands in a reviewer that raises before any parsing. This one goes
+        through the real reviewer: a list-of-objects field that comes back as a JSON string which
+        does not parse must fail that paper and store none of it."""
+        sid = _extractable_source(tmp_project, "broken")
+
+        def broken(_system, _user, tool_schema):
+            out = synth_from_tool_schema(tool_schema)
+            out["example_list_of_objects"] = "[not json"
+            return out
+
+        reviewer = LLMReviewer(MockLLMClient(model="mock-extract", response_fn=broken))
+        summary = ExtractionTask(tmp_project, reviewer).run()
+
+        assert (summary.extracted, summary.failed) == (0, 1)
+        assert summary.failures[0]["error"].startswith("LLMError: ")
+        assert "example_list_of_objects" in summary.failures[0]["error"]
+        assert tmp_project.db.has_extraction(sid, extractor_type="ai") is False
+
     def test_a_forced_re_extract_that_fails_leaves_the_previous_run_alone(self, tmp_project):
         """extract.py notes where the previous AI run ends BEFORE writing and retires it only once
         the new rows have landed. A failed call must therefore leave the live extraction whole."""

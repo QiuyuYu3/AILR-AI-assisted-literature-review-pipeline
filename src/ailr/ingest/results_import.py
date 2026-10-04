@@ -106,38 +106,41 @@ def import_ai_results(project: Project, records: list[dict], *, extractor_id: st
             summary.errors.append(f"record {i}: 'extraction' is not an object")
             continue
 
-        db.delete_extractions(src.id, "ai")  # replace any prior AI extraction for this source
-        for field_name, payload in extraction.items():
-            if isinstance(payload, dict) and "value" in payload:
-                value, quote = payload.get("value"), payload.get("quote")
-            else:
-                value, quote = payload, None
-            db.insert_extraction(
-                ExtractionResult(
-                    extractor_type="ai",
-                    extractor_id=extractor_id,
-                    field_name=field_name,
-                    value=value,
-                    source_quote=quote,
-                    source_id=src.id,
-                )
-            )
-            summary.fields_written += 1
-
         fc = rec.get("flag_check") or {}
         decision = fc.get("decision") if isinstance(fc, dict) else None
-        if decision in ("include", "exclude", "uncertain"):
-            db.insert_screening_decision(
-                ScreeningDecision(
-                    decision=decision,
-                    reasoning="(imported AI flag_check)",
-                    reviewer_type="ai",
-                    reviewer_id=extractor_id,
-                    source_id=src.id,
-                    stage="full_text",
+        # One transaction per record: a failure part-way through leaves the previous import whole.
+        with db._conn.transaction():
+            db.delete_extractions(src.id, "ai")  # replace any prior AI extraction for this source
+            for field_name, payload in extraction.items():
+                if isinstance(payload, dict) and "value" in payload:
+                    value, quote = payload.get("value"), payload.get("quote")
+                else:
+                    value, quote = payload, None
+                db.insert_extraction(
+                    ExtractionResult(
+                        extractor_type="ai",
+                        extractor_id=extractor_id,
+                        field_name=field_name,
+                        value=value,
+                        source_quote=quote,
+                        source_id=src.id,
+                    )
                 )
-            )
-            summary.flags_written += 1
+                summary.fields_written += 1
+
+            if decision in ("include", "exclude", "uncertain"):
+                db.delete_screening_decision(src.id, extractor_id, stage="full_text", reviewer_type="ai")  # replace prior import
+                db.insert_screening_decision(
+                    ScreeningDecision(
+                        decision=decision,
+                        reasoning="(imported AI flag_check)",
+                        reviewer_type="ai",
+                        reviewer_id=extractor_id,
+                        source_id=src.id,
+                        stage="full_text",
+                    )
+                )
+                summary.flags_written += 1
 
         summary.imported += 1
 

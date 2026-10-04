@@ -13,7 +13,7 @@ from ailr.core.source import Source
 from ailr.exceptions import LLMError
 from ailr.extraction import FieldSpec
 from ailr.ingest.results_import import import_ai_results, import_ai_screening_results
-from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult, _unwrap_value_quote
+from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult, ScreeningDecision, _unwrap_value_quote
 from ailr.tasks.extract import _derive_ft_decision
 
 _LIST_FIELD = FieldSpec(name="study_design", type="list", item_type="string")
@@ -159,6 +159,17 @@ class TestImportAiScreening:
         assert db.get_latest_ai_decision(sid, "abstract")["decision"] == "exclude"
         assert db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
 
+    def test_reimport_leaves_an_in_app_ai_verdict_alone(self, tmp_project):
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        db.insert_screening_decision(ScreeningDecision(
+            decision="include", reasoning="t", reviewer_type="ai", reviewer_id="anthropic:claude",
+            source_id=sid, stage="abstract",
+        ))
+        import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "exclude"}])
+        import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "exclude"}])
+        assert db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 2
+
 
 class TestImportAiExtraction:
     def test_fields_and_flag_check_land(self, tmp_project):
@@ -187,6 +198,73 @@ class TestImportAiExtraction:
         import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "new"}}])
         rows = db.list_extractions(sid, extractor_type="ai")
         assert [r["value"] for r in rows] == ["new"]
+
+    def test_a_record_with_only_a_doi_is_matched_by_it(self, tmp_project):
+        sid = _add_source(tmp_project, doi="10.1/match")
+        summary = import_ai_results(tmp_project, [{"doi": "10.1/MATCH", "extraction": {"design": "x"}}])
+        assert (summary.imported, summary.unmatched) == (1, [])
+        assert [r["value"] for r in tmp_project.db.list_extractions(sid, extractor_type="ai")] == ["x"]
+
+    def test_unknown_and_foreign_project_ids_are_reported_not_written(self, tmp_project):
+        """On a shared Postgres database another project's source ids are valid rows too."""
+        db = tmp_project.db
+        other_pid = db.get_or_create_project("another review")
+        foreign = db.insert_source(Source(title="Not ours", project_id=other_pid))
+        summary = import_ai_results(tmp_project, [
+            {"source_id": 99999, "extraction": {"design": "x"}},
+            {"source_id": foreign, "extraction": {"design": "x"}, "flag_check": {"decision": "include"}},
+        ])
+        assert summary.imported == 0 and len(summary.unmatched) == 2
+        assert db.list_extractions(foreign, extractor_type="ai") == []
+        assert db.get_latest_ai_decision(foreign, stage="full_text") is None
+
+    def test_an_exclude_verdict_and_an_object_field_land(self, tmp_project):
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        summary = import_ai_results(tmp_project, [{
+            "source_id": sid,
+            "extraction": {"task": {"name": "free play", "minutes": 10}},   # an object, not a {value, quote} wrapper
+            "flag_check": {"decision": "exclude"},
+        }])
+        assert (summary.fields_written, summary.flags_written) == (1, 1)
+        [row] = db.list_extractions(sid, extractor_type="ai")
+        assert row["value"] == {"name": "free play", "minutes": 10}
+        assert db.get_latest_ai_decision(sid, stage="full_text")["decision"] == "exclude"
+
+    def test_reimport_replaces_the_imported_full_text_verdict(self, tmp_project):
+        """Two imported verdicts on one paper would leave only MAX(id) to tell them apart; an
+        in-app AI verdict from another model is not the import's to replace."""
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        db.insert_screening_decision(ScreeningDecision(
+            decision="include", reasoning="t", reviewer_type="ai", reviewer_id="anthropic:claude",
+            source_id=sid, stage="full_text",
+        ))
+        for verdict in ("include", "exclude"):
+            import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "x"},
+                                             "flag_check": {"decision": verdict}}])
+        rows = db._conn.execute(
+            "SELECT reviewer_id, decision FROM screening_decisions WHERE source_id = ? AND stage = 'full_text' "
+            "ORDER BY id", (sid,),
+        ).fetchall()
+        assert [(r["reviewer_id"], r["decision"]) for r in rows] == [("anthropic:claude", "include"), ("imported", "exclude")]
+
+    def test_a_failure_part_way_through_a_record_keeps_the_previous_import(self, tmp_project, monkeypatch):
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "old", "sample": "old"}}])
+        real_insert, calls = type(db).insert_extraction, []
+
+        def insert_then_fail(self, result):
+            calls.append(result.field_name)
+            if len(calls) == 2:
+                raise RuntimeError("connection lost")
+            return real_insert(self, result)
+
+        monkeypatch.setattr(type(db), "insert_extraction", insert_then_fail)
+        with pytest.raises(RuntimeError):
+            import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "new", "sample": "new"}}])
+        assert sorted(r["value"] for r in db.list_extractions(sid, extractor_type="ai")) == ["old", "old"]
 
     def test_invalid_flag_decision_is_ignored(self, tmp_project):
         db = tmp_project.db

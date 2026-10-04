@@ -150,6 +150,9 @@ class TestIngestPipeline:
         # the replaced bare content is logged as the dropped duplicate, restorable
         dups = tmp_project.db.list_duplicates(tmp_project.project_id)
         assert len(dups) == 1 and dups[0]["reason"] == "title"
+        assert dups[0]["matched_source_id"] == bare.id
+        logged = json.loads(tmp_project.db.get_duplicate_record(dups[0]["id"]))
+        assert logged["doi"] is None and not logged["authors"]   # the bare record, not the incoming one
 
     def test_title_match_drops_the_less_complete_incoming(self, tmp_project, tmp_path):
         tmp_project.ingest(_write_ris(tmp_path / "full.ris", [_RIS_A]), source_database="test")
@@ -158,3 +161,18 @@ class TestIngestPipeline:
         assert result.imported == 0 and result.deduplicated == 1
         [kept] = tmp_project.db.list_sources(tmp_project.project_id)
         assert kept.id == kept_before.id and kept.doi == "10.1/dyad"  # existing row untouched
+        # the dropped incoming record is logged, so PRISMA counts it and it can be restored
+        dups = tmp_project.db.list_duplicates(tmp_project.project_id)
+        assert [(d["reason"], d["matched_source_id"]) for d in dups] == [("title", kept_before.id)]
+        assert json.loads(tmp_project.db.get_duplicate_record(dups[0]["id"]))["doi"] is None
+
+    def test_an_existing_doi_blocks_a_reimport_under_another_title(self, tmp_project, tmp_path):
+        """A different title takes title matching out of the picture, so only the DOI can catch it."""
+        tmp_project.ingest(_write_ris(tmp_path / "a.ris", [_RIS_A]), source_database="test")
+        [kept] = tmp_project.db.list_sources(tmp_project.project_id)
+        renamed = (_RIS_A.replace("TI  - Dyadic gaze coordination in infancy", "TI  - A different title altogether")
+                   .replace("DO  - 10.1/dyad", "DO  - 10.1/DYAD"))
+        result = tmp_project.ingest(_write_ris(tmp_path / "b.ris", [renamed]), source_database="test")
+        assert (result.imported, result.deduplicated) == (0, 1)
+        [dup] = tmp_project.db.list_duplicates(tmp_project.project_id)
+        assert (dup["reason"], dup["matched_source_id"]) == ("doi", kept.id)

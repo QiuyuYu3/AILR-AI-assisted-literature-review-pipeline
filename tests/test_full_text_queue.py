@@ -134,6 +134,36 @@ class TestFullTextCandidates:
         assert _page(db, pid, "amber", status="all", workflow="assisted", team_size=1) == {settled}
 
 
+class TestReviewQueue:
+    """The page every reviewer lands on: papers they have not judged at full text while the stage
+    still has room for another human, and next to it the ones they have judged."""
+
+    def test_in_assisted_one_vote_takes_it_off_everyones_queue(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _add_source(tmp_project)
+        _vote(db, sid, "include", "amber")   # amber's abstract vote is not a full-text one
+        for rid in ("amber", "bob"):
+            assert _page(db, pid, rid, status="to_review", workflow="assisted", team_size=1) == {sid}
+            assert _page(db, pid, rid, status="reviewed", workflow="assisted", team_size=1) == set()
+
+        _vote(db, sid, "include", "amber", stage="full_text")
+        for rid in ("amber", "bob"):
+            assert _page(db, pid, rid, status="to_review", workflow="assisted", team_size=1) == set()
+        assert _page(db, pid, "amber", status="reviewed", workflow="assisted", team_size=1) == {sid}
+        assert _page(db, pid, "bob", status="reviewed", workflow="assisted", team_size=1) == set()
+
+    def test_in_independent_it_stays_open_for_the_second_reviewer_only(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _add_source(tmp_project)
+        _vote(db, sid, "include", "amber")
+        _vote(db, sid, "include", "amber", stage="full_text")
+        assert _page(db, pid, "amber", status="to_review", workflow="assisted", team_size=2) == set()
+        assert _page(db, pid, "bob", status="to_review", workflow="assisted", team_size=2) == {sid}
+
+        _vote(db, sid, "exclude", "bob", stage="full_text")
+        assert _page(db, pid, "carol", status="to_review", workflow="assisted", team_size=2) == set()
+
+
 class TestToExtractQueue:
     """Under independent extraction two humans each extract the paper, so the queue has to stay
     open to the second one after the first submits."""
@@ -179,6 +209,32 @@ class TestToExtractQueue:
         for rid in ("amber", "bob"):
             assert _page(db, pid, rid, status="to_extract", workflow="assisted",
                          team_size=1, extractors_required=1) == set()
+
+    def test_under_independent_full_text_both_reviewers_must_include_first(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _add_source(tmp_project, with_md=True)
+        _vote(db, sid, "include", "amber")
+        _vote(db, sid, "include", "amber", stage="full_text")
+        assert _page(db, pid, "amber", status="to_extract", workflow="assisted", team_size=2) == set()
+
+        _vote(db, sid, "include", "bob", stage="full_text")
+        assert _page(db, pid, "amber", status="to_extract", workflow="assisted", team_size=2) == {sid}
+
+    def test_in_verify_a_saved_draft_claims_the_paper(self, tmp_project):
+        """One extractor per paper: amber's draft takes it out of everyone else's queue."""
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _draft(db, sid, "amber")
+        assert _page(db, pid, "bob", status="to_extract", workflow="assisted", team_size=1) == set()
+        assert _page(db, pid, "amber", status="to_extract", workflow="assisted", team_size=1) == {sid}
+
+    def test_in_independent_a_third_extractor_is_not_offered_a_finished_paper(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = _extraction_ready(tmp_project)
+        _submit(db, sid, "amber")
+        _submit(db, sid, "bob")
+        assert _page(db, pid, "carol", status="to_extract", workflow="assisted", team_size=1,
+                     extractors_required=2) == set()
 
     def test_paper_without_markdown_is_never_queued(self, tmp_project):
         db, pid = tmp_project.db, tmp_project.project_id
@@ -292,6 +348,15 @@ class TestQueueMatchesPrisma:
         _vote(db, split, "exclude", "bob")
 
         page, sought = self._counts_agree(project)
+        assert page == sought == 1
+
+    def test_a_flagged_duplicate_leaves_both_counts(self, tmp_project):
+        db = tmp_project.db
+        keep, copy = _add_source(tmp_project, "Paper"), _add_source(tmp_project, "Paper, again")
+        for sid in (keep, copy):
+            _vote(db, sid, "include", "amber")
+        db.mark_source_duplicate(copy, True)
+        page, sought = self._counts_agree(tmp_project)
         assert page == sought == 1
 
     def test_empty_project_agrees_at_zero(self, tmp_project):
