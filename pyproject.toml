@@ -46,6 +46,10 @@ packages = ["src/ailr"]
 [tool.hatch.build.targets.sdist]
 include = ["src/ailr", "README.md", "CHANGELOG.md", "ROADMAP.md", "pyproject.toml"]
 
+[tool.pytest.ini_options]
+# tests/ and each of its subfolders are packages, so test modules import shared code as tests.helpers
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
