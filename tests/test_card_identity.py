@@ -201,6 +201,55 @@ def test_every_card_shows_one_papers_data_and_acts_on_that_paper(conflicted):
     assert seen == set(sids)
 
 
+def _ft_conflict(project, marker: str, *, side_data: bool) -> int:
+    """One paper in full-text conflict, every row it carries tagged with `marker`."""
+    db = project.db
+    sid = db.insert_source(Source(title=f"Paper {marker}", project_id=project.project_id))
+    for decision, rtype, rid in (("include", "human", f"hum-{marker}"), ("exclude", "ai", "gpt")):
+        db.insert_screening_decision(ScreeningDecision(
+            decision=decision, reasoning=f"{rtype}-{marker}", reviewer_type=rtype,
+            reviewer_id=rid, source_id=sid, stage="full_text",
+        ))
+    if side_data:
+        db.insert_extraction(ExtractionResult(
+            extractor_type="ai", extractor_id="gpt", field_name="_flag_check",
+            value=[{"criterion_id": f"crit-{marker}", "verdict": "fail", "reason": "x"}], source_id=sid,
+        ))
+        db.tag_source(sid, db.create_tag(project.project_id, f"tag-{marker}"))
+        db.add_note(sid, f"hum-{marker}", "a note")
+    return sid
+
+
+def test_a_conflicted_paper_with_no_side_data_does_not_shift_its_neighbours(tmp_project):
+    """In the fixture every conflicted paper has side data, so a positional zip would still line
+    up. Here the middle one has none, and pairing by position would hand its flag check slot to
+    the next paper's card."""
+    sids = {m: _ft_conflict(tmp_project, m, side_data=(m != "Y")) for m in ("X", "Y", "Z")}
+    by_sid = {sid: m for m, sid in sids.items()}
+    cards = _find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
+    assert len(cards) == 3
+    for card in cards:
+        [sid] = _source_ids_targeted(card)
+        mine = by_sid[sid]
+        text = _text(card).replace(f"Paper {mine}", "")
+        for other in (m for m in sids if m != mine):
+            assert f"crit-{other}" not in text and f"tag-{other}" not in text, (mine, other)
+
+
+def test_a_full_text_card_shows_no_abstract_votes(tmp_project):
+    db = tmp_project.db
+    sid = _ft_conflict(tmp_project, "W", side_data=False)
+    for rtype, rid in (("human", "carol"), ("ai", "gpt")):   # the AI row is a later abstract re-run
+        db.insert_screening_decision(ScreeningDecision(
+            decision="include", reasoning=f"abstract-{rtype}", reviewer_type=rtype,
+            reviewer_id=rid, source_id=sid, stage="abstract",
+        ))
+    [card] = _find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
+    text = _text(card)
+    assert "human-W" in text and "ai-W" in text
+    assert "abstract-human" not in text and "abstract-ai" not in text
+
+
 def test_the_reader_button_opens_the_paper_whose_card_it_is_on(conflicted):
     """The 'Read full text' button is what turns a card mix-up into reading the wrong PDF."""
     project, sids, _ = conflicted

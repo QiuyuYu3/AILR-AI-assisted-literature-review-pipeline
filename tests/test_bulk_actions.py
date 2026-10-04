@@ -10,6 +10,8 @@ import dash
 import pytest
 import yaml
 
+import ailr.ui._project as ui_project
+from ailr.core.config import save_stage_workflow
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
 from ailr.ui import sources_view
@@ -166,3 +168,35 @@ def test_bulk_needs_a_reviewer_id(tmp_project, bulk_apply):
 
 def test_bulk_needs_a_selection(tmp_project, bulk_apply):
     assert "No rows selected" in _text(bulk_apply(1, [], "abstract", "exclude", "", "bo"))
+
+
+# ----- what the lock counts ------------------------------------------------------------------
+
+
+def test_an_ai_verdict_does_not_take_the_human_slot(tmp_project, bulk_apply):
+    """Assisted is one human plus the AI: after an AI run the human slot is still free."""
+    [sid] = _sources(tmp_project, 1)
+    tmp_project.db.insert_screening_decision(ScreeningDecision(
+        decision="exclude", reasoning="t", reviewer_type="ai", reviewer_id="openai:gpt",
+        source_id=sid, stage="abstract",
+    ))
+    assert "Marked 1 source(s)" in _text(bulk_apply(1, [{"id": sid}], "abstract", "include", "", "bo"))
+    assert [d["reviewer_id"] for d in tmp_project.db.get_human_decisions(sid, "abstract")] == ["bo"]
+
+
+def test_a_full_text_bulk_vote_is_counted_at_full_text_only(tmp_project, bulk_apply):
+    """Someone's abstract vote neither blocks a full-text bulk vote nor receives it."""
+    [sid] = _sources(tmp_project, 1)
+    _vote(tmp_project, sid, "amber", "include")
+    assert "Marked 1 source(s)" in _text(bulk_apply(1, [{"id": sid}], "full_text", "exclude", "", "bo"))
+    assert [d["reviewer_id"] for d in tmp_project.db.get_human_decisions(sid, "full_text")] == ["bo"]
+    assert [d["reviewer_id"] for d in tmp_project.db.get_human_decisions(sid, "abstract")] == ["amber"]
+
+
+def test_a_full_text_bulk_vote_follows_the_full_text_workflow(tmp_project, bulk_apply, monkeypatch):
+    """Abstract assisted (one human) with full text independent (two): a second full-text vote fits."""
+    save_stage_workflow(tmp_project.root, "full_text_screening", "independent")
+    monkeypatch.setattr(ui_project, "_project", None)
+    [sid] = _sources(tmp_project, 1)
+    _vote(tmp_project, sid, "amber", "include", stage="full_text")
+    assert "Marked 1 source(s)" in _text(bulk_apply(1, [{"id": sid}], "full_text", "exclude", "", "bo"))

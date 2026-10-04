@@ -105,6 +105,16 @@ class TestAssistedConflicts:
         _vote(db, sid, "include", "amber")
         assert db.list_assisted_conflicts(tmp_project.project_id) == []
 
+    def test_only_the_humans_latest_verdict_is_compared(self, tmp_project):
+        """The human side reads the latest vote too: the lock stops a re-vote in the UI, but two
+        racing clicks can leave two rows, and the newer one is the vote."""
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        _vote(db, sid, "include", "gpt", reviewer_type="ai")
+        _vote(db, sid, "exclude", "amber")
+        _vote(db, sid, "include", "amber")
+        assert db.list_assisted_conflicts(tmp_project.project_id) == []
+
     def test_ai_alone_is_not_a_conflict(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project)
@@ -174,6 +184,32 @@ class TestIndependentConflicts:
         _vote(db, sid, "exclude", "gpt", reviewer_type="ai")
         assert db.list_screening_conflicts(tmp_project.project_id) == []
 
+    def test_an_ai_vote_does_not_split_two_agreeing_humans(self, tmp_project):
+        """With two humans in, the reference AI's uncertain vote must not hold the paper back."""
+        db = tmp_project.db
+        sid = _add_source(tmp_project)
+        _vote(db, sid, "include", "amber")
+        _vote(db, sid, "include", "bob")
+        _vote(db, sid, "uncertain", "gpt", reviewer_type="ai")
+        assert db.list_screening_conflicts(tmp_project.project_id) == []
+        assert db.unresolved_conflict_ids(tmp_project.project_id, "independent") == set()
+
+    def test_one_reviewer_voting_twice_is_still_one_reviewer(self, tmp_project):
+        """Two rows from one human (a double click that slipped past the lock) neither finish an
+        independent paper nor put it in conflict with itself."""
+        db, pid = tmp_project.db, tmp_project.project_id
+        twice = _add_source(tmp_project, "voted twice alike")
+        _vote(db, twice, "include", "amber")
+        _vote(db, twice, "include", "amber")
+        changed = _add_source(tmp_project, "voted twice, changed mind")
+        _vote(db, changed, "include", "amber")
+        _vote(db, changed, "exclude", "amber")
+
+        assert db.final_include_ids(pid, "abstract", workflow="independent") == set()
+        assert db.full_text_candidate_ids(pid, workflow="independent") == []
+        assert db.screening_lock_check_many([twice], "bob", "abstract") == {twice: (False, 1)}
+        assert db.list_screening_conflicts(pid) == []
+
     def test_reconciliation_resolves_the_conflict(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project)
@@ -231,9 +267,11 @@ class TestStageWorkflowResolution:
     AI-assisted at title/abstract, where the volume is, and two humans at full text."""
 
     def test_full_text_follows_abstract_when_unset(self, tmp_project):
-        cfg = tmp_project.config
+        # Not the default 'assisted': a resolver that hard-coded it would pass on that.
+        save_stage_workflow(tmp_project.root, "screening", "independent")
+        cfg = Project(tmp_project.root).config
         assert cfg.screening.full_text_workflow is None
-        assert cfg.screening_workflow("full_text") == cfg.screening_workflow("abstract")
+        assert cfg.screening_workflow("full_text") == "independent"
 
     def test_full_text_overrides_abstract_when_set(self, tmp_project):
         save_stage_workflow(tmp_project.root, "screening", "assisted")
