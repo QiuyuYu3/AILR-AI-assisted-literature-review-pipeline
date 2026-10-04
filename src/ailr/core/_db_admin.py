@@ -21,6 +21,7 @@ class AdminMixin:
         ("reconciliations", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
         ("notes", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
         ("extractions", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
+        ("cross_checks", "source_id IN (SELECT id FROM sources WHERE project_id = ?)"),
         ("calibration_samples", "project_id = ?"),
         ("sources", "project_id = ?"),
         ("test_runs", "project_id = ?"),

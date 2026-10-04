@@ -8,6 +8,7 @@ needing dozens of threads to hit the real ceiling.
 
 import sqlite3
 import threading
+import time
 
 import pytest
 from sqlalchemy import create_engine
@@ -35,11 +36,14 @@ def _query(facade):
 
 
 def test_connection_comes_back_when_the_thread_ends(facade):
-    """A request thread that has gone away must not keep holding the pool's only slot."""
+    """A request thread that has gone away must not keep holding the pool's only slot, and the slot
+    must come back at once: waiting for the pool timeout to reap it would freeze the UI for 10 s."""
     t = threading.Thread(target=_query, args=(facade,))
     t.start()
     t.join()
+    started = time.perf_counter()
     assert _query(facade) == 1
+    assert time.perf_counter() - started < 0.5      # the fixture's pool_timeout is 1 s
 
 
 def test_release_frees_the_slot_while_the_thread_is_still_alive(facade):

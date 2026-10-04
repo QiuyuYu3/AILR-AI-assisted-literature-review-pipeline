@@ -5,12 +5,12 @@ This file covers list_full_text_page, the query the page actually runs — the t
 once, which is what these tests exist to stop.
 """
 
-
 from ailr.core.config import save_stage_workflow
 from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
 from ailr.reviewers import ExtractionResult
-from tests.helpers import add_source, vote
+from ailr.ui import full_text_view
+from tests.helpers import add_source, callbacks_of, vote, walk
 
 
 def _draft(db, sid, extractor_id, field_name="design"):
@@ -290,6 +290,25 @@ class TestMyDraftFilter:
         _draft(db, sid, "amber")
         assert _page(db, pid, "amber", status="my_draft", workflow="assisted", team_size=1,
                      exclude_ids={sid}) == set()
+
+
+class TestQueuePage:
+    """The page callback works out the papers still in conflict itself; the SQL only filters them."""
+
+    def _listed(self, status):
+        render = callbacks_of(full_text_view)["_render"]
+        cards, *_ = render(status, None, "amber", None, None, "", "title_and_abstract", None, None, "id", 50, None, None)
+        return {n.id["source"] for n in walk(cards) if isinstance(getattr(n, "id", None), dict) and "source" in n.id}
+
+    def test_a_paper_in_full_text_conflict_waits_for_its_ruling_before_extraction(self, tmp_project):
+        db = tmp_project.db
+        clear = _extraction_ready(tmp_project)
+        conflicted = _extraction_ready(tmp_project)
+        vote(db, conflicted, "exclude", "gpt", stage="full_text", reviewer_type="ai")
+        assert self._listed("to_extract") == {clear}
+
+        db.insert_screening_reconciliation(conflicted, "include", "pi", "", stage="full_text")
+        assert self._listed("to_extract") == {clear, conflicted}
 
 
 class TestQueueMatchesPrisma:

@@ -94,9 +94,10 @@ def test_number_absent_from_its_quote_is_flagged():
 
 
 def test_number_formatting_difference_is_not_flagged():
-    fields = [FieldSpec(name="mean_age", type="number")]
-    rows = [_row("mean_age", 24.3, "Mean age was 24.3 years")]
-    assert check_extraction(rows, fields, PAPER) == []
+    """A whole number stored as a float reads 48.0; the paper says 48."""
+    fields = [FieldSpec(name="n_dyads", type="number")]
+    rows = [_row("n_dyads", 48.0, "We tested 48 dyads")]
+    assert check_extraction(rows, fields, "# Method\n\nWe tested 48 dyads in the lab.") == []
 
 
 def test_thousands_separator_in_the_quote_is_not_a_mismatch():
@@ -173,7 +174,10 @@ def _store(db, sid, records, target_type="ai", target_id=AI_ID):
 
 def test_replace_cross_checks_supersedes_the_previous_run(db, tmp_project):
     sid, row_id = _seed_extraction(db, tmp_project.project_id)
-    _store(db, sid, [_finding(sid, row_id)])
+    _store(db, sid, [_finding(sid, row_id, code=QUOTE_NOT_FOUND)])
+    assert [r["issue_code"] for r in db.get_cross_checks(sid)] == [QUOTE_NOT_FOUND]
+    _store(db, sid, [_finding(sid, row_id, code=VALUE_NOT_IN_QUOTE)])
+    assert [r["issue_code"] for r in db.get_cross_checks(sid)] == [VALUE_NOT_IN_QUOTE]
     _store(db, sid, [])
     assert db.get_cross_checks(sid) == []
 

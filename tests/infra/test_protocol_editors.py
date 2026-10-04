@@ -116,12 +116,12 @@ def test_field_summary_labels_each_shape():
 
 
 def test_compose_lets_a_user_field_override_a_suggested_one_of_the_same_name():
-    store = {"include_core": False, "include_suggested": [], "fields": [
-        {"name": "study_aim", "type": "string", "description": "mine"},
+    store = {"include_core": False, "include_suggested": ["study_design", "country"], "fields": [
+        {"name": "study_design", "type": "string", "description": "mine"},
     ]}
     composed = _compose(store)
-    assert [f.name for f in composed] == ["study_aim"]
-    assert composed[0].description == "mine"
+    assert [f.name for f in composed] == ["country", "study_design"]
+    assert composed[1].description == "mine"
 
 
 def test_compose_keeps_user_field_order():
@@ -161,19 +161,17 @@ def test_to_content_preserves_every_rule():
 
 
 def test_to_content_keeps_ids_the_user_already_has_and_follows_their_prefix():
-    rows = [
-        {"id": "B7", "name": "X", "pass_if": "p", "fail_if": "f", "uncertain_if": ""},
-        {"id": "", "name": "Y", "pass_if": "p", "fail_if": "f", "uncertain_if": ""},
-    ]
+    rows = [{"id": cid, "name": f"row {i}", "pass_if": "p", "fail_if": "f", "uncertain_if": ""}
+            for i, cid in enumerate(("B1", "", "B3", ""))]
     saved = json.loads(_to_content(rows))["criteria"]
-    assert saved[0]["id"] == "B7"
-    assert saved[1]["id"].startswith("B")
+    assert [c["id"] for c in saved] == ["B1", "B2", "B3", "B4"]     # the next free number, never a taken one
 
 
 def test_to_text_renders_the_markdown_the_prompt_receives():
     text = _to_text(_to_content(_ROWS))
     assert "Study type" in text
     assert "PASS if: Empirical study." in text
+    assert "FAIL if: Review." in text and "FAIL if: Human-AI." in text
     assert "UNCERTAIN if: Unclear." in text
 
 

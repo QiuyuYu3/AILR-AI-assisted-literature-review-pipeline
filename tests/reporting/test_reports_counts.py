@@ -78,7 +78,7 @@ class TestPrismaCounts:
         assert c["reports_retrieved"] == 2
         assert c["reports_not_retrieved"] == 0
         assert c["full_text_assessed"] == 1
-        assert c["studies_included"] == 1
+        assert c["studies_included"] == c["reports_included"] == 1   # s3 is an include at title/abstract only
         assert c["studies_extracted"] == 1
         assert c["ai_abstract_screened"] == 2
 

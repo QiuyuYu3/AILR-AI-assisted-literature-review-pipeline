@@ -46,6 +46,13 @@ class TestDedupFunctions:
         kept, matched = dedup.dedup_by_title(new, existing)
         assert matched == [] and kept == new
 
+    def test_titles_scoring_below_the_threshold_stay_apart(self):
+        """One changed word in a short title scores about 92: close, but a different paper."""
+        existing = [Source(id=1, title="Maternal sensitivity and infant attachment", year=2019)]
+        new = [Source(title="Maternal sensitivity and infant attention", year=2019)]
+        kept, matched = dedup.dedup_by_title(new, existing)
+        assert kept == new and matched == []
+
     def test_title_dedup_still_catches_typos_case_and_word_order(self):
         existing = [Source(id=1, title="Neural synchrony during parent-child interaction"),
                     Source(id=2, title="Infant gaze and maternal speech")]
@@ -154,6 +161,18 @@ class TestIngestPipeline:
         logged = json.loads(tmp_project.db.get_duplicate_record(dups[0]["id"]))
         assert logged["doi"] is None and not logged["authors"]   # the bare record, not the incoming one
 
+    def test_an_equally_complete_incoming_record_does_not_replace_the_existing_one(self, tmp_project, tmp_path):
+        """A tie keeps what is already there: work may be attached to it, and nothing is gained."""
+        first = _RIS_A_BARE.replace("ER  -", "AU  - Lee, J\nAB  - The first abstract.\nER  -")
+        second = _RIS_A_BARE.replace("ER  -", "AU  - Lee, J.\nAB  - The second abstract.\nER  -")
+        tmp_project.ingest(_write_ris(tmp_path / "first.ris", [first]), source_database="test")
+        result = tmp_project.ingest(_write_ris(tmp_path / "second.ris", [second]), source_database="test")
+        assert (result.imported, result.deduplicated) == (0, 1)
+        [kept] = tmp_project.db.list_sources(tmp_project.project_id)
+        assert kept.abstract == "The first abstract."
+        [dup] = tmp_project.db.list_duplicates(tmp_project.project_id)
+        assert json.loads(tmp_project.db.get_duplicate_record(dup["id"]))["abstract"] == "The second abstract."
+
     def test_title_match_drops_the_less_complete_incoming(self, tmp_project, tmp_path):
         tmp_project.ingest(_write_ris(tmp_path / "full.ris", [_RIS_A]), source_database="test")
         [kept_before] = tmp_project.db.list_sources(tmp_project.project_id)
@@ -176,3 +195,26 @@ class TestIngestPipeline:
         assert (result.imported, result.deduplicated) == (0, 1)
         [dup] = tmp_project.db.list_duplicates(tmp_project.project_id)
         assert (dup["reason"], dup["matched_source_id"]) == ("doi", kept.id)
+
+
+class TestBulkInsert:
+    def test_good_records_go_in_as_one_batch(self, tmp_project, monkeypatch):
+        """Row by row is the fallback for a bad record. A broken batch would still import, only
+        slowly against a remote database, so nothing else would notice it."""
+        db = tmp_project.db
+        one_by_one = []
+        real = type(db)._insert_source_row
+        monkeypatch.setattr(type(db), "_insert_source_row", lambda self, src: one_by_one.append(src.title) or real(self, src))
+        sources = [Source(title=f"P{i}", project_id=tmp_project.project_id) for i in range(3)]
+        assert db.insert_sources(sources) == (3, [])
+        assert one_by_one == []
+        assert sorted(x.title for x in db.list_sources(tmp_project.project_id)) == ["P0", "P1", "P2"]
+
+    def test_a_bad_record_fails_alone(self, tmp_project):
+        pid = tmp_project.project_id
+        sources = [Source(title="first", doi="10.1/a", project_id=pid),
+                   Source(title="same DOI again", doi="10.1/a", project_id=pid),
+                   Source(title="second", project_id=pid)]
+        inserted, failures = tmp_project.db.insert_sources(sources)
+        assert inserted == 2 and [f["title"] for f in failures] == ["same DOI again"]
+        assert sorted(x.title for x in tmp_project.db.list_sources(pid)) == ["first", "second"]

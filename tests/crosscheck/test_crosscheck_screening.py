@@ -283,7 +283,7 @@ def test_mock_decisions_are_not_flagged_for_having_no_quotes(tmp_project):
     sid = _seed_source(tmp_project)
     _decide(tmp_project, sid, quotes=[], reviewer_id="mock:mock-screen")
     summary = _run(tmp_project, [sid])
-    assert summary.findings == 0
+    assert (summary.checked, summary.findings) == (1, 0)
 
 
 # ----- Staleness and the queue filter -----

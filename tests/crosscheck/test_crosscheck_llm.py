@@ -70,7 +70,8 @@ def test_the_checker_is_not_shown_the_extractors_confidence():
 
 def test_the_message_carries_each_value_with_its_quote():
     msg = format_record_message(Source(title="P", id=1), _rows(), "FULLTEXT BODY")
-    assert "within-subjects" in msg and "a within-subjects design" in msg
+    assert "## design\nvalue: within-subjects\nquote: a within-subjects design\n" in msg
+    assert "## sample_size\nvalue: 48\nquote: Forty-eight dyads\n" in msg
     assert "FULLTEXT BODY" in msg
     assert msg.index("EXTRACTION UNDER REVIEW") < msg.index("FULL TEXT")
 
@@ -90,6 +91,7 @@ def test_check_returns_one_verdict_per_field():
     assert out["design"]["verdict"] == "agree"
     assert out["sample_size"]["verdict"] == "disagree"
     assert out["sample_size"]["suggested_value"] == "52"
+    assert client.calls[0]["user"] == format_record_message(Source(title="P", id=1), _rows(), "body")
 
 
 def test_the_schema_is_rendered_into_the_system_prompt():
@@ -172,7 +174,8 @@ def test_a_missing_checker_model_is_blocked():
 
 def test_llm_verdicts_become_llm_kind_rows():
     records = llm_verdicts_to_records(
-        {"design": {**_verdict("disagree", "nope", "between"), "raw": {"verdict": "disagree"}}},
+        {"design": {**_verdict("disagree", "nope", "between"), "raw": {"verdict": "disagree"}},
+         "sample_size": _verdict("agree")},
         source_id=1, target_type="ai", target_id="anthropic:x",
         row_ids={"design": 7}, checker_id="stub:checker-1",
         llm_params={"model": "checker-1"}, prompt_version="v1",
@@ -183,6 +186,7 @@ def test_llm_verdicts_become_llm_kind_rows():
     assert rec.suggested_value == "between"
     assert rec.target_row_id == 7
     assert rec.confidence == 8
+    assert records[1].suggested_value is None        # not the string "None"
 
 
 # ----- Calibration: the same check over a quick-test run -----
@@ -259,6 +263,30 @@ def test_field_summary_ranks_the_worst_field_first(tmp_project):
     assert rows[0]["flagged"] == 1 and rows[0]["rate"] == 1.0
     assert rows[0]["reasons"] == ["paper says 52"]
     assert rows[1]["field"] == "design" and rows[1]["flagged"] == 0
+
+
+def test_a_fields_rate_is_its_flags_over_its_checks(tmp_project):
+    from ailr.crosschecker import LLMCrossChecker
+    from ailr.tasks.crosscheck import QuickTestCrossCheckTask, quick_test_target_id
+
+    class _FirstPaperOnly(StubClient):
+        def complete_structured(self, **kwargs):
+            out, meta = super().complete_structured(**kwargs)
+            return (out if len(self.calls) == 1 else {"sample_size": _verdict("agree")}), meta
+
+    db = tmp_project.db
+    run_id = db.create_test_run(tmp_project.project_id, "extraction", 2, "prompt", "criteria")
+    for title in ("A", "B"):
+        sid = db.insert_source(Source(title=title, project_id=tmp_project.project_id))
+        md = tmp_project.root / "data" / "markdown" / f"{sid}.md"
+        md.parent.mkdir(parents=True, exist_ok=True)
+        md.write_text("Forty-eight dyads took part.", encoding="utf-8")
+        db.insert_test_extraction(run_id, sid, "include", [{"field": "sample_size", "value": 48, "quote": "q"}], None)
+    client = _FirstPaperOnly({"sample_size": _verdict("disagree", "paper says 52", "52")})
+    QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run_id).run_for_run()
+
+    [row] = db.cross_check_field_summary(quick_test_target_id(run_id))
+    assert (row["checked"], row["flagged"], row["rate"]) == (2, 1, 0.5)
 
 
 def test_two_quick_test_runs_keep_separate_findings(tmp_project):
