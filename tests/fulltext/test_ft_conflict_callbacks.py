@@ -8,8 +8,11 @@ test_screen_callbacks.py; here: stage='full_text' semantics + resolve/undo.
 import pytest
 from dash import no_update
 
+from ailr.ui import full_text_view
 from ailr.ui._actions import _apply_reset, _apply_resolve, _apply_undo_resolve, _apply_vote
-from tests.helpers import add_source, vote
+from ailr.ui._conflicts_base import initial_payload
+from ailr.ui.conflicts_view import _CFG as ABSTRACT_CONFLICTS
+from tests.helpers import add_source, callbacks_of, vote, walk
 
 
 class TestFullTextVote:
@@ -276,3 +279,98 @@ class TestFullTextExcludeKeepsPrismaReasonsClean:
         [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
         assert row["rationale"] == "Wrong population"
         assert {r["reason"] for r in db.full_text_exclusion_counts(pid, workflow="independent")} == {"Wrong population"}
+
+
+class TestRecentlyResolved:
+    def test_undo_is_offered_on_the_newest_rulings(self, tmp_project):
+        """The list is the only place an adjudication can be undone, so it must keep the newest."""
+        db = tmp_project.db
+        for i in range(11):
+            db.insert_screening_reconciliation(add_source(tmp_project, f"P{i}"), "include", "pi", "", stage="abstract")
+        ids = sorted(r["id"] for r in db.list_reconciliations(tmp_project.project_id, "abstract_screening", limit=100))
+        _cards, _count, resolved = initial_payload(ABSTRACT_CONFLICTS)
+        offered = {n.id["rec_id"] for n in walk(resolved)
+                   if isinstance(getattr(n, "id", None), dict) and n.id.get("type") == "conflict-undo"}
+        assert offered == set(ids[-10:])
+
+
+class TestFullTextPageCallbacks:
+    """The full-text tab's registered callbacks, driven as a click would drive them."""
+
+    @pytest.fixture
+    def fns(self):
+        return callbacks_of(full_text_view)
+
+    def test_a_vote_button_records_a_full_text_vote(self, tmp_project, fns, click):
+        sid = add_source(tmp_project)
+        click({"type": "ft-decide", "source": sid, "decision": "exclude"})
+        fns["_on_action"]([1], [], [], "amber")
+        assert [d["decision"] for d in tmp_project.db.get_human_decisions(sid, "full_text")] == ["exclude"]
+        assert tmp_project.db.get_human_decisions(sid, "abstract") == []
+
+    def test_reset_withdraws_only_the_full_text_vote(self, tmp_project, fns, click):
+        sid = add_source(tmp_project)
+        vote(tmp_project.db, sid, "include", "amber", stage="abstract")
+        vote(tmp_project.db, sid, "include", "amber", stage="full_text")
+        click({"type": "ft-reset", "source": sid})
+        fns["_on_action"]([], [1], [], "amber")
+        assert tmp_project.db.get_human_decisions(sid, "full_text") == []
+        assert [d["reviewer_id"] for d in tmp_project.db.get_human_decisions(sid, "abstract")] == ["amber"]
+
+    def test_marking_a_full_text_unobtainable_and_back(self, tmp_project, fns, click):
+        sid = add_source(tmp_project)
+        for flag, expected in ((1, True), (0, False)):
+            click({"type": "ft-retrieval", "source": sid, "flag": flag})
+            fns["_on_action"]([], [], [1], "amber")
+            assert tmp_project.db.get_source(sid).full_text_not_retrieved is expected
+
+    def test_the_banner_undo_ignores_its_own_re_creation(self, tmp_project, fns):
+        sid = add_source(tmp_project)
+        vote(tmp_project.db, sid, "include", "amber", stage="full_text")
+        assert fns["_undo"](None, {"sid": sid}, "amber") == (no_update, no_update)
+        assert len(tmp_project.db.get_human_decisions(sid, "full_text")) == 1
+        fns["_undo"](1, {"sid": sid}, "amber")
+        assert tmp_project.db.get_human_decisions(sid, "full_text") == []
+
+    def test_marking_a_duplicate_from_the_card(self, tmp_project, fns, click):
+        sid = add_source(tmp_project)
+        click({"type": "ft-duplicate", "source": sid})
+        fns["_on_ft_mark_duplicate"]([1])
+        assert [s["id"] for s in tmp_project.db.list_manual_duplicates(tmp_project.project_id)] == [sid]
+
+    def test_the_exclude_modal_records_a_vote_with_its_reasons(self, tmp_project, fns):
+        sid = add_source(tmp_project)
+        fns["_confirm_exclude"](1, ["Wrong population", "Wrong design"], {"sid": sid, "mode": "vote"}, "amber", [], [])
+        [d] = tmp_project.db.get_human_decisions(sid, "full_text")
+        assert (d["decision"], d["reasoning"]) == ("exclude", "Wrong population; Wrong design")
+
+    def test_a_ruling_keeps_the_reasons_clean_and_files_the_cards_note_in_history(self, tmp_project, fns):
+        db, pid = tmp_project.db, tmp_project.project_id
+        for name in ("Wrong population", "No full text"):
+            db.create_exclusion_reason(pid, name)
+        sid, other = add_source(tmp_project, "ruled"), add_source(tmp_project, "another card")
+        vote(db, sid, "include", "amber", stage="full_text")
+        vote(db, sid, "exclude", "bo", stage="full_text")
+
+        fns["_confirm_exclude"](
+            1, ["Wrong population", "No full text"], {"sid": sid, "mode": "resolve"}, "pi",
+            ["someone else's note", "only a conference abstract"],
+            [{"type": "ft-conflict-rationale", "source": other}, {"type": "ft-conflict-rationale", "source": sid}],
+        )
+        [rec] = db.list_reconciliations(pid, "full_text_screening")
+        assert (rec["source_id"], rec["final_value"], rec["rationale"]) == (sid, "exclude", "Wrong population; No full text")
+        [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
+        assert row["rationale"].startswith("Wrong population; No full text") and row["rationale"].endswith("only a conference abstract")
+        assert "someone else" not in row["rationale"]
+        counts = {r["reason"]: r["n"] for r in db.full_text_exclusion_counts(pid, workflow="independent")}
+        assert counts == {"Wrong population": 1, "No full text": 1}
+
+    @pytest.mark.parametrize("reviewer,reasons,message", [
+        ("  ", ["Wrong population"], "Enter your reviewer ID first."),
+        ("amber", [], "Pick or add at least one reason."),
+    ])
+    def test_the_exclude_modal_refuses_without_a_reviewer_or_a_reason(self, tmp_project, fns, reviewer, reasons, message):
+        sid = add_source(tmp_project)
+        out = fns["_confirm_exclude"](1, reasons, {"sid": sid, "mode": "vote"}, reviewer, [], [])
+        assert message in str(out[3].children)
+        assert tmp_project.db.get_human_decisions(sid, "full_text") == []

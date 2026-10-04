@@ -8,6 +8,7 @@ lists the papers the most recent quick-test run covered, which is a different ta
 
 from pathlib import Path
 
+from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
 from tests.helpers import add_source
 
@@ -89,3 +90,29 @@ def test_full_text_queue_lists_the_latest_quick_test_only(tmp_project):
         abstract_workflow="assisted", page_size=100,
     )
     assert {s.id for s in rows} == set(sids[1:])
+
+
+def test_a_later_full_text_run_does_not_replace_the_abstract_one(tmp_project):
+    db = tmp_project.db
+    sid = add_source(tmp_project, "abstract tested")
+    run_id = _run(db, tmp_project, "abstract", 1)
+    db.insert_test_decision(run_id, sid, "include", "r", 0.9, [], [])
+    ft_run = _run(db, tmp_project, "extraction", 1)
+    db.insert_test_extraction(ft_run, add_source(tmp_project, "full-text tested"), "include", [], None)
+
+    assert _abstract_page(db, tmp_project.project_id) == {sid}
+
+
+def test_another_projects_later_run_does_not_replace_this_ones(tmp_project):
+    """Projects can share one Postgres database, so the latest run must be this project's own."""
+    db = tmp_project.db
+    sid = add_source(tmp_project, "ours")
+    run_id = _run(db, tmp_project, "abstract", 1)
+    db.insert_test_decision(run_id, sid, "include", "r", 0.9, [], [])
+    other_pid = db.get_or_create_project("another review")
+    theirs = db.insert_source(Source(title="theirs", project_id=other_pid))
+    their_run = db.create_test_run(project_id=other_pid, stage="abstract", sample_size=1,
+                                   prompt_snapshot="p", criteria_snapshot="c")
+    db.insert_test_decision(their_run, theirs, "include", "r", 0.9, [], [])
+
+    assert _abstract_page(db, tmp_project.project_id) == {sid}

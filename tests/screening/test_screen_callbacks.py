@@ -17,10 +17,11 @@ from dash._callback_context import context_value
 from dash._utils import AttributeDict
 
 from ailr.reviewers import ScreeningDecision
+from ailr.ui import screen_view
 from ailr.ui._actions import _apply_reset, _apply_vote
 from ailr.ui._common import triggered_click_id
 from ailr.ui.screen_view import _STATUS_FILTERS, _status_group_of, _status_groups
-from tests.helpers import add_source
+from tests.helpers import add_source, callbacks_of
 
 # ---------- half 1: triggered_click_id ----------
 
@@ -186,3 +187,52 @@ def test_the_groups_hold_what_their_headings_say():
 )
 def test_status_group_of(value, group):
     assert _status_group_of(value) == group
+
+
+def test_reset_keeps_the_ai_verdict_and_leaves_an_audit_row(tmp_project):
+    db = tmp_project.db
+    sid = add_source(tmp_project)
+    db.insert_screening_decision(ScreeningDecision(
+        decision="exclude", reasoning="ai says no", reviewer_type="ai",
+        reviewer_id="gpt", source_id=sid, stage="abstract",
+    ))
+    _apply_vote(db, sid, "include", "amber", "assisted")
+    _apply_reset(db, sid, "amber")
+    assert db.get_latest_ai_decision(sid, stage="abstract")["decision"] == "exclude"
+    assert [a["action"] for a in db.get_screening_actions(sid, reviewer_id="amber")] == ["vote", "reset"]
+
+
+# ---------- the tab's registered callbacks ----------
+
+@pytest.fixture
+def screen_fns():
+    return callbacks_of(screen_view)
+
+
+@pytest.mark.parametrize("trigger,values,expected", [
+    ("screen-status-checks", ("to_screen", "quick_test", None), ("quick_test", None, "quick_test", None)),
+    ("screen-status-review", ("reviewed", "quick_test", None), ("reviewed", "reviewed", None, None)),
+    ("screen-status-all", ("to_screen", "quick_test", "all"), ("all", None, None, "all")),
+    # a group cleared by its own click, or a restored session: whatever is still set, else to_screen
+    ("screen-status-review", (None, "crosscheck_flagged", None), ("crosscheck_flagged", None, "crosscheck_flagged", None)),
+    ("screen-status-review", (None, None, None), ("to_screen", "to_screen", None, None)),
+])
+def test_status_groups_stay_mutually_exclusive(screen_fns, click, trigger, values, expected):
+    click(trigger, prop="value")
+    assert screen_fns["_sync_status"](*values) == expected
+
+
+def test_the_banner_undo_ignores_its_own_re_creation(tmp_project, screen_fns):
+    sid = add_source(tmp_project)
+    _apply_vote(tmp_project.db, sid, "include", "amber", "assisted")
+    assert screen_fns["_on_banner_undo"](None, {"sid": sid}, "amber") == (no_update, no_update)
+    assert len(_decisions(tmp_project.db, sid)) == 1
+    screen_fns["_on_banner_undo"](1, {"sid": sid}, "amber")
+    assert _decisions(tmp_project.db, sid) == []
+
+
+def test_marking_a_duplicate_from_the_card(tmp_project, screen_fns, click):
+    sid = add_source(tmp_project)
+    click({"type": "screen-duplicate", "source": sid})
+    screen_fns["_on_mark_duplicate"]([1])
+    assert [s["id"] for s in tmp_project.db.list_manual_duplicates(tmp_project.project_id)] == [sid]

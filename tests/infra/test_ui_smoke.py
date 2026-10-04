@@ -8,6 +8,7 @@ this catches import breakage, layout-build errors, and callback-registration con
 import os
 import socket
 
+import dash
 import pytest
 
 from ailr.ui import (
@@ -47,6 +48,25 @@ def test_build_app(seeded_project):
     # Losing this hook brings back the pool exhaustion that made every callback fail (test_db_pool).
     names = [f.__name__ for f in app.server.teardown_request_funcs.get(None, [])]
     assert "_release_db_conn" in names
+
+
+def test_build_app_registers_every_views_callbacks(seeded_project):
+    """A view left out of build_app keeps its pages rendering while none of their buttons work."""
+    from ailr.ui import modals, preprocess_view
+    from ailr.ui.app import build_app
+
+    registered = set(build_app().callback_map)
+    registrations = [(v.__name__, v.register_callbacks) for v in (
+        project_manager_view, screen_view, extract_view, consensus_view, sources_view, conflicts_view,
+        tags_view, full_text_view, preprocess_view, ft_conflicts_view, reports_view,
+        import_view, duplicates_view, database_view, template_view, protocol_view, settings_view,
+        workflow_view, modals)]
+    registrations += [(f"calibration_view[{stage}]", lambda app, s=stage: calibration_view.register_callbacks(app, s))
+                      for stage in ("abstract", "extraction")]
+    for name, register in registrations:
+        alone = dash.Dash(suppress_callback_exceptions=True)
+        register(alone)
+        assert alone.callback_map and set(alone.callback_map) <= registered, name
 
 
 # Each layout must reach the widget its tab is actually for, not merely build some component tree.

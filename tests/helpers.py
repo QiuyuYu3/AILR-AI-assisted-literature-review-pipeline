@@ -54,11 +54,12 @@ def set_config(project, section, **values):
 
 
 def walk(node):
-    yield node
-    children = getattr(node, "children", None)
-    for child in children if isinstance(children, (list, tuple)) else [children]:
-        if child is not None:
-            yield from walk(child)
+    if isinstance(node, (list, tuple)):
+        for item in node:
+            yield from walk(item)
+    elif node is not None:
+        yield node
+        yield from walk(getattr(node, "children", None))
 
 
 def component_text(node) -> str:
