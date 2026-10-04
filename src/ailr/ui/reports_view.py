@@ -385,10 +385,7 @@ def layout() -> Any:
         html.H4("Data exports"),
         dbc.ButtonGroup(
             [
-                dbc.Button("Extraction — AI (CSV)", id="report-dl-csv", color="primary", outline=True),
-                dbc.Button("Extraction — final (CSV)", id="report-dl-csv-human", color="primary", outline=True),
-                dbc.Button("Extraction — AI (JSON)", id="report-dl-json", color="primary", outline=True),
-                dbc.Button("Extraction — AI (per-paper JSON, ZIP)", id="report-dl-json-zip", color="primary", outline=True),
+                dbc.Button("Extraction data (ZIP)", id="report-dl-extraction", color="primary", outline=True),
                 dbc.Button("RIS of includes", id="report-dl-ris", color="primary", outline=True),
                 dbc.Button("Screening metrics (JSON)", id="report-dl-metrics", color="primary", outline=True),
             ]
@@ -506,20 +503,17 @@ def register_callbacks(app: Any) -> None:
     @app.callback(
         Output("report-download", "data"),
         Output("report-dl-feedback", "children"),
-        Input("report-dl-csv", "n_clicks"),
+        Input("report-dl-extraction", "n_clicks"),
         Input("report-dl-prisma", "n_clicks"),
         Input("report-dl-svg", "n_clicks"),
         Input("report-dl-methods", "n_clicks"),
         Input("report-dl-ris", "n_clicks"),
-        Input("report-dl-csv-human", "n_clicks"),
-        Input("report-dl-json", "n_clicks"),
-        Input("report-dl-json-zip", "n_clicks"),
         Input("report-dl-metrics", "n_clicks"),
         Input("report-dl-pairs", "n_clicks"),
         State("report-irr-stage", "value"),
         prevent_initial_call=True,
     )
-    def _download(_c, _p, _s, _m, _r, _ch, _j, _jz, _mx, _pairs, irr_stage):
+    def _download(_x, _p, _s, _m, _r, _mx, _pairs, irr_stage):
         trig = ctx.triggered_id
         if not any(t.get("value") for t in (ctx.triggered or [])):
             return no_update, no_update
@@ -528,21 +522,17 @@ def register_callbacks(app: Any) -> None:
         from ailr.exports.prisma import build_prisma_report, build_prisma_svg
         from ailr.exports.reliability import screening_decisions_csv
         from ailr.exports.ris import export_includes_ris
-        from ailr.exports.tables import (
-            extraction_per_paper_zip,
-            extraction_table_csv,
-            extraction_table_json,
-        )
+        from ailr.exports.tables import extraction_bundle_zip
 
         proj = get_project()
         name = (proj.config.project.name or "review").replace(" ", "_")
         stage = irr_stage or "abstract"
 
-        # Per-paper JSON is delivered as a ZIP (binary), so it uses send_bytes rather than send_string.
-        if trig == "report-dl-json-zip":
-            fn = f"{name}_extraction_ai_per_paper.zip"
+        # The extraction bundle is a ZIP (binary), so it uses send_bytes rather than send_string.
+        if trig == "report-dl-extraction":
+            fn = f"{name}_extraction.zip"
             try:
-                data = extraction_per_paper_zip(proj, extractor_type="ai", only_includes=True)
+                data = extraction_bundle_zip(proj)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -550,9 +540,6 @@ def register_callbacks(app: Any) -> None:
             return dcc.send_bytes(lambda b: b.write(data), fn), f"Downloaded {fn}"
 
         builders = {
-            "report-dl-csv": (lambda: extraction_table_csv(proj, extractor_type="ai", only_includes=True), f"{name}_extraction_ai.csv"),
-            "report-dl-csv-human": (lambda: extraction_table_csv(proj, extractor_type="final", only_includes=True), f"{name}_extraction_final.csv"),
-            "report-dl-json": (lambda: extraction_table_json(proj, extractor_type="ai", only_includes=True), f"{name}_extraction_ai.json"),
             "report-dl-prisma": (lambda: build_prisma_report(proj), f"{name}_prisma.md"),
             "report-dl-svg": (lambda: build_prisma_svg(proj), f"{name}_prisma.svg"),
             "report-dl-methods": (lambda: build_methods_skeleton(proj), f"{name}_methods.md"),

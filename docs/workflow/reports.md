@@ -68,9 +68,7 @@ Export the dataset in the format your analysis needs:
 
 | Format | Use |
 |--------|-----|
-| **CSV** | the extraction table for stats software (wide, with a `<field>_quote` column for every field, list fields included) |
-| **JSON** | structured records (values + evidence quotes), combined for all papers |
-| **Per-paper JSON (ZIP)** | one `<source_id>.json` per paper, zipped; handy for spot-checking or per-paper archiving |
+| **Extraction data (ZIP)** | every extraction export at once. `included/` holds the studies in the PRISMA included box, `all/` every paper with a full text (flagged duplicates are in neither). Each has the final record (the saved consensus, otherwise each reviewer's submission) and the AI's, as CSV for stats software (a `<field>_quote` column beside every field) and as JSON (values with their quotes), plus the AI's records one JSON file per paper. A README inside says the same. |
 | **RIS** | the papers in the full-text queue (abstract screening settled on include, duplicates left out) back into a reference manager |
 | **PRISMA SVG** | the flow diagram as a vector image, ready for a manuscript figure |
 

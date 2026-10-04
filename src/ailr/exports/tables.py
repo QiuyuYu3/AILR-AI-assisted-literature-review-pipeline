@@ -107,6 +107,17 @@ def _group_by_extractor(ex_rows: list[dict]) -> dict[str, dict[str, Any]]:
     return grouped
 
 
+def _export_sources(project: Project, only_includes: bool) -> list:
+    """The papers an export covers: the included studies, as PRISMA's included box counts them, or
+    every paper with a full text. Flagged duplicates are in neither."""
+    sources = project.db.list_sources_with_markdown(project.project_id)
+    if not only_includes:
+        return sources
+    included = project.db.final_include_ids(
+        project.project_id, "full_text", workflow=project.config.screening_workflow("full_text"))
+    return [s for s in sources if s.id in included]
+
+
 def extraction_table_rows(
     project: Project,
     *,
@@ -138,11 +149,7 @@ def extraction_table_rows(
     columns = base_cols + field_cols
 
     db = project.db
-    pid = project.project_id
-    if only_includes:
-        sources = db.list_includes_with_markdown(pid)
-    else:
-        sources = db.list_sources_with_markdown(pid)
+    sources = _export_sources(project, only_includes)
 
     rows: list[dict[str, str]] = []
     for src in sources:
@@ -218,11 +225,7 @@ def _extraction_records(
     """Per-source extraction dicts preserving the full {value, quote} shape. Shared by the combined
     JSON export and the per-paper ZIP export."""
     db = project.db
-    pid = project.project_id
-    if only_includes:
-        sources = db.list_includes_with_markdown(pid)
-    else:
-        sources = db.list_sources_with_markdown(pid)
+    sources = _export_sources(project, only_includes)
 
     out: list[dict[str, Any]] = []
     for src in sources:
@@ -294,6 +297,38 @@ def extraction_per_paper_zip(
     return buf.getvalue()
 
 
+_BUNDLE_README = """\
+included/  the studies in the PRISMA "included" box: settled as includes at full text,
+           not flagged as duplicates and not in conflict
+all/       every paper with a full text, whatever its screening outcome
+           (records flagged as duplicates are left out of both)
+
+final.csv, final.json   the record each paper ends with: the saved consensus, otherwise
+                        each reviewer's submitted extraction
+ai.csv, ai.json         the AI's extraction
+ai_per_paper/           the AI's extraction, one JSON file per paper
+
+Each CSV has a <field>_quote column beside every field.
+"""
+
+
+def extraction_bundle_zip(project: Project) -> bytes:
+    """Every extraction export in one ZIP: the included studies and all papers, final and AI records."""
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("README.txt", _BUNDLE_README)
+        for folder, only_includes in (("included", True), ("all", False)):
+            for kind in ("final", "ai"):
+                zf.writestr(f"{folder}/{kind}.csv", extraction_table_csv(project, extractor_type=kind, only_includes=only_includes))
+                zf.writestr(f"{folder}/{kind}.json", extraction_table_json(project, extractor_type=kind, only_includes=only_includes))
+            with zipfile.ZipFile(io.BytesIO(extraction_per_paper_zip(project, extractor_type="ai", only_includes=only_includes))) as per_paper:
+                for name in per_paper.namelist():
+                    zf.writestr(f"{folder}/ai_per_paper/{name}", per_paper.read(name))
+    return buf.getvalue()
+
+
 def extraction_rows_long(
     project: Project,
     *,
@@ -302,11 +337,7 @@ def extraction_rows_long(
 ) -> list[dict[str, Any]]:
     """Long-format rows: one entry per (source, field). For ad-hoc analysis."""
     db = project.db
-    pid = project.project_id
-    if only_includes:
-        sources = db.list_includes_with_markdown(pid)
-    else:
-        sources = db.list_sources_with_markdown(pid)
+    sources = _export_sources(project, only_includes)
 
     out: list[dict[str, Any]] = []
     for src in sources:

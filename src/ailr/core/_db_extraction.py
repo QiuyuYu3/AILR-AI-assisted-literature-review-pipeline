@@ -482,6 +482,7 @@ class ExtractionMixin:
             SELECT s.* FROM sources s
             WHERE s.project_id = ?
               AND s.markdown_path IS NOT NULL
+              AND COALESCE(s.is_duplicate, 0) = 0
             ORDER BY s.id
         """
         return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]

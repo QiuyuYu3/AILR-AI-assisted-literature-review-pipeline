@@ -88,7 +88,7 @@ _LAYOUTS = [
     ("tags", lambda: tags_view.layout(), ["tags-list", "tags-create-btn"]),
     ("duplicates", lambda: duplicates_view.layout(), ["dup-manual-grid", "dup-ingest-grid"]),
     ("database", lambda: database_view.layout(), ["db-grid", "db-table"]),
-    ("reports", lambda: reports_view.layout(), ["report-dl-prisma", "report-irr-body", "report-dl-csv"]),
+    ("reports", lambda: reports_view.layout(), ["report-dl-prisma", "report-irr-body", "report-dl-extraction"]),
     ("settings", lambda: settings_view.layout(), ["settings-clear-btn", "settings-screen-model"]),
     ("import", lambda: import_view.layout(), ["import-ref-upload", "import-ref-db"]),
     ("calibration_abstract", lambda: calibration_view.layout("abstract"), ["cal-abs-run", "cal-abs-status"]),

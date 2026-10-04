@@ -15,6 +15,7 @@ import rispy
 
 from ailr.exports.ris import export_includes_ris
 from ailr.exports.tables import (
+    extraction_bundle_zip,
     extraction_per_paper_zip,
     extraction_table_csv,
     extraction_table_json,
@@ -45,9 +46,11 @@ def export_project(tmp_project):
 
 
 def _add_included_source(project, title="Paper", include=True):
+    """An included study (settled include at both stages), or with include=False one nobody voted on."""
     sid = add_source(project, title, year=2021, authors=["Lee, J"], with_md=True)
     if include:
         vote(project.db, sid, "include", "amber", stage="abstract")
+        vote(project.db, sid, "include", "amber", stage="full_text")
     return sid
 
 
@@ -141,6 +144,45 @@ class TestJsonExport:
         blob = extraction_per_paper_zip(export_project, extractor_type="human")
         with zipfile.ZipFile(io.BytesIO(blob)) as zf:
             assert sorted(zf.namelist()) == [f"{sid}__amber.json", f"{sid}__lin.json"]
+
+
+class TestWhichPapersAnExportCovers:
+    def test_included_means_the_prisma_included_box(self, export_project):
+        db = export_project.db
+        included = _add_included_source(export_project, "included")
+        abstract_only = _add_included_source(export_project, "included at title/abstract only", include=False)
+        vote(db, abstract_only, "include", "amber", stage="abstract")
+        excluded = _add_included_source(export_project, "excluded at full text")
+        vote(db, excluded, "exclude", "amber", stage="full_text")       # the reviewer changed their mind
+        flagged = _add_included_source(export_project, "flagged as a duplicate")
+        db.mark_source_duplicate(flagged, True)
+        for sid in (included, abstract_only, excluded, flagged):
+            _seed_extraction(db, sid)
+
+        def ids(only_includes):
+            return sorted(int(r["source_id"]) for r in csv.DictReader(io.StringIO(
+                extraction_table_csv(export_project, only_includes=only_includes))))
+
+        assert ids(True) == [included]
+        assert ids(False) == [included, abstract_only, excluded]
+
+
+class TestBundle:
+    def test_one_zip_holds_every_extraction_export(self, export_project):
+        db = export_project.db
+        included = _add_included_source(export_project, "included")
+        other = _add_included_source(export_project, "not included", include=False)
+        for sid in (included, other):
+            _seed_extraction(db, sid)
+        with zipfile.ZipFile(io.BytesIO(extraction_bundle_zip(export_project))) as zf:
+            names = set(zf.namelist())
+            assert {"README.txt", "included/final.csv", "included/final.json", "included/ai.csv",
+                    "included/ai.json", "all/final.csv", "all/final.json", "all/ai.csv", "all/ai.json",
+                    f"included/ai_per_paper/{included}.json"} <= names
+            ai_all = list(csv.DictReader(io.StringIO(zf.read("all/ai.csv").decode("utf-8"))))
+            ai_included = list(csv.DictReader(io.StringIO(zf.read("included/ai.csv").decode("utf-8"))))
+        assert sorted(int(r["source_id"]) for r in ai_all) == [included, other]
+        assert [int(r["source_id"]) for r in ai_included] == [included]
 
 
 class TestFinalExport:
