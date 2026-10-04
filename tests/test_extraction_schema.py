@@ -5,7 +5,7 @@ nothing for a field leaves the model owing a string, and it writes the word "nul
 which then reads as data in exports, in the quote-coverage denominator, and in enum validation.
 """
 
-from ailr.extraction import FieldSpec, build_extraction_tool_schema
+from ailr.extraction import FieldSpec, build_extraction_tool_schema, compose_schema
 from ailr.llm.mock import synth_from_tool_schema
 
 
@@ -68,3 +68,37 @@ def test_the_mock_client_still_fills_every_slot():
     out = synth_from_tool_schema(build_extraction_tool_schema(fields))
     assert out["group_size"]["value"] == "Dyad"  # the first real option, not null
     assert out["total_n"]["value"] is not None
+
+
+def test_every_top_level_field_is_required_by_default():
+    """The other half of 'never silently drop a field': the key itself must come back."""
+    fields = [FieldSpec(name="total_n", type="integer"), FieldSpec(name="design", type="string")]
+    assert build_extraction_tool_schema(fields).input_schema["required"] == ["total_n", "design"]
+
+
+def test_an_object_field_keeps_each_sub_field_and_each_may_be_null():
+    field = FieldSpec(name="sample", type="object", fields=[
+        FieldSpec(name="n", type="integer"), FieldSpec(name="country", type="string"),
+    ])
+    schema = _props([field])["sample"]
+    assert schema["required"] == ["n", "country"]
+    assert schema["properties"]["n"]["properties"]["value"]["type"] == ["integer", "null"]
+    assert schema["properties"]["country"]["properties"]["value"]["type"] == ["string", "null"]
+
+
+def test_confidence_is_asked_once_per_top_level_field_not_per_sub_field():
+    nested = FieldSpec(name="sample", type="object", fields=[FieldSpec(name="n", type="integer")])
+    props = _props([FieldSpec(name="total_n", type="integer"), nested])
+    assert "confidence" in props["total_n"]["required"]
+    assert props["total_n"]["properties"]["confidence"]["maximum"] == 10
+    assert "confidence" not in props["sample"]["properties"]["n"]["properties"]
+
+
+def test_skip_verify_in_schema_yaml_marks_only_the_named_fields(tmp_path):
+    path = tmp_path / "schema.yaml"
+    path.write_text(
+        "include_suggested: []\nskip_verify: [design]\nfields:\n"
+        "  - name: design\n    type: string\n  - name: total_n\n    type: integer\n",
+        encoding="utf-8",
+    )
+    assert {f.name: f.verify for f in compose_schema(path)} == {"design": False, "total_n": True}

@@ -98,6 +98,25 @@ def test_save_records_the_picked_answer(project, disagreeing, save):
     assert _consensus(project, disagreeing)[_FIELD] == "synchrony"
 
 
+def test_save_writes_the_answer_the_pick_stands_for(project, save):
+    """The radio hands back a text key. The record must get the answer behind it: an integer stays
+    an integer, and the quote and the adjudicator come along."""
+    sid = project.db.insert_source(Source(title="B", doi="10.1/b", project_id=project.project_id))
+    for rid, n, quote in (("amber", 24, "24 dyads took part"), ("bo", 30, "thirty dyads")):
+        project.db.insert_extractions([ExtractionResult(
+            extractor_type="human", extractor_id=rid, source_id=sid, field_name="sample_size",
+            value=n, source_quote=quote, prompt_version="manual",
+        )])
+        project.db.mark_extraction_submitted(sid, rid)
+    _agreed, _cards, state = _compare(project, sid)
+    key = next(k for k, answer in state["sample_size"].items() if answer["value"] == 24)
+
+    save(1, None, {"sid": sid}, state, "QY", [key], [{"field": "sample_size"}], [], [], [], [])
+    [row] = [r for r in project.db.list_extractions(sid, extractor_type="consensus") if r["field_name"] == "sample_size"]
+    assert row["value"] == 24 and isinstance(row["value"], int)
+    assert (row["source_quote"], row["extractor_id"]) == ("24 dyads took part", "QY")
+
+
 def test_save_is_refused_when_a_reviewer_resubmitted_meanwhile(project, disagreeing, save):
     _agreed, _cards, state = _compare(project, disagreeing)
     picked = "synchrony"

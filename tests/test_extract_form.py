@@ -397,6 +397,29 @@ def test_draft_shapes_each_field_type_correctly(tmp_project, source):
     assert saved["tasks"]["value"] == [{"task_name": "free play", "minutes": 5}]
 
 
+def test_draft_keeps_sub_quotes_and_drops_row_keys_and_blank_rows(tmp_project, source):
+    """The grid hands back an internal _rid per row and an empty row for every line added but not
+    filled; neither is data. A row key left in would make two reviewers disagree on every list of
+    objects, and the object's quotes are keyed by the dotted sub-field id."""
+    _save_extraction(
+        tmp_project.db, source, "amber", _fields(),
+        val_values=["RCT", 12, "audio", "6mo", "KR"],
+        val_ids=list(_ALL_VALUE_IDS),
+        quote_values=["p1", None, None, "aged six months", "recruited in Korea"],
+        quote_ids=list(_ALL_VALUE_IDS),
+        grid_rows=[[{"_rid": "x1", "task_name": "free play", "minutes": 5},
+                    {"_rid": "x2", "task_name": "", "minutes": None}]],
+        grid_ids=list(_ALL_GRID_IDS),
+        include_autoaccept=False,
+    )
+    saved = {r["field_name"]: r["value"] for r in tmp_project.db.list_extractions(source.id, extractor_type="human")}
+    assert saved["sample"] == {
+        "age": {"value": "6mo", "quote": "aged six months"},
+        "country": {"value": "KR", "quote": "recruited in Korea"},
+    }
+    assert saved["tasks"] == [{"task_name": "free play", "minutes": 5}]
+
+
 def test_submit_takes_the_ai_value_for_fields_not_flagged_for_verification(tmp_project, source):
     ai_rows = {"doi_note": {"value": "10.1/x", "source_quote": "in the abstract"}}
     saved = _do_save(tmp_project.db, source, include_autoaccept=True, ai_rows=ai_rows)
