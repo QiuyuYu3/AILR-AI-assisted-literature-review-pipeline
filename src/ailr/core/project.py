@@ -201,6 +201,9 @@ class Project:
                 continue
             unique_sources.append(src)
 
+        unique_sources, batch_title_dups = dedup.dedup_by_title_within(unique_sources, score=_record_score)
+        dup_rows += [_dup_row(d, "title (within import)") for d in batch_title_dups]
+
         existing = self._db.list_sources(project_id=self._project_id)
         candidates_for_insert, title_matches_raw = dedup.dedup_by_title(unique_sources, existing)
 
@@ -232,7 +235,7 @@ class Project:
         return IngestResult(
             parsed=parsed,
             imported=imported,
-            deduplicated=len(batch_dups) + cross_dups + len(title_matches_raw),
+            deduplicated=len(batch_dups) + len(batch_title_dups) + cross_dups + len(title_matches_raw),
             failed=len(failures),
             failures=failures,
             title_matches=title_matches,

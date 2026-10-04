@@ -456,7 +456,7 @@ class ExtractionMixin:
         clearing the human's full-text verdict + any full-text reconciliation (AI kept)."""
         sql = f"""
             SELECT s.* FROM sources s
-            WHERE s.project_id = ? AND {ft_final_include_md_sql(team_size)}
+            WHERE s.project_id = ? AND COALESCE(s.is_duplicate, 0) = 0 AND {ft_final_include_md_sql(team_size)}
             ORDER BY s.id
         """
         return [_row_to_source(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]

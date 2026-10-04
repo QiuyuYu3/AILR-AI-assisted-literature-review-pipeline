@@ -201,7 +201,7 @@ def _fetch_source_page(conn, where_sql: str, params: list, sort_by: str, page: i
 # Independent mode: both humans voted but no clean agreed include/exclude — they differ, or anyone
 # voted 'uncertain' — and no reconciliation yet. Params: (project_id, stage, stage, stage, reconcile_stage).
 _INDEPENDENT_CONFLICT_WHERE = """
-    s.project_id = ?
+    s.project_id = ? AND COALESCE(s.is_duplicate, 0) = 0
     AND (
         SELECT COUNT(DISTINCT reviewer_id)
         FROM screening_decisions
@@ -245,7 +245,7 @@ def _assisted_conflict_sql(select_clause: str, with_order: bool = False) -> str:
         FROM sources s
         JOIN latest_ai a ON a.source_id = s.id
         JOIN latest_human h ON h.source_id = s.id
-        WHERE s.project_id = ?
+        WHERE s.project_id = ? AND COALESCE(s.is_duplicate, 0) = 0
           AND (a.decision != h.decision OR a.decision = 'uncertain')
           AND NOT EXISTS (SELECT 1 FROM reconciliations WHERE source_id = s.id AND stage = ?)
         {'ORDER BY s.id' if with_order else ''}
@@ -591,7 +591,7 @@ class ScreeningMixin:
         sql = """
             SELECT DISTINCT d.source_id FROM screening_decisions d
             JOIN sources s ON s.id = d.source_id
-            WHERE s.project_id = ? AND d.stage = ?
+            WHERE s.project_id = ? AND d.stage = ? AND COALESCE(s.is_duplicate, 0) = 0
         """
         params: list = [project_id, stage]
         if reviewer_types:
@@ -1084,7 +1084,8 @@ class ScreeningMixin:
         row = self._conn.execute(
             """SELECT COUNT(DISTINCT d.source_id) AS n
                FROM screening_decisions d JOIN sources s ON s.id = d.source_id
-               WHERE s.project_id = ? AND d.reviewer_id = ? AND d.stage = ?""",
+               WHERE s.project_id = ? AND d.reviewer_id = ? AND d.stage = ?
+                 AND COALESCE(s.is_duplicate, 0) = 0""",
             (project_id, reviewer_id, stage),
         ).fetchone()
         return row["n"]

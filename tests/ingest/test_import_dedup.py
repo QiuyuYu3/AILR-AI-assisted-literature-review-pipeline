@@ -121,6 +121,15 @@ class TestDedupFunctions:
         _kept, matched = dedup.dedup_by_title([incoming], existing)
         assert [e.id for _, e in matched] == [2]
 
+    def test_one_import_is_deduplicated_on_title_by_the_same_rule(self):
+        bare = Source(title="Dyadic gaze coordination in infancy", year=2019)
+        complete = Source(title="Dyadic Gaze Coordination in Infancy.", year=2019, doi="10.1/x", authors=["Lee, J"])
+        years_apart = Source(title="Dyadic gaze coordination in infancy", year=2001)
+        short = [Source(title="Editorial", year=2020), Source(title="Editorial", year=2020)]
+        kept, dropped = dedup.dedup_by_title_within([bare, complete, years_apart, *short], score=_record_score)
+        assert kept == [complete, years_apart, *short]      # the more complete of the pair stays
+        assert dropped == [bare]
+
     def test_record_score_prefers_doi_then_authors(self):
         bare = Source(title="T")
         with_authors = Source(title="T", authors=["Lee, J"])
@@ -164,6 +173,14 @@ class TestIngestPipeline:
         linked = _RIS_A.replace("DO  - 10.1/dyad", "DO  - https://doi.org/10.1/Dyad")
         tmp_project.ingest(_write_ris(tmp_path / "a.ris", [linked]), source_database="test")
         assert [s.doi for s in tmp_project.db.list_sources(tmp_project.project_id)] == ["10.1/Dyad"]
+
+    def test_a_title_repeated_inside_one_file_is_imported_once(self, tmp_project, tmp_path):
+        result = tmp_project.ingest(_write_ris(tmp_path / "twice.ris", [_RIS_A_BARE, _RIS_A]), source_database="test")
+        assert (result.imported, result.deduplicated) == (1, 1)
+        [kept] = tmp_project.db.list_sources(tmp_project.project_id)
+        assert kept.doi == "10.1/dyad"
+        [dup] = tmp_project.db.list_duplicates(tmp_project.project_id)
+        assert dup["reason"] == "title (within import)"
 
     def test_same_doi_within_one_import_is_deduplicated(self, tmp_project, tmp_path):
         ris = _write_ris(tmp_path / "in.ris", [

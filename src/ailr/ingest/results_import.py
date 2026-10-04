@@ -110,7 +110,10 @@ def import_ai_results(project: Project, records: list[dict], *, extractor_id: st
         decision = fc.get("decision") if isinstance(fc, dict) else None
         # One transaction per record: a failure part-way through leaves the previous import whole.
         with db._conn.transaction():
-            db.delete_extractions(src.id, "ai")  # replace any prior AI extraction for this source
+            # The AI extraction this replaces, in-app or imported, is retired to history, not deleted.
+            previous = db.max_ai_extraction_id(src.id)
+            if previous is not None:
+                db.archive_ai_extractions_upto(src.id, previous)
             for field_name, payload in extraction.items():
                 if isinstance(payload, dict) and "value" in payload:
                     value, quote = payload.get("value"), payload.get("quote")

@@ -101,3 +101,17 @@ class TestShowDisagreements:
 
         assert result.exit_code == 0
         assert "1 disagreement(s) at the abstract stage" in result.stdout
+
+
+class TestCountsLeaveOutFlaggedDuplicates:
+    def test_metrics_and_the_source_list(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        kept = db.insert_source(Source(title="Kept", project_id=pid))
+        copy = db.insert_source(Source(title="Copy", project_id=pid))
+        vote(db, kept, "include", "amber", stage="abstract")
+        vote(db, copy, "exclude", "amber", stage="abstract")
+        db.mark_source_duplicate(copy, True)
+
+        metrics = _run("metrics", str(tmp_project.root))
+        assert "Human: include=   1  exclude=   0" in metrics.stdout
+        assert "Showing 1-1 of 1" in _run("show", "sources", str(tmp_project.root)).stdout

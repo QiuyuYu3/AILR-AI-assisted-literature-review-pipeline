@@ -270,13 +270,13 @@ def _prisma_diagram(c: dict) -> Any:
 
     dup_side = _box(f"{c['duplicates_removed']}", "duplicates removed before screening", _SIDE_BOX) if c["duplicates_removed"] else None
     abs_side = html.Div(
-        [html.Div([html.Strong(f"{c['abstract_excluded']}", className="me-1"), "studies excluded at title/abstract"])]
+        [html.Div([html.Strong(f"{c['abstract_excluded']}", className="me-1"), "records excluded at title/abstract"])]
         + _pending_line(c["abstract_pending"]),
         style=_SIDE_BOX,
     )
     retrieval_side = _box(f"{c['reports_not_retrieved']}", "reports not retrieved (no full text)", _SIDE_BOX) if c["reports_not_retrieved"] else None
 
-    ft_side_children: list[Any] = [html.Div([html.Strong(f"{c['full_text_excluded_reports']} "), "studies excluded, with reasons:"])]
+    ft_side_children: list[Any] = [html.Div([html.Strong(f"{c['full_text_excluded_reports']} "), "reports excluded, with reasons:"])]
     if ft_excl_counts:
         ft_side_children.append(
             html.Ul([html.Li(f"{r['reason']}: {r['n']}", className="small") for r in ft_excl_counts], className="mb-0 mt-1")
@@ -291,7 +291,7 @@ def _prisma_diagram(c: dict) -> Any:
             dbc.Row(dbc.Col(_down_arrow(), width=6)),
             _stage_row(_box(f"{c['reports_sought']}", "reports sought for retrieval", _MAIN_BOX), retrieval_side),
             dbc.Row(dbc.Col(_down_arrow(), width=6)),
-            _stage_row(_box(f"{c['full_text_assessed']}", "full-text studies assessed for eligibility", _MAIN_BOX), ft_side),
+            _stage_row(_box(f"{c['full_text_assessed']}", "reports assessed for eligibility", _MAIN_BOX), ft_side),
             dbc.Row(dbc.Col(_down_arrow(), width=6)),
             _stage_row(_box(f"{c['studies_included']}", "studies included", _MAIN_BOX), None),
             _other_arm_block(c),

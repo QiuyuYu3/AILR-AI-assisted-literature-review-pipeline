@@ -43,6 +43,8 @@ Every choice in the Variables editor compiles into a constraint the model has to
 
 Two practical takeaways: use an **enum** wherever the answer should be one of a known set (it stops the model inventing wordings you have to clean up later), and use a **repeating group** instead of one big text field whenever a paper can have many of something, so you get tidy rows rather than prose to parse.
 
+Sub-fields cannot be named `value`, `quote` or `confidence`: each answer is stored under those keys, so a sub-field with one of those names could not be told apart from them. A schema that uses one stops loading until it is renamed.
+
 ## What a result looks like
 
 For a schema with a number, an enum, and a repeating group, the AI returns each value paired with a verbatim `quote`:

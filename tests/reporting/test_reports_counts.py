@@ -494,6 +494,26 @@ class TestMethodsDesign:
         assert "(AI-extract + human-verify design)" in text and "(enabled for this project)" in text
         assert "(disabled for this project)" in build_methods_skeleton(set_config(tmp_project, "extraction", flag_check=False))
 
+    def test_without_pilot_runs_the_methods_say_none_were_recorded(self, tmp_project):
+        text = build_methods_skeleton(tmp_project)
+        assert "No pilot runs of the prompts were recorded." in text
+        assert "κ ≥" not in text
+
+    def test_pilot_runs_are_reported_as_recorded(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sids = [_add_source(tmp_project, f"P{i}") for i in range(3)]
+        first = db.create_test_run(project_id=pid, stage="abstract", sample_size=2, prompt_snapshot="p", criteria_snapshot="c")
+        for sid in sids[:2]:
+            db.insert_test_decision(first, sid, "include", "r", 0.9, [], [])
+        last = db.create_test_run(project_id=pid, stage="abstract", sample_size=3, prompt_snapshot="p2", criteria_snapshot="c")
+        for sid, ai, human in zip(sids, ("include", "include", "exclude"), ("include", "exclude", "exclude")):
+            db.insert_test_decision(last, sid, ai, "r", 0.9, [], [])
+            vote(db, sid, human, "amber", stage="abstract")
+        text = build_methods_skeleton(tmp_project)
+        assert ("The screening prompt was piloted in 2 quick tests on random samples (5 records), compared against "
+                "the human decisions on the same records; in the last, κ = 0.40 (n = 3).") in text
+        assert "extraction prompt was piloted" not in text
+
     def test_registration_and_protocol(self, tmp_project):
         text = build_methods_skeleton(tmp_project)
         assert "This review was not registered." in text and "No protocol was prepared in advance." in text
@@ -541,7 +561,7 @@ class TestReportAndSvgShareCounts:
         assert f"{c['records_identified']} records identified" in svg
         assert f"{c['records_after_dedup']} records after duplicates removed" in svg
         assert f"{c['reports_sought']} reports sought for retrieval" in svg
-        assert f"{c['full_text_assessed']} full-text studies assessed" in svg
+        assert f"{c['full_text_assessed']} reports assessed for eligibility" in svg
         assert f"{c['studies_included']} studies included" in svg
 
 
@@ -598,11 +618,11 @@ class TestEveryBoxShowsItsOwnNumber:
             ["101 records identified", "PubMed: 401"],
             ["102 duplicates removed"],
             ["104 records after duplicates removed"],
-            ["106 excluded at title/abstract", "107 awaiting a decision"],
+            ["106 records excluded at title/abstract", "107 awaiting a decision"],
             ["112 reports sought for retrieval"],
             ["114 reports not retrieved"],
-            ["115 full-text studies assessed"],
-            ["116 excluded, with reasons:", "  Wrong population: 117", "  Wrong design: 118", "119 awaiting a decision"],
+            ["115 reports assessed for eligibility"],
+            ["116 reports excluded, with reasons:", "  Wrong population: 117", "  Wrong design: 118", "119 awaiting a decision"],
             ["120 studies included", "in 121 reports", "of which extracted: 122"],
         ]
 
@@ -612,15 +632,15 @@ class TestEveryBoxShowsItsOwnNumber:
             ["Via databases and registers", "201 records identified", "PubMed: 401"],
             ["202 duplicates removed"],
             ["203 records after duplicates removed"],
-            ["205 excluded at title/abstract", "206 awaiting a decision"],
+            ["205 records excluded at title/abstract", "206 awaiting a decision"],
             ["207 reports sought for retrieval"],
             ["209 reports not retrieved"],
-            ["210 full-text studies assessed"],
-            ["211 excluded, with reasons:", "  Wrong population: 212", "213 awaiting a decision"],
+            ["210 reports assessed for eligibility"],
+            ["211 reports excluded, with reasons:", "  Wrong population: 212", "213 awaiting a decision"],
             ["120 studies included", "in 121 reports", "of which extracted: 122"],
             ["Via other methods", "301 records identified", "Citation searching: 402"],
             ["307 reports sought for retrieval"],
-            ["310 full-text studies assessed"],
+            ["310 reports assessed for eligibility"],
         ]
 
     def test_markdown_report(self, tmp_project, counts):
@@ -661,10 +681,10 @@ class TestEveryBoxShowsItsOwnNumber:
     def test_reports_page(self, counts):
         text = component_text(reports_view._prisma_diagram(counts()))
         expected = ["101 records identified", "PubMed: 401", "102 duplicates removed before screening",
-                    "104 records after duplicates removed", "106 studies excluded at title/abstract",
+                    "104 records after duplicates removed", "106 records excluded at title/abstract",
                     "107 awaiting a decision", "112 reports sought for retrieval",
-                    "114 reports not retrieved (no full text)", "115 full-text studies assessed for eligibility",
-                    "116 studies excluded, with reasons:", "Wrong population: 117", "Wrong design: 118",
+                    "114 reports not retrieved (no full text)", "115 reports assessed for eligibility",
+                    "116 reports excluded, with reasons:", "Wrong population: 117", "Wrong design: 118",
                     "119 awaiting a decision", "120 studies included"]
         found = [text.find(s) for s in expected]
         assert -1 not in found and found == sorted(found), list(zip(expected, found))

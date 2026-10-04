@@ -5,7 +5,15 @@ nothing for a field leaves the model owing a string, and it writes the word "nul
 which then reads as data in exports, in the quote-coverage denominator, and in enum validation.
 """
 
-from ailr.extraction import FieldSpec, build_extraction_tool_schema, compose_schema
+import pytest
+
+from ailr.exceptions import ConfigError
+from ailr.extraction import (
+    FieldSpec,
+    build_extraction_tool_schema,
+    compose_schema,
+    load_user_schema,
+)
 from ailr.llm.mock import synth_from_tool_schema
 
 
@@ -102,3 +110,21 @@ def test_skip_verify_in_schema_yaml_marks_only_the_named_fields(tmp_path):
         encoding="utf-8",
     )
     assert {f.name: f.verify for f in compose_schema(path)} == {"design": False, "total_n": True}
+
+
+@pytest.mark.parametrize("sub", ["value", "quote", "confidence"])
+def test_a_sub_field_named_like_the_stored_value_wrapper_is_refused(tmp_path, sub):
+    """Values are stored as {value, quote}; a sub-field with one of those names cannot be told apart from it."""
+    path = tmp_path / "schema.yaml"
+    path.write_text(
+        "fields:\n  - name: findings\n    type: list\n    item_type: object\n    item_fields:\n"
+        f"      - name: finding_name\n        type: string\n      - name: {sub}\n        type: string\n",
+        encoding="utf-8")
+    with pytest.raises(ConfigError, match=f"'{sub}' is reserved"):
+        load_user_schema(path)
+
+
+def test_the_schema_a_new_project_starts_with_loads(tmp_project):
+    fields = compose_schema(tmp_project.root / tmp_project.config.extraction.schema_path)
+    [example] = [f for f in fields if f.name == "example_list_of_objects"]
+    assert [sub.name for sub in example.item_fields] == ["finding_name", "result"]

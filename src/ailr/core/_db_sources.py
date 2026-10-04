@@ -283,7 +283,8 @@ class SourcesMixin:
 
     def count_sources_with_markdown(self, project_id: int) -> int:
         row = self._conn.execute(
-            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND markdown_path IS NOT NULL",
+            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND markdown_path IS NOT NULL "
+            "AND COALESCE(is_duplicate, 0) = 0",
             (project_id,),
         ).fetchone()
         return row["n"]

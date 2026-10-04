@@ -196,6 +196,17 @@ class TestImportAiExtraction:
         rows = db.list_extractions(sid, extractor_type="ai")
         assert [r["value"] for r in rows] == ["new"]
 
+    def test_the_ai_extraction_it_replaces_is_kept_as_history(self, tmp_project):
+        """An in-app run may have cost real API calls; an import retires it rather than deleting it."""
+        db = tmp_project.db
+        sid = add_source(tmp_project)
+        db.insert_extraction(ExtractionResult(
+            extractor_type="ai", extractor_id="gpt", field_name="design", value="from the app", source_id=sid))
+        import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "imported"}}])
+        assert [r["value"] for r in db.list_extractions(sid, extractor_type="ai")] == ["imported"]
+        [run] = db.list_superseded_ai_runs(sid)
+        assert [(r["extractor_id"], r["value"]) for r in run["rows"]] == [("gpt", "from the app")]
+
     def test_a_record_with_only_a_doi_is_matched_by_it(self, tmp_project):
         sid = add_source(tmp_project, doi="10.1/match")
         summary = import_ai_results(tmp_project, [{"doi": "10.1/MATCH", "extraction": {"design": "x"}}])

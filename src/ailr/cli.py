@@ -468,8 +468,8 @@ def metrics(
     """Print AI/human screening summary, agreement (Cohen's kappa), API token usage."""
     try:
         proj = Project.load(project)
-        ai_counts = proj.db.screening_summary(proj.project_id, "ai")
-        human_counts = proj.db.screening_summary(proj.project_id, "human")
+        ai_counts = proj.db.screening_summary(proj.project_id, "ai", exclude_duplicates=True)
+        human_counts = proj.db.screening_summary(proj.project_id, "human", exclude_duplicates=True)
 
         # One entry per reviewer pair per stage. `uncertain` is folded into include (an uncertain
         # vote does not exclude) and votes are read before adjudication.
@@ -609,7 +609,7 @@ def show_sources(
                 year = str(s.year) if s.year else "----"
                 src_db = _truncate(s.source_database, 8) or "?"
                 typer.echo(f"{s.id:<5} {year:<5} {src_db:<8} {_truncate(s.title, 80)}")
-            total = proj.db.count_sources(proj.project_id)
+            total = proj.db.count_sources(proj.project_id, exclude_duplicates=True)
             shown_end = offset + len(sources)
             typer.echo(f"\nShowing {offset + 1}-{shown_end} of {total}")
     except AILRError as e:

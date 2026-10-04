@@ -71,6 +71,26 @@ def _nothing_tells_them_apart(a: Source, b: Source) -> bool:
     return not (words_a and words_b and words_a.isdisjoint(words_b))
 
 
+def dedup_by_title_within(sources: list[Source], score) -> tuple[list[Source], list[Source]]:
+    """The same title rule inside one import; of a matching pair, the record `score` ranks higher stays."""
+    kept: list[Source] = []
+    slots: dict[str, list[int]] = {}
+    dropped: list[Source] = []
+    for new in sources:
+        norm = normalize_title(new.title)
+        same = slots.get(norm, []) if len(norm.split()) >= TITLE_MIN_WORDS else []
+        hit = next((i for i in same if _nothing_tells_them_apart(new, kept[i])), None)
+        if hit is None:
+            slots.setdefault(norm, []).append(len(kept))
+            kept.append(new)
+        elif score(new) > score(kept[hit]):
+            dropped.append(kept[hit])
+            kept[hit] = new
+        else:
+            dropped.append(new)
+    return kept, dropped
+
+
 def dedup_by_title(
     sources: list[Source],
     existing: list[Source],

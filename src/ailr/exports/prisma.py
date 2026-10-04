@@ -253,11 +253,11 @@ def _svg_box(x: float, y: float, w: float, text_lines: list[tuple[str, bool]], d
 def _side_boxes(col: dict[str, Any]) -> tuple:
     """The dashed boxes beside one flow column, all read from that column's own numbers."""
     dup = [(f"{col['duplicates']} duplicates removed", False)] if col["duplicates"] else None
-    abstract = [(f"{col['excluded_abstract']} excluded at title/abstract", False)]
+    abstract = [(f"{col['excluded_abstract']} records excluded at title/abstract", False)]
     if col["abstract_pending"]:
         abstract.append((f"{col['abstract_pending']} awaiting a decision", False))
     notret = [(f"{col['not_retrieved']} reports not retrieved", False)] if col["not_retrieved"] else None
-    full_text = [(f"{col['excluded_full_text']} excluded, with reasons:", False)]
+    full_text = [(f"{col['excluded_full_text']} reports excluded, with reasons:", False)]
     full_text += [(f"  {r['reason']}: {r['n']}", False) for r in col["full_text_exclusion_reasons"]]
     if col["full_text_pending"]:
         full_text.append((f"{col['full_text_pending']} awaiting a decision", False))
@@ -304,7 +304,7 @@ def build_prisma_svg(project: Project) -> str:
             ([("Via databases and registers", True)] + ident_lines[1:], dup_side),
             ([(f"{main['after_dedup']} records after duplicates removed", True)], abs_side),
             ([(f"{main['sought']} reports sought for retrieval", True)], notret_side),
-            ([(f"{main['assessed']} full-text studies assessed", True)], ftx_side),
+            ([(f"{main['assessed']} reports assessed for eligibility", True)], ftx_side),
             (included_box, None),
         ]
         stages: list[tuple[list[tuple[str, bool]], Any]] = stage_rows
@@ -313,7 +313,7 @@ def build_prisma_svg(project: Project) -> str:
             (ident_lines, dup_side),
             ([(f"{c['records_after_dedup']} records after duplicates removed", True)], abs_side),
             ([(f"{c['reports_sought']} reports sought for retrieval", True)], notret_side),
-            ([(f"{c['full_text_assessed']} full-text studies assessed", True)], ftx_side),
+            ([(f"{c['full_text_assessed']} reports assessed for eligibility", True)], ftx_side),
             (included_box, None),
         ]
 
@@ -344,7 +344,7 @@ def build_prisma_svg(project: Project) -> str:
             (0, [("Via other methods", True), (f"{other['identified']} records identified", True)]
                 + [(f"{d['source_database']}: {d['n']}", False) for d in c["by_route"].get("other", [])]),
             (2, [(f"{other['sought']} reports sought for retrieval", True)]),
-            (3, [(f"{other['assessed']} full-text studies assessed", True)]),
+            (3, [(f"{other['assessed']} reports assessed for eligibility", True)]),
         ]
         drawn: list[tuple[float, float]] = []
         for stage_i, box_lines in rows:

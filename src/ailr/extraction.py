@@ -20,11 +20,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic import ValidationError as PydanticValidationError
 
 from ailr.exceptions import ConfigError, InputNotFoundError
 from ailr.llm.base import ToolSchema
+
+_RESERVED_SUB_FIELD_NAMES = {"value", "quote", "confidence"}
 
 
 class FieldSpec(BaseModel):
@@ -40,6 +42,15 @@ class FieldSpec(BaseModel):
     item_type: Literal["string", "integer", "number", "boolean", "object"] | None = None
     fields: list[FieldSpec] | None = None
     item_fields: list[FieldSpec] | None = None
+
+    @field_validator("fields", "item_fields")
+    @classmethod
+    def _no_reserved_sub_field_names(cls, subs: list[FieldSpec] | None) -> list[FieldSpec] | None:
+        # values are stored as {value, quote, confidence}; a sub-field with one of those names reads as that wrapper
+        for sub in subs or []:
+            if sub.name in _RESERVED_SUB_FIELD_NAMES:
+                raise ValueError(f"sub-field name {sub.name!r} is reserved; rename it in schema.yaml (e.g. to 'result')")
+        return subs
 
 
 FieldSpec.model_rebuild()

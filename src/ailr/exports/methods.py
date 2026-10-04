@@ -42,6 +42,30 @@ def _model_and_decoding(cfg, db, pid: int, stage: str, fallback_model: str) -> s
     return " and ".join(parts)
 
 
+def _plural(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _pilot_sentence(project: Project) -> str:
+    """The quick tests actually recorded per prompt: how many, on how many records, and the last one's κ."""
+    from ailr.tasks.calibrate import quick_test_agreement
+
+    db, pid = project.db, project.project_id
+    sentences = []
+    for test_stage, prompt in (("abstract", "screening"), ("extraction", "extraction")):
+        runs = db.list_test_runs(pid, test_stage)      # newest first
+        if not runs:
+            continue
+        records = sum(r["sample_size"] or 0 for r in runs)
+        sentence = (f"The {prompt} prompt was piloted in {_plural(len(runs), 'quick test')} on random samples "
+                    f"({_plural(records, 'record')}), compared against the human decisions on the same records")
+        stats = quick_test_agreement(project, runs[0]["id"], test_stage)
+        if stats["paired_count"] and stats["kappa"] == stats["kappa"]:
+            sentence += f"; in the last, κ = {_fmt(stats['kappa'])} (n = {stats['paired_count']})"
+        sentences.append(sentence + ".")
+    return " ".join(sentences) or "No pilot runs of the prompts were recorded."
+
+
 def reporting_guideline(project_type: str) -> str:
     """The checklist a review of this type reports against. Scoping reviews follow PRISMA-ScR,
     not PRISMA 2020."""
@@ -232,11 +256,7 @@ def build_methods_skeleton(
     lines.extend(_agreement_lines(db, pid, "full_text", "full-text review"))
     lines.append("")
     lines.append("## Calibration")
-    lines.append(
-        f"Calibration was performed by sampling {int(cfg.screening.calibration.fraction * 100)}% of candidate records "
-        f"(minimum {cfg.screening.calibration.min}), independently screened by AI and human reviewers, with prompt "
-        f"revision iterating until κ ≥ {cfg.screening.target_kappa}."
-    )
+    lines.append(_pilot_sentence(project))
     lines.append("")
     lines.append("## Full-text extraction")
     lines.append(
