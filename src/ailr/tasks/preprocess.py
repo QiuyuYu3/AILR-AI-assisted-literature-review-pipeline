@@ -64,6 +64,16 @@ def import_markdown_from_folder(project: Project, folder: Path) -> dict[str, Any
     return {"md_files_found": len(md_files), "matched": matched, "no_pdf_path": no_pdf_path, "unmatched": unmatched}
 
 
+def _write_whole(path: Path, text: str) -> None:
+    """A file that exists counts as converted, so a write that fails part-way must leave none."""
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 @dataclass
 class PreprocessSummary:
     total_pdfs: int = 0
@@ -145,7 +155,7 @@ class PreprocessTask:
                 try:
                     md_text = fut.result()
                     md_path = md_dir / f"{sid}.md"
-                    md_path.write_text(md_text, encoding="utf-8")
+                    _write_whole(md_path, md_text)
                     self.project.db.update_markdown_path(sid, portable_path(md_path, self.project.root))
                     self.project.db.update_pdf_path(sid, portable_path(pdf_file, self.project.root))
                     summary.converted += 1

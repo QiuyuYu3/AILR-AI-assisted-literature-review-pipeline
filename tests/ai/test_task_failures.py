@@ -252,6 +252,21 @@ class TestPreprocessFailures:
         assert not (tmp_project.root / "data" / "markdown" / f"{sid}.md").exists()
         assert tmp_project.db.get_source(sid).markdown_path is None
 
+    def test_text_that_cannot_be_written_leaves_no_markdown_behind(self, tmp_project):
+        """A lone surrogate from a damaged PDF fails only while writing, after the file was opened."""
+        sid = _with_pdf(tmp_project, "P")
+
+        class _Surrogate(_StubConverter):
+            def convert(self, pdf_path: Path) -> str:
+                return "# Paper\n\nbroken \ud800 glyph"
+
+        summary = PreprocessTask(tmp_project, converter=_Surrogate()).run()
+        assert summary.failed == 1 and summary.converted == 0
+        assert list((tmp_project.root / "data" / "markdown").iterdir()) == []
+        rerun = PreprocessTask(tmp_project, converter=_StubConverter()).run()
+        assert rerun.skipped_already_done == 0 and rerun.converted == 1
+        assert tmp_project.db.get_source(sid).markdown_path is not None
+
     def test_one_bad_pdf_does_not_stop_the_others(self, tmp_project):
         good = _with_pdf(tmp_project, "readable")
         bad = _with_pdf(tmp_project, "corrupt")

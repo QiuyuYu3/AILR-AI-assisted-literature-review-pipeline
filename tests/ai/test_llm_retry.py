@@ -107,3 +107,14 @@ def test_jitter_is_added_within_the_cap(monkeypatch):
     with_retries(func, is_retryable=_retryable, base_delay=1.0, max_delay=30.0)
 
     assert delays == [1.5, 2.5]
+
+
+def test_jitter_does_not_push_a_delay_past_the_cap(monkeypatch):
+    delays: list[float] = []
+    monkeypatch.setattr(retry_mod.time, "sleep", delays.append)
+    monkeypatch.setattr(retry_mod.random, "uniform", lambda _a, _b: 0.5)
+    func, _calls = _flaky(3)
+
+    with_retries(func, is_retryable=_retryable, base_delay=10.0, max_delay=25.0)
+
+    assert delays == [10.5, 20.5, 25.0]

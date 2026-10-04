@@ -5,6 +5,9 @@ page render off the disk. It is only correct if editing any input still takes ef
 a prompt, the criteria, or the extraction schema — which is what these pin.
 """
 
+import os
+
+from ailr import prompt_versions
 from ailr.prompt_versions import extraction_composed, screening_composed
 
 
@@ -25,6 +28,34 @@ class TestScreeningComposed:
         assert "FIRST" in screening_composed(tmp_project)
         _write(tmp_project, rel, "SECOND")
         assert "SECOND" in screening_composed(tmp_project)
+
+    def test_an_edit_that_keeps_the_size_takes_effect(self, tmp_project):
+        """Swapping one year for another leaves the file the same size; only its mtime moves."""
+        rel = tmp_project.config.screening.prompt
+        _write(tmp_project, rel, "Studies published since 2010.")
+        assert "2010" in screening_composed(tmp_project)
+        path = tmp_project.root / rel
+        later = path.stat().st_mtime_ns + 10**9
+        _write(tmp_project, rel, "Studies published since 2015.")
+        os.utime(path, ns=(later, later))     # saved a second later, whatever the clock resolution
+        assert "2015" in screening_composed(tmp_project)
+
+    def test_editing_the_additional_instructions_takes_effect(self, tmp_project):
+        cfg = tmp_project.config.screening
+        _write(tmp_project, cfg.prompt, "SCREEN {{criteria}}")
+        _write(tmp_project, cfg.additional, "Prefer infant samples.")
+        assert "Prefer infant samples." in screening_composed(tmp_project)
+        _write(tmp_project, cfg.additional, "Prefer adolescent samples instead.")
+        assert "Prefer adolescent samples instead." in screening_composed(tmp_project)
+
+    def test_an_unchanged_prompt_is_not_composed_again(self, tmp_project, monkeypatch):
+        _write(tmp_project, tmp_project.config.screening.prompt, "SCREEN {{criteria}}")
+        builds = []
+        real = prompt_versions.compose_screening_prompt
+        monkeypatch.setattr(prompt_versions, "compose_screening_prompt", lambda *a, **k: builds.append(1) or real(*a, **k))
+        screening_composed(tmp_project)
+        screening_composed(tmp_project)
+        assert len(builds) == 1
 
     def test_editing_the_criteria_takes_effect(self, tmp_project):
         _write(tmp_project, tmp_project.config.screening.prompt, "SCREEN {{criteria}}")
