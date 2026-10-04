@@ -12,6 +12,7 @@ from ailr.core.crosscheck import (
 from ailr.core.source import Source
 from ailr.extraction import FieldSpec
 from ailr.reviewers import ExtractionResult
+from tests.helpers import codes, set_config
 
 PAPER = """
 # Method
@@ -28,10 +29,6 @@ def _row(name, value, quote=None, row_id=1):
     return {"id": row_id, "field_name": name, "value": value, "source_quote": quote}
 
 
-def _codes(issues):
-    return sorted(i.issue_code for i in issues)
-
-
 # ----- Quote matching -----
 
 def test_quote_present_is_not_flagged():
@@ -43,7 +40,7 @@ def test_quote_present_is_not_flagged():
 def test_missing_quote_is_flagged():
     fields = [FieldSpec(name="design", type="string")]
     rows = [_row("design", "between-subjects", "We used a between-subjects design")]
-    assert _codes(check_extraction(rows, fields, PAPER)) == [QUOTE_NOT_FOUND]
+    assert codes(check_extraction(rows, fields, PAPER)) == [QUOTE_NOT_FOUND]
 
 
 def test_quote_across_a_hyphenated_line_break_still_matches():
@@ -63,12 +60,12 @@ def test_quote_with_elision_matches_both_fragments():
 
 def test_required_field_with_no_value_is_flagged():
     fields = [FieldSpec(name="sample_size", type="integer", required=True)]
-    assert _codes(check_extraction([_row("sample_size", None)], fields, PAPER)) == [EMPTY_REQUIRED]
+    assert codes(check_extraction([_row("sample_size", None)], fields, PAPER)) == [EMPTY_REQUIRED]
 
 
 def test_required_field_never_extracted_is_flagged():
     fields = [FieldSpec(name="sample_size", type="integer", required=True)]
-    assert _codes(check_extraction([], fields, PAPER)) == [EMPTY_REQUIRED]
+    assert codes(check_extraction([], fields, PAPER)) == [EMPTY_REQUIRED]
 
 
 def test_optional_field_with_no_value_is_not_flagged():
@@ -79,7 +76,7 @@ def test_optional_field_with_no_value_is_not_flagged():
 def test_value_outside_the_enum_is_flagged():
     fields = [FieldSpec(name="design", type="string", enum=["within", "between"])]
     rows = [_row("design", "mixed", "We used a within-subjects design")]
-    assert _codes(check_extraction(rows, fields, PAPER)) == [INVALID_ENUM]
+    assert codes(check_extraction(rows, fields, PAPER)) == [INVALID_ENUM]
 
 
 def test_enum_match_is_case_insensitive():
@@ -93,7 +90,7 @@ def test_enum_match_is_case_insensitive():
 def test_number_absent_from_its_quote_is_flagged():
     fields = [FieldSpec(name="sample_size", type="integer")]
     rows = [_row("sample_size", 52, "Forty-eight dyads completed the task")]
-    assert _codes(check_extraction(rows, fields, PAPER)) == [VALUE_NOT_IN_QUOTE]
+    assert codes(check_extraction(rows, fields, PAPER)) == [VALUE_NOT_IN_QUOTE]
 
 
 def test_number_formatting_difference_is_not_flagged():
@@ -113,7 +110,7 @@ def test_a_missing_quote_suppresses_the_number_check():
     comparison meaningless anyway."""
     fields = [FieldSpec(name="sample_size", type="integer")]
     rows = [_row("sample_size", 52, "Fifty-two dyads took part")]
-    assert _codes(check_extraction(rows, fields, PAPER)) == [QUOTE_NOT_FOUND]
+    assert codes(check_extraction(rows, fields, PAPER)) == [QUOTE_NOT_FOUND]
 
 
 def test_only_the_latest_row_per_field_is_checked():
@@ -321,16 +318,9 @@ def test_an_ai_finding_goes_stale_after_a_re_run_by_any_model(db, tmp_project):
 def test_without_explicit_targets_the_run_follows_the_setting(tmp_project):
     """The UI starts a run without passing targets. With the setting on humans only, each human
     gets findings of their own and the AI's rows are left alone."""
-    import yaml
-
-    from ailr.core.project import Project
     from ailr.tasks.crosscheck import DeterministicCrossCheckTask
 
-    cfg_path = tmp_project.root / "lit_review.yaml"
-    cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
-    cfg.setdefault("crosscheck", {})["targets"] = ["human"]
-    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
-    project = Project(tmp_project.root)
+    project = set_config(tmp_project, "crosscheck", targets=["human"])
 
     db = project.db
     sid = db.insert_source(Source(title="A paper", project_id=project.project_id))

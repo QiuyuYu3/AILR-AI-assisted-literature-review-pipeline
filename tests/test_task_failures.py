@@ -12,18 +12,11 @@ from ailr.core.source import Source
 from ailr.exceptions import LLMError
 from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
 from ailr.preprocess import PDFConverter
-from ailr.reviewers import LLMReviewer, Reviewer, ScreeningDecision
+from ailr.reviewers import LLMReviewer, Reviewer
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.preprocess import PreprocessTask
 from ailr.tasks.screen import ScreeningTask
-
-_INCLUDE_RESPONSE = {
-    "decision": "include",
-    "reasoning": "mock says fits",
-    "matched_criteria": [],
-    "evidence_quotes": [],
-    "confidence": 8,
-}
+from tests.helpers import add_source, extract_reviewer, screen_reviewer, vote
 
 
 class _BoomReviewer(Reviewer):
@@ -56,41 +49,21 @@ class _BoomReviewer(Reviewer):
         return self._inner.extract(source, *args, **kwargs)
 
 
-def _screen_reviewer():
-    return LLMReviewer(MockLLMClient(response=_INCLUDE_RESPONSE))
-
-
-def _extract_reviewer():
-    return LLMReviewer(MockLLMClient(
-        model="mock-extract", response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts),
-    ))
-
-
 def _abstract_source(project, title="Paper"):
-    return project.db.insert_source(Source(
-        title=title, abstract="An abstract.", project_id=project.project_id,
-    ))
+    return add_source(project, title, abstract="An abstract.")
 
 
 def _extractable_source(project, title="Paper"):
     """An abstract-include with markdown on disk: an extraction candidate."""
-    sid = _abstract_source(project, title)
-    project.db.insert_screening_decision(ScreeningDecision(
-        decision="include", reasoning="t", reviewer_type="human",
-        reviewer_id="amber", source_id=sid, stage="abstract",
-    ))
-    rel = Path("data/markdown") / f"{sid}.md"
-    target = project.root / rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("# Paper\n\nFull text about dyadic interaction.", encoding="utf-8")
-    project.db.update_markdown_path(sid, rel)
+    sid = add_source(project, title, abstract="An abstract.", md_on_disk=True)
+    vote(project.db, sid, "include", "amber", stage="abstract")
     return sid
 
 
 class TestScreeningFailures:
     def test_a_failing_call_is_counted_not_raised(self, tmp_project):
         sids = [_abstract_source(tmp_project, f"P{i}") for i in range(3)]
-        summary = ScreeningTask(tmp_project, _BoomReviewer(_screen_reviewer())).run()
+        summary = ScreeningTask(tmp_project, _BoomReviewer(screen_reviewer())).run()
 
         assert summary.total == 3 and summary.screened == 0 and summary.failed == 3
         assert {f["source_id"] for f in summary.failures} == set(sids)
@@ -102,7 +75,7 @@ class TestScreeningFailures:
         ok = _abstract_source(tmp_project, "fine")
         bad = _abstract_source(tmp_project, "boom")
 
-        summary = ScreeningTask(tmp_project, _BoomReviewer(_screen_reviewer(), {"boom"})).run()
+        summary = ScreeningTask(tmp_project, _BoomReviewer(screen_reviewer(), {"boom"})).run()
 
         assert summary.screened == 1 and summary.failed == 1
         assert db.get_latest_ai_decision(ok, "abstract")["decision"] == "include"
@@ -114,7 +87,7 @@ class TestScreeningFailures:
         _abstract_source(tmp_project, "boom")
         seen: list = []
 
-        ScreeningTask(tmp_project, _BoomReviewer(_screen_reviewer(), {"boom"})).run(
+        ScreeningTask(tmp_project, _BoomReviewer(screen_reviewer(), {"boom"})).run(
             on_progress=lambda done, total, decision, err: seen.append((decision, err))
         )
 
@@ -127,9 +100,9 @@ class TestScreeningFailures:
     def test_a_failed_paper_is_screened_again_on_the_next_run(self, tmp_project):
         """Nothing was written for it, so it is still unscreened rather than quietly skipped."""
         _abstract_source(tmp_project, "boom")
-        ScreeningTask(tmp_project, _BoomReviewer(_screen_reviewer())).run()
+        ScreeningTask(tmp_project, _BoomReviewer(screen_reviewer())).run()
 
-        again = ScreeningTask(tmp_project, _screen_reviewer()).run()
+        again = ScreeningTask(tmp_project, screen_reviewer()).run()
         assert again.total == 1 and again.screened == 1
 
     def test_batch_mode_still_lands_the_papers_that_worked(self, tmp_project):
@@ -139,7 +112,7 @@ class TestScreeningFailures:
         ok = _abstract_source(tmp_project, "fine")
         _abstract_source(tmp_project, "boom")
 
-        summary = ScreeningTask(tmp_project, _BoomReviewer(_screen_reviewer(), {"boom"})).run(batch=True)
+        summary = ScreeningTask(tmp_project, _BoomReviewer(screen_reviewer(), {"boom"})).run(batch=True)
 
         assert summary.screened == 1 and summary.failed == 1
         assert db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
@@ -151,7 +124,7 @@ class TestExtractionFailures:
         """Several DB/IO errors stringify to an empty message, so the type is part of the report."""
         sid = _extractable_source(tmp_project, "boom")
 
-        summary = ExtractionTask(tmp_project, _BoomReviewer(_extract_reviewer())).run()
+        summary = ExtractionTask(tmp_project, _BoomReviewer(extract_reviewer())).run()
 
         assert summary.total_candidates == 1 and summary.extracted == 0 and summary.failed == 1
         [failure] = summary.failures
@@ -166,7 +139,7 @@ class TestExtractionFailures:
         _extractable_source(tmp_project, "ok")
         _extractable_source(tmp_project, "boom")
         reviewer = _BoomReviewer(
-            _extract_reviewer(), {"boom"},
+            extract_reviewer(), {"boom"},
             exc=LLMError("study_design: could not parse. Re-run this paper."),
         )
 
@@ -200,12 +173,12 @@ class TestExtractionFailures:
         the new rows have landed. A failed call must therefore leave the live extraction whole."""
         db = tmp_project.db
         sid = _extractable_source(tmp_project, "Candidate")
-        ExtractionTask(tmp_project, _extract_reviewer()).run()
+        ExtractionTask(tmp_project, extract_reviewer()).run()
         before = {r["field_name"]: r["value"] for r in db.list_extractions(sid, extractor_type="ai")}
         ft_before = db.get_latest_ai_decision(sid, stage="full_text")
         assert before and ft_before is not None
 
-        summary = ExtractionTask(tmp_project, _BoomReviewer(_extract_reviewer())).run(force=True)
+        summary = ExtractionTask(tmp_project, _BoomReviewer(extract_reviewer())).run(force=True)
 
         assert summary.failed == 1 and summary.extracted == 0
         assert summary.archived == 0
@@ -216,9 +189,9 @@ class TestExtractionFailures:
 
     def test_a_failed_paper_is_not_marked_done(self, tmp_project):
         _extractable_source(tmp_project, "boom")
-        ExtractionTask(tmp_project, _BoomReviewer(_extract_reviewer())).run()
+        ExtractionTask(tmp_project, _BoomReviewer(extract_reviewer())).run()
 
-        rerun = ExtractionTask(tmp_project, _extract_reviewer()).run()
+        rerun = ExtractionTask(tmp_project, extract_reviewer()).run()
         assert rerun.skipped_already_done == 0 and rerun.extracted == 1
 
     def test_batch_mode_lands_the_papers_that_worked(self, tmp_project):
@@ -226,7 +199,7 @@ class TestExtractionFailures:
         ok = _extractable_source(tmp_project, "fine")
         bad = _extractable_source(tmp_project, "boom")
 
-        summary = ExtractionTask(tmp_project, _BoomReviewer(_extract_reviewer(), {"boom"})).run(batch=True)
+        summary = ExtractionTask(tmp_project, _BoomReviewer(extract_reviewer(), {"boom"})).run(batch=True)
 
         assert summary.extracted == 1 and summary.failed == 1
         assert db.has_extraction(ok, extractor_type="ai") is True

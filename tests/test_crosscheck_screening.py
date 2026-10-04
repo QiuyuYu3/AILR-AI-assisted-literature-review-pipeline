@@ -17,8 +17,8 @@ from ailr.core.source import Source
 from ailr.criteria import save_criteria
 from ailr.crosschecker import BUILT_IN_SCREENING_PROMPT, ScreeningCrossChecker, load_prompt
 from ailr.exceptions import LLMError
-from ailr.llm.base import CallMetadata
 from ailr.reviewers import ScreeningDecision
+from tests.helpers import StubClient, add_source, codes
 
 ABSTRACT = (
     "Thirty-two dyads completed a joint attention task while gaze was recorded with a mobile "
@@ -49,10 +49,6 @@ def _decision(**over):
     return base
 
 
-def _codes(issues):
-    return sorted(i.issue_code for i in issues)
-
-
 def _flags(*pairs):
     return [{"criterion_id": cid, "verdict": v, "reason": "r"} for cid, v in pairs]
 
@@ -65,7 +61,7 @@ def test_clean_decision_is_not_flagged():
 
 def test_quote_absent_from_the_abstract_is_flagged():
     d = _decision(evidence_quotes=["participants completed an fMRI scan"])
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [QUOTE_NOT_FOUND]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [QUOTE_NOT_FOUND]
 
 
 def test_quote_matching_the_title_counts_as_evidence():
@@ -76,7 +72,7 @@ def test_quote_matching_the_title_counts_as_evidence():
 
 def test_missing_quotes_are_flagged_for_ai_but_not_for_humans():
     d = _decision(evidence_quotes=[])
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [EMPTY_REQUIRED]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [EMPTY_REQUIRED]
     assert check_screening_decision(d, CRITERIA, ABSTRACT, require_evidence=False) == []
 
 
@@ -84,22 +80,22 @@ def test_missing_quotes_are_flagged_for_ai_but_not_for_humans():
 
 def test_unknown_decision_value_is_flagged():
     d = _decision(decision="maybe")
-    assert INVALID_ENUM in _codes(check_screening_decision(d, CRITERIA, ABSTRACT))
+    assert INVALID_ENUM in codes(check_screening_decision(d, CRITERIA, ABSTRACT))
 
 
 def test_missing_reason_is_flagged():
     d = _decision(reasoning="   ")
-    assert EMPTY_REQUIRED in _codes(check_screening_decision(d, CRITERIA, ABSTRACT))
+    assert EMPTY_REQUIRED in codes(check_screening_decision(d, CRITERIA, ABSTRACT))
 
 
 def test_criterion_id_that_does_not_exist_is_flagged():
     d = _decision(matched_criteria=["C1", "C9"])
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [UNKNOWN_CRITERION]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [UNKNOWN_CRITERION]
 
 
 def test_exclude_without_citing_a_criterion_is_flagged():
     d = _decision(decision="exclude", matched_criteria=[])
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [EMPTY_REQUIRED]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [EMPTY_REQUIRED]
 
 
 # ----- flag_check -----
@@ -111,31 +107,31 @@ def test_flag_check_covering_every_criterion_is_clean():
 
 def test_criterion_without_a_verdict_is_flagged():
     d = _decision(flag_check=_flags(("C1", "PASS"), ("C2", "PASS")))
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [EMPTY_REQUIRED]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [EMPTY_REQUIRED]
 
 
 def test_invalid_flag_verdict_is_flagged():
     d = _decision(flag_check=_flags(("C1", "MAYBE"), ("C2", "PASS"), ("C3", "PASS")))
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [INVALID_ENUM]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [INVALID_ENUM]
 
 
 def test_flag_check_quote_absent_from_the_abstract_is_flagged():
     fc = _flags(("C1", "PASS"), ("C2", "PASS"), ("C3", "PASS"))
     fc[0]["quote"] = "participants completed an fMRI scan"
     d = _decision(flag_check=fc)
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [QUOTE_NOT_FOUND]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [QUOTE_NOT_FOUND]
 
 
 # ----- Decision against its own verdicts -----
 
 def test_include_despite_a_failed_criterion_is_flagged():
     d = _decision(flag_check=_flags(("C1", "PASS"), ("C2", "FAIL"), ("C3", "PASS")))
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [DECISION_FLAG_MISMATCH]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [DECISION_FLAG_MISMATCH]
 
 
 def test_exclude_with_everything_passing_is_flagged():
     d = _decision(decision="exclude", flag_check=_flags(("C1", "PASS"), ("C2", "PASS"), ("C3", "PASS")))
-    assert _codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [DECISION_FLAG_MISMATCH]
+    assert codes(check_screening_decision(d, CRITERIA, ABSTRACT)) == [DECISION_FLAG_MISMATCH]
 
 
 def test_a_well_supported_exclude_is_clean():
@@ -153,7 +149,7 @@ def test_uncertain_verdicts_do_not_contradict_either_decision():
     flags = _flags(("C1", "PASS"), ("C2", "UNCERTAIN"), ("C3", "PASS"))
     for decision in ("include", "exclude", "uncertain"):
         d = _decision(decision=decision, flag_check=flags)
-        assert DECISION_FLAG_MISMATCH not in _codes(check_screening_decision(d, CRITERIA, ABSTRACT))
+        assert DECISION_FLAG_MISMATCH not in codes(check_screening_decision(d, CRITERIA, ABSTRACT))
 
 
 # ----- What counts as checked -----
@@ -176,9 +172,7 @@ def _seed_criteria(project, ids=("C1", "C2")):
 
 
 def _seed_source(project, title="Dyadic gaze", abstract=ABSTRACT):
-    return project.db.insert_source(
-        Source(title=title, abstract=abstract, project_id=project.project_id)
-    )
+    return add_source(project, title, abstract=abstract)
 
 
 def _decide(project, sid, decision="include", quotes=None, flag_check=None,
@@ -368,23 +362,9 @@ def test_screening_and_extraction_findings_do_not_leak_into_each_other(tmp_proje
 
 # ----- The LLM layer -----
 
-class _StubClient:
-    provider_name = "stub"
-    model_name = "checker-1"
-    temperature = 0.0
-    effective_seed = None
-
-    def __init__(self, output):
-        self.output = output
-        self.calls: list[dict] = []
-
-    def complete_structured(self, *, system, user_message, tool_schema, max_tokens, cache_system=False):
-        self.calls.append({"system": system, "user": user_message, "schema": tool_schema})
-        return self.output, CallMetadata(provider="stub", model="checker-1", input_tokens=10, output_tokens=5)
-
 
 def _checked(output=None, decision=None, **kwargs):
-    client = _StubClient(output or {"verdict": "agree", "reason": "fine", "suggested_value": None, "confidence": 8})
+    client = StubClient(output or {"verdict": "agree", "reason": "fine", "suggested_value": None, "confidence": 8})
     prompt = load_prompt(Path("no-such-project"), "prompts/absent.txt", BUILT_IN_SCREENING_PROMPT)
     verdicts = ScreeningCrossChecker(client).check(
         _Src(), decision or _decision(), prompt, **kwargs
@@ -443,7 +423,7 @@ def test_the_llm_task_stores_a_verdict_against_the_decision_it_judged(tmp_projec
     additional.write_text("be lenient at this stage", encoding="utf-8")
     sid = _seed_source(tmp_project)
     decision_id = _decide(tmp_project, sid)
-    client = _StubClient({"verdict": "disagree", "reason": "the abstract never mentions gaze",
+    client = StubClient({"verdict": "disagree", "reason": "the abstract never mentions gaze",
                           "suggested_value": None, "confidence": 7})
 
     summary = ScreeningLLMCrossCheckTask(tmp_project, ScreeningCrossChecker(client)).run([sid], targets=["ai"])

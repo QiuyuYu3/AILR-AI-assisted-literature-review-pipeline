@@ -16,39 +16,13 @@ from ailr.exports.methods import build_methods_skeleton
 from ailr.exports.prisma import build_prisma_report, build_prisma_svg, prisma_counts
 from ailr.ingest.dedup import TITLE_MATCH_THRESHOLD
 from ailr.metrics import binarize, decisions_for_pair, rater_overlaps
-from ailr.reviewers import ExtractionResult, ScreeningDecision
+from ailr.reviewers import ExtractionResult
 from ailr.ui import reports_view
+from tests.helpers import add_source, component_text, vote
 
 
 def _add_source(project, title, with_md=False):
-    sid = project.db.insert_source(Source(title=title, project_id=project.project_id, source_database="test-db"))
-    if with_md:
-        project.db.update_markdown_path(sid, Path("data/markdown") / f"{sid}.md")
-    return sid
-
-
-def _vote(db, sid, decision, reviewer_id, reviewer_type="human", stage="abstract", reasoning="test"):
-    db.insert_screening_decision(ScreeningDecision(
-        decision=decision, reasoning=reasoning, reviewer_type=reviewer_type,
-        reviewer_id=reviewer_id, source_id=sid, stage=stage,
-    ))
-
-
-def _component_text(node) -> str:
-    """Visible text of a Dash component tree, whitespace-normalised."""
-    parts: list[str] = []
-
-    def walk(x):
-        if isinstance(x, str):
-            parts.append(x)
-            return
-        children = getattr(x, "children", None)
-        for child in children if isinstance(children, (list, tuple)) else [children]:
-            if child is not None:
-                walk(child)
-
-    walk(node)
-    return " ".join(" ".join(parts).split())
+    return add_source(project, title, with_md=with_md, source_database="test-db")
 
 
 def _pipeline_state(project):
@@ -61,14 +35,14 @@ def _pipeline_state(project):
     _add_source(project, "S4 unscreened")
     db.insert_duplicate(project.project_id, "dropped dup", None, "doi")
 
-    _vote(db, s1, "include", "amber")
-    _vote(db, s2, "include", "amber")
-    _vote(db, s2, "exclude", "amber")   # re-vote: only the latest may count
-    _vote(db, s3, "include", "amber")
-    _vote(db, s1, "include", "gpt", reviewer_type="ai")
-    _vote(db, s2, "exclude", "gpt", reviewer_type="ai")
+    vote(db, s1, "include", "amber", stage="abstract")
+    vote(db, s2, "include", "amber", stage="abstract")
+    vote(db, s2, "exclude", "amber", stage="abstract")  # re-vote: only the latest may count
+    vote(db, s3, "include", "amber", stage="abstract")
+    vote(db, s1, "include", "gpt", stage="abstract", reviewer_type="ai")
+    vote(db, s2, "exclude", "gpt", stage="abstract", reviewer_type="ai")
 
-    _vote(db, s1, "include", "amber", stage="full_text")
+    vote(db, s1, "include", "amber", stage="full_text")
     db.insert_extraction(ExtractionResult(
         extractor_type="ai", extractor_id="gpt", field_name="design", value="obs", source_id=s1,
     ))
@@ -122,10 +96,10 @@ class TestPrismaCounts:
         """Independent mode: two reviewers both including one paper must count it ONCE."""
         db = tmp_project.db
         sid = _add_source(tmp_project, "doubly included", with_md=True)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "include", "bob")
-        _vote(db, sid, "include", "amber", stage="full_text")
-        _vote(db, sid, "include", "bob", stage="full_text")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "include", "bob", stage="abstract")
+        vote(db, sid, "include", "amber", stage="full_text")
+        vote(db, sid, "include", "bob", stage="full_text")
         c = prisma_counts(tmp_project)
         assert c["abstract_screened"] == 1
         assert c["reports_sought"] == 1
@@ -137,10 +111,10 @@ class TestPrismaCounts:
     def test_reconciliation_overrides_votes_in_the_flow(self, tmp_project):
         db = tmp_project.db
         s_out = _add_source(tmp_project, "included then adjudicated out", with_md=True)
-        _vote(db, s_out, "include", "amber", stage="full_text")
+        vote(db, s_out, "include", "amber", stage="full_text")
         db.insert_screening_reconciliation(s_out, "exclude", adjudicator="pi", stage="full_text")
         s_in = _add_source(tmp_project, "excluded then adjudicated in", with_md=True)
-        _vote(db, s_in, "exclude", "amber", stage="full_text")
+        vote(db, s_in, "exclude", "amber", stage="full_text")
         db.insert_screening_reconciliation(s_in, "include", adjudicator="pi", stage="full_text")
         c = prisma_counts(tmp_project)
         assert c["studies_included"] == 1  # only the adjudicated-in paper
@@ -163,16 +137,16 @@ class TestPrismaFollowsTheStageWorkflows:
     def test_independent_full_text_waits_for_the_second_reviewer(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "one full-text vote", with_md=True)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "include", "bob")
-        _vote(db, sid, "include", "amber", stage="full_text")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "include", "bob", stage="abstract")
+        vote(db, sid, "include", "amber", stage="full_text")
         save_stage_workflow(tmp_project.root, "screening", "independent")
 
         project = self._reload(tmp_project)
         assert prisma_counts(project)["reports_sought"] == 1
         assert prisma_counts(project)["studies_included"] == 0
 
-        _vote(project.db, sid, "include", "bob", stage="full_text")
+        vote(project.db, sid, "include", "bob", stage="full_text")
         assert prisma_counts(project)["studies_included"] == 1
 
     def test_the_full_text_override_gates_the_included_box(self, tmp_project):
@@ -180,9 +154,9 @@ class TestPrismaFollowsTheStageWorkflows:
         settles the stage."""
         db = tmp_project.db
         sid = _add_source(tmp_project, "assisted at full text", with_md=True)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "include", "bob")
-        _vote(db, sid, "include", "amber", stage="full_text")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "include", "bob", stage="abstract")
+        vote(db, sid, "include", "amber", stage="full_text")
         save_stage_workflow(tmp_project.root, "screening", "independent")
         save_stage_workflow(tmp_project.root, "full_text_screening", "assisted")
 
@@ -191,7 +165,7 @@ class TestPrismaFollowsTheStageWorkflows:
     def test_a_half_screened_paper_is_not_yet_sought(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "one abstract vote", with_md=True)
-        _vote(db, sid, "include", "amber")
+        vote(db, sid, "include", "amber", stage="abstract")
         save_stage_workflow(tmp_project.root, "screening", "independent")
 
         c = prisma_counts(self._reload(tmp_project))
@@ -201,8 +175,8 @@ class TestPrismaFollowsTheStageWorkflows:
     def test_an_unresolved_disagreement_counts_as_neither(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "unresolved", with_md=True)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "exclude", "bob")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "bob", stage="abstract")
         save_stage_workflow(tmp_project.root, "screening", "independent")
 
         c = prisma_counts(self._reload(tmp_project))
@@ -220,8 +194,8 @@ class TestExcludedBoxesFollowTheSettledRule:
     def test_two_reviewers_excluding_one_record_count_it_once(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "excluded by both")
-        _vote(db, sid, "exclude", "amber")
-        _vote(db, sid, "exclude", "bob")
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        vote(db, sid, "exclude", "bob", stage="abstract")
         save_stage_workflow(tmp_project.root, "screening", "independent")
 
         c = prisma_counts(self._reload(tmp_project))
@@ -230,8 +204,8 @@ class TestExcludedBoxesFollowTheSettledRule:
     def test_a_record_in_conflict_is_pending_not_excluded(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "human exclude, AI include")
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")
-        _vote(db, sid, "exclude", "amber")
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
 
         c = prisma_counts(tmp_project)
         assert (c["abstract_excluded"], c["reports_sought"], c["abstract_pending"]) == (0, 0, 1)
@@ -240,8 +214,8 @@ class TestExcludedBoxesFollowTheSettledRule:
         db = tmp_project.db
         for title, verdict in (("adjudicated in", "include"), ("adjudicated out", "exclude")):
             sid = _add_source(tmp_project, title)
-            _vote(db, sid, "include", "amber")
-            _vote(db, sid, "exclude", "bob")
+            vote(db, sid, "include", "amber", stage="abstract")
+            vote(db, sid, "exclude", "bob", stage="abstract")
             db.insert_screening_reconciliation(sid, verdict, "pi", "discussed", stage="abstract")
         save_stage_workflow(tmp_project.root, "screening", "independent")
 
@@ -255,9 +229,9 @@ class TestExcludedBoxesFollowTheSettledRule:
         ids = {}
         for title, (amber, bob) in votes.items():
             ids[title] = _add_source(tmp_project, title)
-            _vote(db, ids[title], amber, "amber")
-            _vote(db, ids[title], bob, "bob")
-        _vote(db, _add_source(tmp_project, "one vote so far"), "exclude", "amber")
+            vote(db, ids[title], amber, "amber", stage="abstract")
+            vote(db, ids[title], bob, "bob", stage="abstract")
+        vote(db, _add_source(tmp_project, "one vote so far"), "exclude", "amber", stage="abstract")
         db.insert_screening_reconciliation(ids["adjudicated out"], "exclude", "pi", "", stage="abstract")
         save_stage_workflow(tmp_project.root, "screening", "independent")
 
@@ -269,10 +243,10 @@ class TestExcludedBoxesFollowTheSettledRule:
         db = tmp_project.db
         db.create_exclusion_reason(tmp_project.project_id, "Wrong population")
         sid = _add_source(tmp_project, "full-text split", with_md=True)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "include", "bob")
-        _vote(db, sid, "exclude", "amber", stage="full_text", reasoning="Wrong population")
-        _vote(db, sid, "include", "bob", stage="full_text")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "include", "bob", stage="abstract")
+        vote(db, sid, "exclude", "amber", stage="full_text", reasoning="Wrong population")
+        vote(db, sid, "include", "bob", stage="full_text")
         save_stage_workflow(tmp_project.root, "screening", "independent")
 
         c = prisma_counts(self._reload(tmp_project))
@@ -284,9 +258,9 @@ class TestExcludedBoxesFollowTheSettledRule:
         for name in ("Wrong population", "Wrong outcome"):
             db.create_exclusion_reason(tmp_project.project_id, name)
         sid = _add_source(tmp_project, "re-voted exclusion", with_md=True)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "exclude", "amber", stage="full_text", reasoning="Wrong population")
-        _vote(db, sid, "exclude", "amber", stage="full_text", reasoning="Wrong outcome")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "amber", stage="full_text", reasoning="Wrong population")
+        vote(db, sid, "exclude", "amber", stage="full_text", reasoning="Wrong outcome")
 
         c = prisma_counts(tmp_project)
         assert c["full_text_exclusion_reasons"] == [{"reason": "Wrong outcome", "n": 1}]
@@ -300,7 +274,7 @@ class TestFlaggedDuplicates:
         keep = _add_source(tmp_project, "Paper C")
         copy = _add_source(tmp_project, "Paper C, second copy")
         for sid in (keep, copy):
-            _vote(db, sid, "include", "amber")
+            vote(db, sid, "include", "amber", stage="abstract")
         db.mark_source_duplicate(copy, True)
 
         c = prisma_counts(tmp_project)
@@ -313,8 +287,8 @@ class TestFlaggedDuplicates:
         keep = _add_source(tmp_project, "Paper D", with_md=True)
         copy = _add_source(tmp_project, "Paper D, second copy", with_md=True)
         for sid in (keep, copy):
-            _vote(db, sid, "include", "amber")
-            _vote(db, sid, "include", "amber", stage="full_text")
+            vote(db, sid, "include", "amber", stage="abstract")
+            vote(db, sid, "include", "amber", stage="full_text")
         db.mark_source_duplicate(copy, True)
 
         c = prisma_counts(tmp_project)
@@ -351,16 +325,16 @@ class TestMethodsNumbers:
 
     def _included_at_full_text(self, project, title):
         sid = _add_source(project, title, with_md=True)
-        _vote(project.db, sid, "include", "amber")
-        _vote(project.db, sid, "include", "amber", stage="full_text")
+        vote(project.db, sid, "include", "amber", stage="abstract")
+        vote(project.db, sid, "include", "amber", stage="full_text")
         return sid
 
     def test_independent_screening_reports_records_not_decisions(self, tmp_project):
         db = tmp_project.db
         for title in ("P1", "P2"):
             sid = _add_source(tmp_project, title)
-            _vote(db, sid, "include", "amber")
-            _vote(db, sid, "include", "bob")
+            vote(db, sid, "include", "amber", stage="abstract")
+            vote(db, sid, "include", "bob", stage="abstract")
         save_stage_workflow(tmp_project.root, "screening", "independent")
 
         text = build_methods_skeleton(Project(tmp_project.root))
@@ -459,8 +433,8 @@ class TestReportText:
         primary = _add_source(tmp_project, "primary report", with_md=True)
         companion = _add_source(tmp_project, "companion report", with_md=True)
         for sid in (primary, companion):
-            _vote(db, sid, "include", "amber")
-            _vote(db, sid, "include", "amber", stage="full_text")
+            vote(db, sid, "include", "amber", stage="abstract")
+            vote(db, sid, "include", "amber", stage="full_text")
         assert "**Reports of included studies:**" not in build_prisma_report(tmp_project)
 
         db.set_study_group(companion, primary)
@@ -471,8 +445,8 @@ class TestReportText:
     def test_records_awaiting_a_decision_are_shown_only_while_there_are_some(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "in conflict")
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")
-        _vote(db, sid, "exclude", "amber")
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
         assert "- awaiting a decision: 1" in build_prisma_report(tmp_project)
         assert "1 awaiting a decision" in build_prisma_svg(tmp_project)
 
@@ -494,9 +468,9 @@ class TestAgreementReporting:
         compared against whoever happened to vote last. Each reviewer is now its own rater."""
         db = tmp_project.db
         sid = _add_source(tmp_project, "two humans plus AI")
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "exclude", "lin")
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "lin", stage="abstract")
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
 
         rows = db.latest_decisions_by_rater(tmp_project.project_id)
         assert sorted(r["rater"] for r in rows) == ["AI: gpt", "amber", "lin"]
@@ -511,8 +485,8 @@ class TestAgreementReporting:
         """Reliability describes agreement as cast; adjudicating a conflict must not rewrite it."""
         db = tmp_project.db
         sid = _add_source(tmp_project, "reconciled disagreement")
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "exclude", "lin")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "lin", stage="abstract")
         db.insert_screening_reconciliation(sid, "include", "amber", "discussed", stage="abstract")
 
         rows = db.latest_decisions_by_rater(tmp_project.project_id)
@@ -522,19 +496,19 @@ class TestAgreementReporting:
         db = tmp_project.db
         for title, (amber, lin) in {"P1": ("uncertain", "include"), "P2": ("exclude", "exclude")}.items():
             sid = _add_source(tmp_project, title)
-            _vote(db, sid, amber, "amber")
-            _vote(db, sid, lin, "lin")
+            vote(db, sid, amber, "amber", stage="abstract")
+            vote(db, sid, lin, "lin", stage="abstract")
         rows = db.latest_decisions_by_rater(tmp_project.project_id, "abstract")
 
-        text = _component_text(reports_view._reliability_body(rows, json.dumps(["amber", "lin"]), "binary"))
+        text = component_text(reports_view._reliability_body(rows, json.dumps(["amber", "lin"]), "binary"))
         assert "Cohen's κ (95% CI): 1.0" in text
         assert "Three-way κ (stricter): 0.333" in text
 
     def test_uncertain_counts_as_include_when_binarized(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "uncertain vs include")
-        _vote(db, sid, "uncertain", "amber")
-        _vote(db, sid, "include", "lin")
+        vote(db, sid, "uncertain", "amber", stage="abstract")
+        vote(db, sid, "include", "lin", stage="abstract")
 
         rows = db.latest_decisions_by_rater(tmp_project.project_id)
         assert binarize(decisions_for_pair(rows, "amber", "lin")) == [("include", "include")]
@@ -553,9 +527,9 @@ class TestFullTextExclusionReasons:
     def _excluded(self, project, title, reason, second=None, reconcile=None):
         db = project.db
         sid = _add_source(project, title)
-        _vote(db, sid, "exclude", "amber", stage="full_text", reasoning=reason)
+        vote(db, sid, "exclude", "amber", stage="full_text", reasoning=reason)
         if second:
-            _vote(db, sid, second, "lin", stage="full_text")
+            vote(db, sid, second, "lin", stage="full_text")
         if reconcile:
             db.insert_screening_reconciliation(sid, reconcile, adjudicator="pi", stage="full_text")
         return sid
@@ -602,9 +576,9 @@ class TestIdentificationArms:
                                       source_database=db_name, identification_route=route))
         if md:
             db.update_markdown_path(sid, Path("data/markdown") / f"{sid}.md")
-        _vote(db, sid, abstract, "amber")
+        vote(db, sid, abstract, "amber", stage="abstract")
         if ft:
-            _vote(db, sid, ft, "amber", stage="full_text")
+            vote(db, sid, ft, "amber", stage="full_text")
         return sid
 
     def test_records_default_to_the_database_arm(self, tmp_project):
@@ -690,5 +664,5 @@ class TestIdentificationArms:
         assert "**Records identified:** 4" in report and "**Records identified:** 3" in report
         assert "**Records after deduplication:** 4" in report
 
-        tab = _component_text(reports_view._prisma_diagram(prisma_counts(tmp_project)))
+        tab = component_text(reports_view._prisma_diagram(prisma_counts(tmp_project)))
         assert "7 records identified" in tab and "4 records after duplicates removed" in tab

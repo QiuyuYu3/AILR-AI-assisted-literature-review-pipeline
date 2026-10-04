@@ -7,66 +7,54 @@ closing the loop. These are the rules the Screen/Conflicts tabs rely on.
 
 from ailr.core.config import extractors_for, save_stage_workflow, team_size_for
 from ailr.core.project import Project
-from ailr.core.source import Source
-from ailr.reviewers import ScreeningDecision
-
-
-def _add_source(project, title="Paper"):
-    return project.db.insert_source(Source(title=title, project_id=project.project_id))
-
-
-def _vote(db, source_id, decision, reviewer_id, reviewer_type="human", stage="abstract"):
-    db.insert_screening_decision(ScreeningDecision(
-        decision=decision, reasoning="test", reviewer_type=reviewer_type,
-        reviewer_id=reviewer_id, source_id=source_id, stage=stage,
-    ))
+from tests.helpers import add_source, vote
 
 
 class TestVoteLock:
     def test_self_vote_is_flagged(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
         i_voted, others = db.screening_lock_check(sid, "amber", "abstract")
         assert i_voted is True
         assert others == 0
 
     def test_other_reviewer_counted(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
         i_voted, others = db.screening_lock_check(sid, "bob", "abstract")
         assert i_voted is False
         assert others == 1
 
     def test_others_are_distinct_reviewers_not_rows(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "exclude", "amber")  # same reviewer twice -> still 1 other
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "amber", stage="abstract")  # same reviewer twice -> still 1 other
         _, others = db.screening_lock_check(sid, "bob", "abstract")
         assert others == 1
 
     def test_ai_votes_do_not_count_toward_lock(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
         i_voted, others = db.screening_lock_check(sid, "amber", "abstract")
         assert i_voted is False
         assert others == 0
 
     def test_stages_are_independent(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber", stage="abstract")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
         i_voted, _ = db.screening_lock_check(sid, "amber", "full_text")
         assert i_voted is False
 
     def test_other_human_decided_names_the_blocker(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         assert db.other_human_decided(sid, "abstract", "bob") is None
-        _vote(db, sid, "include", "amber")
+        vote(db, sid, "include", "amber", stage="abstract")
         assert db.other_human_decided(sid, "abstract", "bob") == "amber"
         assert db.other_human_decided(sid, "abstract", "amber") is None  # my own vote doesn't block me
 
@@ -76,56 +64,56 @@ class TestAssistedConflicts:
 
     def test_disagreement_is_a_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")
-        _vote(db, sid, "exclude", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
         assert [s.id for s in db.list_assisted_conflicts(tmp_project.project_id)] == [sid]
         assert db.count_unresolved_assisted_conflicts(tmp_project.project_id) == 1
         assert db.unresolved_conflict_ids(tmp_project.project_id, "assisted") == {sid}
 
     def test_agreement_is_not_a_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")
-        _vote(db, sid, "include", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "include", "amber", stage="abstract")
         assert db.list_assisted_conflicts(tmp_project.project_id) == []
 
     def test_ai_uncertain_is_a_conflict_even_if_human_agrees(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "uncertain", "gpt", reviewer_type="ai")
-        _vote(db, sid, "uncertain", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "uncertain", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "uncertain", "amber", stage="abstract")
         assert [s.id for s in db.list_assisted_conflicts(tmp_project.project_id)] == [sid]
 
     def test_only_latest_verdicts_compared(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "exclude", "gpt", reviewer_type="ai")   # old AI run
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")   # re-run supersedes it
-        _vote(db, sid, "include", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "exclude", "gpt", stage="abstract", reviewer_type="ai")  # old AI run
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")  # re-run supersedes it
+        vote(db, sid, "include", "amber", stage="abstract")
         assert db.list_assisted_conflicts(tmp_project.project_id) == []
 
     def test_only_the_humans_latest_verdict_is_compared(self, tmp_project):
         """The human side reads the latest vote too: the lock stops a re-vote in the UI, but two
         racing clicks can leave two rows, and the newer one is the vote."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")
-        _vote(db, sid, "exclude", "amber")
-        _vote(db, sid, "include", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        vote(db, sid, "include", "amber", stage="abstract")
         assert db.list_assisted_conflicts(tmp_project.project_id) == []
 
     def test_ai_alone_is_not_a_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "uncertain", "gpt", reviewer_type="ai")
+        sid = add_source(tmp_project)
+        vote(db, sid, "uncertain", "gpt", stage="abstract", reviewer_type="ai")
         assert db.list_assisted_conflicts(tmp_project.project_id) == []
 
     def test_reconciliation_resolves_the_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai")
-        _vote(db, sid, "exclude", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
         db.insert_screening_reconciliation(sid, "exclude", adjudicator="amber", stage="abstract")
         assert db.list_assisted_conflicts(tmp_project.project_id) == []
         assert db.count_unresolved_assisted_conflicts(tmp_project.project_id) == 0
@@ -133,9 +121,9 @@ class TestAssistedConflicts:
 
     def test_full_text_stage_tracked_separately(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai", stage="full_text")
-        _vote(db, sid, "exclude", "amber", stage="full_text")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="full_text", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="full_text")
         assert db.list_assisted_conflicts(tmp_project.project_id, stage="abstract") == []
         assert [s.id for s in db.list_assisted_conflicts(tmp_project.project_id, stage="full_text")] == [sid]
         # resolving the abstract stage must NOT hide the full_text conflict
@@ -150,47 +138,47 @@ class TestIndependentConflicts:
 
     def test_disagreement_is_a_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "exclude", "bob")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "bob", stage="abstract")
         assert [s.id for s in db.list_screening_conflicts(tmp_project.project_id)] == [sid]
         assert db.count_unresolved_screening_conflicts(tmp_project.project_id) == 1
         assert db.unresolved_conflict_ids(tmp_project.project_id, "independent") == {sid}
 
     def test_agreement_is_not_a_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "include", "bob")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "include", "bob", stage="abstract")
         assert db.list_screening_conflicts(tmp_project.project_id) == []
 
     def test_agreed_uncertain_still_needs_adjudication(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "uncertain", "amber")
-        _vote(db, sid, "uncertain", "bob")
+        sid = add_source(tmp_project)
+        vote(db, sid, "uncertain", "amber", stage="abstract")
+        vote(db, sid, "uncertain", "bob", stage="abstract")
         assert [s.id for s in db.list_screening_conflicts(tmp_project.project_id)] == [sid]
 
     def test_single_vote_is_not_a_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "uncertain", "amber")
+        sid = add_source(tmp_project)
+        vote(db, sid, "uncertain", "amber", stage="abstract")
         assert db.list_screening_conflicts(tmp_project.project_id) == []
 
     def test_ai_vote_does_not_make_an_independent_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "exclude", "gpt", reviewer_type="ai")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "gpt", stage="abstract", reviewer_type="ai")
         assert db.list_screening_conflicts(tmp_project.project_id) == []
 
     def test_an_ai_vote_does_not_split_two_agreeing_humans(self, tmp_project):
         """With two humans in, the reference AI's uncertain vote must not hold the paper back."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "include", "bob")
-        _vote(db, sid, "uncertain", "gpt", reviewer_type="ai")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "include", "bob", stage="abstract")
+        vote(db, sid, "uncertain", "gpt", stage="abstract", reviewer_type="ai")
         assert db.list_screening_conflicts(tmp_project.project_id) == []
         assert db.unresolved_conflict_ids(tmp_project.project_id, "independent") == set()
 
@@ -198,12 +186,12 @@ class TestIndependentConflicts:
         """Two rows from one human (a double click that slipped past the lock) neither finish an
         independent paper nor put it in conflict with itself."""
         db, pid = tmp_project.db, tmp_project.project_id
-        twice = _add_source(tmp_project, "voted twice alike")
-        _vote(db, twice, "include", "amber")
-        _vote(db, twice, "include", "amber")
-        changed = _add_source(tmp_project, "voted twice, changed mind")
-        _vote(db, changed, "include", "amber")
-        _vote(db, changed, "exclude", "amber")
+        twice = add_source(tmp_project, "voted twice alike")
+        vote(db, twice, "include", "amber", stage="abstract")
+        vote(db, twice, "include", "amber", stage="abstract")
+        changed = add_source(tmp_project, "voted twice, changed mind")
+        vote(db, changed, "include", "amber", stage="abstract")
+        vote(db, changed, "exclude", "amber", stage="abstract")
 
         assert db.final_include_ids(pid, "abstract", workflow="independent") == set()
         assert db.full_text_candidate_ids(pid, workflow="independent") == []
@@ -212,9 +200,9 @@ class TestIndependentConflicts:
 
     def test_reconciliation_resolves_the_conflict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "amber")
-        _vote(db, sid, "exclude", "bob")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "bob", stage="abstract")
         db.insert_screening_reconciliation(sid, "include", adjudicator="pi", stage="abstract")
         assert db.list_screening_conflicts(tmp_project.project_id) == []
         assert db.count_unresolved_screening_conflicts(tmp_project.project_id) == 0
@@ -227,19 +215,19 @@ class TestDisagreementsPairing:
 
     def test_stages_do_not_cross_pair(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "mock:mock", reviewer_type="ai", stage="abstract")
-        _vote(db, sid, "include", "amber", stage="abstract")
-        _vote(db, sid, "exclude", "amber", stage="full_text")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "mock:mock", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "amber", stage="full_text")
 
         assert db.screening_disagreements(tmp_project.project_id, stage="abstract") == []
         assert db.screening_disagreements(tmp_project.project_id, stage="full_text") == []
 
     def test_disagreement_is_reported_at_its_own_stage(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "mock:mock", reviewer_type="ai", stage="full_text")
-        _vote(db, sid, "exclude", "amber", stage="full_text")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "mock:mock", stage="full_text", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="full_text")
 
         assert db.screening_disagreements(tmp_project.project_id, stage="abstract") == []
         rows = db.screening_disagreements(tmp_project.project_id, stage="full_text")
@@ -249,11 +237,11 @@ class TestDisagreementsPairing:
 
     def test_a_re_run_does_not_multiply_the_rows(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "mock:mock", reviewer_type="ai")
-        _vote(db, sid, "uncertain", "mock:mock", reviewer_type="ai")  # AI re-run
-        _vote(db, sid, "exclude", "amber")
-        _vote(db, sid, "include", "bob")  # second human in an independent review
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "mock:mock", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "uncertain", "mock:mock", stage="abstract", reviewer_type="ai")  # AI re-run
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        vote(db, sid, "include", "bob", stage="abstract")  # second human in an independent review
 
         rows = db.screening_disagreements(tmp_project.project_id)
         assert len(rows) == 1

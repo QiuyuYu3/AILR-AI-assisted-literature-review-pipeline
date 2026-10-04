@@ -5,12 +5,8 @@
   reconciliation so a new differing vote re-enters Conflicts
 """
 
-from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
-
-
-def _add_source(project, title="Paper"):
-    return project.db.insert_source(Source(title=title, project_id=project.project_id))
+from tests.helpers import add_source
 
 
 def _decision(sid, decision, reviewer_id, reviewer_type="human", stage="abstract"):
@@ -25,7 +21,7 @@ class TestDeletingHumanVotesKeepsTheAi:
     keeping the AI's verdicts (and with them the conflicts and the audit trail) alive."""
 
     def _both_stages(self, project):
-        sid = _add_source(project)
+        sid = add_source(project)
         for stage in ("abstract", "full_text"):
             for rtype, rid in (("ai", "gpt"), ("human", "amber")):
                 project.db.insert_screening_decision(_decision(sid, "include", rid, reviewer_type=rtype, stage=stage))
@@ -51,7 +47,7 @@ class TestDeletingHumanVotesKeepsTheAi:
 class TestBatchInsertChunking:
     def test_all_rows_land_across_chunks(self, tmp_project):
         db = tmp_project.db
-        sids = [_add_source(tmp_project, title=f"P{i}") for i in range(7)]
+        sids = [add_source(tmp_project, f"P{i}") for i in range(7)]
         decisions = [_decision(sid, "include", "mock:ai", reviewer_type="ai") for sid in sids]
         db.insert_screening_decisions_batch(decisions, chunk=3)  # 3 + 3 + 1
         assert db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 7
@@ -66,7 +62,7 @@ class TestBatchInsertChunking:
 class TestSummaryCountsLatestOnly:
     def test_superseded_revote_not_counted(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_screening_decision(_decision(sid, "include", "amber"))
         db.insert_screening_decision(_decision(sid, "exclude", "amber"))  # re-vote supersedes
         summary = db.screening_summary(tmp_project.project_id, reviewer_type="human", stage="abstract")
@@ -74,7 +70,7 @@ class TestSummaryCountsLatestOnly:
 
     def test_each_reviewer_counted_once(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_screening_decision(_decision(sid, "include", "amber"))
         db.insert_screening_decision(_decision(sid, "include", "bob"))
         summary = db.screening_summary(tmp_project.project_id, reviewer_type="human", stage="abstract")
@@ -82,7 +78,7 @@ class TestSummaryCountsLatestOnly:
 
     def test_stages_do_not_leak_into_each_other(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_screening_decision(_decision(sid, "include", "amber", stage="abstract"))
         db.insert_screening_decision(_decision(sid, "exclude", "amber", stage="full_text"))
         abstract = db.screening_summary(tmp_project.project_id, reviewer_type="human", stage="abstract")
@@ -94,7 +90,7 @@ class TestSummaryCountsLatestOnly:
 class TestLatestAiDecision:
     def test_rerun_supersedes(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_screening_decision(_decision(sid, "exclude", "gpt", reviewer_type="ai"))
         db.insert_screening_decision(_decision(sid, "include", "gpt", reviewer_type="ai"))
         latest = db.get_latest_ai_decision(sid, stage="abstract")
@@ -105,7 +101,7 @@ class TestLatestAiDecision:
 class TestResetSemantics:
     def test_reset_keeps_the_ai_verdict(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_screening_decision(_decision(sid, "exclude", "gpt", reviewer_type="ai"))
         db.insert_screening_decision(_decision(sid, "include", "amber"))
         db.delete_screening_decision(sid, "amber", reviewer_type="human")
@@ -117,7 +113,7 @@ class TestResetSemantics:
         Conflicts instead of being hidden forever by the old final decision."""
         db = tmp_project.db
         pid = tmp_project.project_id
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_screening_decision(_decision(sid, "include", "amber"))
         db.insert_screening_decision(_decision(sid, "exclude", "bob"))
         db.insert_screening_reconciliation(sid, "include", adjudicator="pi", stage="abstract")

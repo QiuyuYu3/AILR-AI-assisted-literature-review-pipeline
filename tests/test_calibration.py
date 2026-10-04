@@ -6,7 +6,6 @@ at the ABSTRACT stage — full-text decisions and superseded re-votes used to sk
 
 import math
 
-from ailr.core.source import Source
 from ailr.metrics import (
     BINARY_CATEGORIES,
     THREE_WAY_CATEGORIES,
@@ -18,7 +17,6 @@ from ailr.metrics import (
     percent_agreement,
     rater_overlaps,
 )
-from ailr.reviewers import ScreeningDecision
 from ailr.tasks.calibrate import (
     CalibrationSummary,
     CalibrationTask,
@@ -27,6 +25,7 @@ from ailr.tasks.calibrate import (
     quick_test_agreement,
 )
 from ailr.ui import calibration_view
+from tests.helpers import add_source, component_text, vote
 
 # 12 AI/human pairs on which the two readings differ, worked by hand: binary p_o = 10/12,
 # p_e = 74/144, κ = 23/35; three-way p_o = 8/12, p_e = 51/144, κ = 15/31.
@@ -42,23 +41,6 @@ def _pairs(matrix, categories):
             for i, row in enumerate(matrix)
             for j, count in enumerate(row)
             for _ in range(count)]
-
-
-def _component_text(node) -> str:
-    """Visible text of a Dash component tree, whitespace-normalised."""
-    parts: list[str] = []
-
-    def walk(x):
-        if isinstance(x, str):
-            parts.append(x)
-            return
-        children = getattr(x, "children", None)
-        for child in children if isinstance(children, (list, tuple)) else [children]:
-            if child is not None:
-                walk(child)
-
-    walk(node)
-    return " ".join(" ".join(parts).split())
 
 
 class TestCalibrationReadsKappaLikeTheManuscript:
@@ -195,17 +177,6 @@ class TestMetrics:
         assert m == [[0, 2], [0, 1]]
 
 
-def _add_source(project, title="Paper"):
-    return project.db.insert_source(Source(title=title, project_id=project.project_id))
-
-
-def _vote(db, sid, decision, reviewer_id, reviewer_type, stage="abstract"):
-    db.insert_screening_decision(ScreeningDecision(
-        decision=decision, reasoning="test", reviewer_type=reviewer_type,
-        reviewer_id=reviewer_id, source_id=sid, stage=stage,
-    ))
-
-
 def _agreement(project, sample_ids):
     task = CalibrationTask(project, reviewer=None, stage="screening")
     summary = CalibrationSummary(stage="screening", sample_round=1,
@@ -217,10 +188,10 @@ def _agreement(project, sample_ids):
 class TestCalibrationPairing:
     def test_simple_pairing(self, tmp_project):
         db = tmp_project.db
-        s1, s2 = _add_source(tmp_project, "A"), _add_source(tmp_project, "B")
+        s1, s2 = add_source(tmp_project, "A"), add_source(tmp_project, "B")
         for sid, ai, human in [(s1, "include", "include"), (s2, "exclude", "include")]:
-            _vote(db, sid, ai, "gpt", "ai")
-            _vote(db, sid, human, "amber", "human")
+            vote(db, sid, ai, "gpt", stage="abstract", reviewer_type="ai")
+            vote(db, sid, human, "amber", stage="abstract")
         summary = _agreement(tmp_project, [s1, s2])
         assert summary.paired_count == 2
         assert summary.agreement == 0.5
@@ -229,10 +200,10 @@ class TestCalibrationPairing:
     def test_full_text_decisions_do_not_enter_screening_kappa(self, tmp_project):
         """0.24 regression: a full-text stage row must not pair into abstract κ."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", "ai", stage="abstract")
-        _vote(db, sid, "include", "amber", "human", stage="abstract")
-        _vote(db, sid, "exclude", "amber", "human", stage="full_text")  # must be ignored
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "amber", stage="full_text")  # must be ignored
         summary = _agreement(tmp_project, [sid])
         assert summary.paired_count == 1
         assert summary.agreement == 1.0
@@ -240,10 +211,10 @@ class TestCalibrationPairing:
     def test_superseded_revote_uses_latest(self, tmp_project):
         """0.24 regression: the latest re-vote is what pairs, not the first vote."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "exclude", "gpt", "ai")
-        _vote(db, sid, "include", "amber", "human")
-        _vote(db, sid, "exclude", "amber", "human")  # re-vote -> now agrees with AI
+        sid = add_source(tmp_project)
+        vote(db, sid, "exclude", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "amber", stage="abstract")  # re-vote -> now agrees with AI
         summary = _agreement(tmp_project, [sid])
         assert summary.paired_count == 1
         assert summary.agreement == 1.0
@@ -251,10 +222,10 @@ class TestCalibrationPairing:
 
     def test_unpaired_sources_do_not_count(self, tmp_project):
         db = tmp_project.db
-        s1 = _add_source(tmp_project, "ai-only")
-        s2 = _add_source(tmp_project, "human-only")
-        _vote(db, s1, "include", "gpt", "ai")
-        _vote(db, s2, "include", "amber", "human")
+        s1 = add_source(tmp_project, "ai-only")
+        s2 = add_source(tmp_project, "human-only")
+        vote(db, s1, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, s2, "include", "amber", stage="abstract")
         summary = _agreement(tmp_project, [s1, s2])
         assert summary.paired_count == 0
         assert math.isnan(summary.kappa)
@@ -292,20 +263,20 @@ class TestQuickTestAgreement:
         return run_id
 
     def test_the_page_shows_the_binary_kappa_with_the_three_way_one_beside_it(self, tmp_project):
-        s1, s2 = _add_source(tmp_project, "A"), _add_source(tmp_project, "B")
+        s1, s2 = add_source(tmp_project, "A"), add_source(tmp_project, "B")
         run_id = self._abstract_run(tmp_project, {s1: "uncertain", s2: "exclude"})
-        _vote(tmp_project.db, s1, "include", "amber", "human")
-        _vote(tmp_project.db, s2, "exclude", "amber", "human")
+        vote(tmp_project.db, s1, "include", "amber", stage="abstract")
+        vote(tmp_project.db, s2, "exclude", "amber", stage="abstract")
 
-        text = _component_text(calibration_view._agreement_block(tmp_project, run_id, "abstract"))
+        text = component_text(calibration_view._agreement_block(tmp_project, run_id, "abstract"))
         assert "κ 1.00" in text             # uncertain vs include agrees once uncertain reads as include
         assert "three-way κ 0.33" in text   # p_o 1/2, p_e 1/4
 
     def test_pairs_run_verdicts_with_human_decisions(self, tmp_project):
-        s1, s2 = _add_source(tmp_project, "A"), _add_source(tmp_project, "B")
+        s1, s2 = add_source(tmp_project, "A"), add_source(tmp_project, "B")
         run_id = self._abstract_run(tmp_project, {s1: "include", s2: "exclude"})
-        _vote(tmp_project.db, s1, "include", "amber", "human")
-        _vote(tmp_project.db, s2, "include", "amber", "human")
+        vote(tmp_project.db, s1, "include", "amber", stage="abstract")
+        vote(tmp_project.db, s2, "include", "amber", stage="abstract")
         stats = quick_test_agreement(tmp_project, run_id, "abstract")
         assert stats["paired_count"] == 2
         assert stats["agreement"] == 0.5
@@ -314,43 +285,43 @@ class TestQuickTestAgreement:
     def test_real_ai_decisions_do_not_leak_in(self, tmp_project):
         """The reason the test tables exist: a corpus run made under a different prompt must not
         be what this run's κ reports."""
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         run_id = self._abstract_run(tmp_project, {sid: "include"})
-        _vote(tmp_project.db, sid, "exclude", "gpt", "ai")  # real run, opposite verdict
-        _vote(tmp_project.db, sid, "include", "amber", "human")
+        vote(tmp_project.db, sid, "exclude", "gpt", stage="abstract", reviewer_type="ai")  # real run, opposite verdict
+        vote(tmp_project.db, sid, "include", "amber", stage="abstract")
         stats = quick_test_agreement(tmp_project, run_id, "abstract")
         assert stats["paired_count"] == 1
         assert stats["agreement"] == 1.0  # paired with the test-table include, not the real exclude
 
     def test_papers_the_human_has_not_decided_are_unpaired(self, tmp_project):
-        s1, s2 = _add_source(tmp_project, "A"), _add_source(tmp_project, "B")
+        s1, s2 = add_source(tmp_project, "A"), add_source(tmp_project, "B")
         run_id = self._abstract_run(tmp_project, {s1: "include", s2: "include"})
-        _vote(tmp_project.db, s1, "include", "amber", "human")
+        vote(tmp_project.db, s1, "include", "amber", stage="abstract")
         stats = quick_test_agreement(tmp_project, run_id, "abstract")
         assert stats["paired_count"] == 1
         assert stats["ai_counts"]["include"] == 2  # both still counted on the AI side
 
     def test_latest_human_vote_wins(self, tmp_project):
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         run_id = self._abstract_run(tmp_project, {sid: "exclude"})
-        _vote(tmp_project.db, sid, "include", "amber", "human")
-        _vote(tmp_project.db, sid, "exclude", "amber", "human")  # changed their mind
+        vote(tmp_project.db, sid, "include", "amber", stage="abstract")
+        vote(tmp_project.db, sid, "exclude", "amber", stage="abstract")  # changed their mind
         assert quick_test_agreement(tmp_project, run_id, "abstract")["agreement"] == 1.0
 
     def test_extraction_run_pairs_against_the_full_text_stage(self, tmp_project):
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         run_id = self._extraction_run(tmp_project, {sid: "include"})
-        _vote(tmp_project.db, sid, "exclude", "amber", "human", stage="abstract")
+        vote(tmp_project.db, sid, "exclude", "amber", stage="abstract")
         assert quick_test_agreement(tmp_project, run_id, "extraction")["paired_count"] == 0
-        _vote(tmp_project.db, sid, "include", "amber", "human", stage="full_text")
+        vote(tmp_project.db, sid, "include", "amber", stage="full_text")
         stats = quick_test_agreement(tmp_project, run_id, "extraction")
         assert stats["paired_count"] == 1 and stats["agreement"] == 1.0
 
     def test_extraction_without_a_verdict_is_skipped(self, tmp_project):
         """flag_check off leaves full_text_decision null — nothing to compare."""
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         run_id = self._extraction_run(tmp_project, {sid: None})
-        _vote(tmp_project.db, sid, "include", "amber", "human", stage="full_text")
+        vote(tmp_project.db, sid, "include", "amber", stage="full_text")
         assert quick_test_agreement(tmp_project, run_id, "extraction")["paired_count"] == 0
 
     def test_empty_run_reports_no_pairs(self, tmp_project):
@@ -366,9 +337,9 @@ class TestAgreementStatsCI:
                  ("exclude", "exclude"), ("exclude", "include")]
         sids = []
         for i, (ai, human) in enumerate(votes):
-            sid = _add_source(tmp_project, f"P{i}")
-            _vote(db, sid, ai, "gpt", "ai")
-            _vote(db, sid, human, "amber", "human")
+            sid = add_source(tmp_project, f"P{i}")
+            vote(db, sid, ai, "gpt", stage="abstract", reviewer_type="ai")
+            vote(db, sid, human, "amber", stage="abstract")
             sids.append(sid)
         stats = _agreement_stats(_latest_by_reviewer_type(tmp_project, sids, "abstract"))
         lo, hi = stats["kappa_ci"]
@@ -383,9 +354,9 @@ class TestAgreementStatsCI:
         for i in range(40):
             ai = "include" if i % 2 else "exclude"
             human = ai if i % 4 else ("exclude" if ai == "include" else "include")  # 3 of 4 agree
-            sid = _add_source(tmp_project, f"P{i}")
-            _vote(db, sid, ai, "gpt", "ai")
-            _vote(db, sid, human, "amber", "human")
+            sid = add_source(tmp_project, f"P{i}")
+            vote(db, sid, ai, "gpt", stage="abstract", reviewer_type="ai")
+            vote(db, sid, human, "amber", stage="abstract")
             sids.append(sid)
 
         def _width(subset):
@@ -395,8 +366,8 @@ class TestAgreementStatsCI:
         assert _width(sids) < _width(sids[:8])
 
     def test_kappa_ci_is_undefined_without_pairs(self, tmp_project):
-        sid = _add_source(tmp_project)
-        _vote(tmp_project.db, sid, "include", "gpt", "ai")  # no human vote
+        sid = add_source(tmp_project)
+        vote(tmp_project.db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")  # no human vote
         stats = _agreement_stats(_latest_by_reviewer_type(tmp_project, [sid], "abstract"))
         assert all(math.isnan(x) for x in stats["kappa_ci"])
 
@@ -407,46 +378,46 @@ class TestPairedScreeningDecisions:
 
     def test_one_pair_per_source_latest_wins(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "exclude", "gpt", "ai")
-        _vote(db, sid, "include", "gpt", "ai")      # AI re-run supersedes
-        _vote(db, sid, "exclude", "amber", "human")
-        _vote(db, sid, "include", "amber", "human")  # re-vote supersedes
+        sid = add_source(tmp_project)
+        vote(db, sid, "exclude", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")  # AI re-run supersedes
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        vote(db, sid, "include", "amber", stage="abstract")  # re-vote supersedes
         pairs = db.paired_screening_decisions(tmp_project.project_id)
         assert [(p["ai_decision"], p["human_decision"]) for p in pairs] == [("include", "include")]
 
     def test_full_text_rows_do_not_pair_into_abstract(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", "ai", stage="abstract")
-        _vote(db, sid, "exclude", "amber", "human", stage="full_text")  # no abstract human vote
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="full_text")  # no abstract human vote
         assert db.paired_screening_decisions(tmp_project.project_id) == []
-        _vote(db, sid, "include", "amber", "human", stage="abstract")
+        vote(db, sid, "include", "amber", stage="abstract")
         pairs = db.paired_screening_decisions(tmp_project.project_id)
         assert [(p["ai_decision"], p["human_decision"]) for p in pairs] == [("include", "include")]
 
     def test_stage_parameter_selects_full_text_pairs(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "exclude", "gpt", "ai", stage="full_text")
-        _vote(db, sid, "include", "amber", "human", stage="full_text")
+        sid = add_source(tmp_project)
+        vote(db, sid, "exclude", "gpt", stage="full_text", reviewer_type="ai")
+        vote(db, sid, "include", "amber", stage="full_text")
         pairs = db.paired_screening_decisions(tmp_project.project_id, stage="full_text")
         assert [(p["ai_decision"], p["human_decision"]) for p in pairs] == [("exclude", "include")]
 
     def test_source_without_both_reviewers_is_not_paired(self, tmp_project):
         db = tmp_project.db
-        s_ai = _add_source(tmp_project, "ai only")
-        s_hum = _add_source(tmp_project, "human only")
-        _vote(db, s_ai, "include", "gpt", "ai")
-        _vote(db, s_hum, "include", "amber", "human")
+        s_ai = add_source(tmp_project, "ai only")
+        s_hum = add_source(tmp_project, "human only")
+        vote(db, s_ai, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, s_hum, "include", "amber", stage="abstract")
         assert db.paired_screening_decisions(tmp_project.project_id) == []
 
     def test_independent_mode_pairs_the_latest_human(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", "ai")
-        _vote(db, sid, "include", "amber", "human")
-        _vote(db, sid, "exclude", "bob", "human")  # latest human row is bob's
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "bob", stage="abstract")  # latest human row is bob's
         pairs = db.paired_screening_decisions(tmp_project.project_id)
         assert len(pairs) == 1  # one pair, not one per human
         assert pairs[0]["human_decision"] == "exclude" and pairs[0]["human_reviewer_id"] == "bob"

@@ -13,20 +13,13 @@ from ailr.cli import app
 from ailr.core.config import save_stage_workflow
 from ailr.core.project import Project
 from ailr.core.source import Source
-from ailr.reviewers import ScreeningDecision
+from tests.helpers import vote
 
 runner = CliRunner()
 
 
 def _run(*args):
     return runner.invoke(app, list(args))
-
-
-def _vote(db, source_id, decision, reviewer_id, reviewer_type, stage):
-    db.insert_screening_decision(ScreeningDecision(
-        decision=decision, reasoning="test", reviewer_type=reviewer_type,
-        reviewer_id=reviewer_id, source_id=source_id, stage=stage,
-    ))
 
 
 class TestWorkflowCommand:
@@ -86,10 +79,10 @@ class TestShowDisagreements:
     def test_only_the_requested_stage_is_reported(self, tmp_project):
         db = tmp_project.db
         sid = db.insert_source(Source(title="Paper", project_id=tmp_project.project_id))
-        _vote(db, sid, "include", "mock:mock", "ai", "abstract")
-        _vote(db, sid, "exclude", "amber", "human", "abstract")
-        _vote(db, sid, "include", "mock:mock", "ai", "full_text")
-        _vote(db, sid, "include", "amber", "human", "full_text")
+        vote(db, sid, "include", "mock:mock", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        vote(db, sid, "include", "mock:mock", stage="full_text", reviewer_type="ai")
+        vote(db, sid, "include", "amber", stage="full_text")
 
         abstract = _run("show", "disagreements", str(tmp_project.root), "--stage", "abstract", "--json")
         full_text = _run("show", "disagreements", str(tmp_project.root), "--stage", "full_text", "--json")
@@ -101,8 +94,8 @@ class TestShowDisagreements:
     def test_defaults_to_the_abstract_stage(self, tmp_project):
         db = tmp_project.db
         sid = db.insert_source(Source(title="Paper", project_id=tmp_project.project_id))
-        _vote(db, sid, "include", "mock:mock", "ai", "abstract")
-        _vote(db, sid, "exclude", "amber", "human", "abstract")
+        vote(db, sid, "include", "mock:mock", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
 
         result = _run("show", "disagreements", str(tmp_project.root))
 

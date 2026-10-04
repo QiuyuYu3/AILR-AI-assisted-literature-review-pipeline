@@ -9,19 +9,18 @@ import csv
 import io
 import json
 import zipfile
-from pathlib import Path
 
 import pytest
 import rispy
 
-from ailr.core.source import Source
 from ailr.exports.ris import export_includes_ris
 from ailr.exports.tables import (
     extraction_per_paper_zip,
     extraction_table_csv,
     extraction_table_json,
 )
-from ailr.reviewers import ExtractionResult, ScreeningDecision
+from ailr.reviewers import ExtractionResult
+from tests.helpers import add_source, vote
 
 _SCHEMA = """\
 include_suggested: []
@@ -46,15 +45,9 @@ def export_project(tmp_project):
 
 
 def _add_included_source(project, title="Paper", include=True):
-    sid = project.db.insert_source(Source(
-        title=title, year=2021, authors=["Lee, J"], project_id=project.project_id,
-    ))
+    sid = add_source(project, title, year=2021, authors=["Lee, J"], with_md=True)
     if include:
-        project.db.insert_screening_decision(ScreeningDecision(
-            decision="include", reasoning="t", reviewer_type="human",
-            reviewer_id="amber", source_id=sid, stage="abstract",
-        ))
-    project.db.update_markdown_path(sid, Path("data/markdown") / f"{sid}.md")
+        vote(project.db, sid, "include", "amber", stage="abstract")
     return sid
 
 
@@ -184,17 +177,12 @@ class TestFinalExport:
         need: a vote changed to exclude, a paper still in conflict and a flagged duplicate stay out."""
         db = export_project.db
 
-        def vote(sid, decision, rid="amber", rtype="human"):
-            db.insert_screening_decision(ScreeningDecision(
-                decision=decision, reasoning="t", reviewer_type=rtype, reviewer_id=rid,
-                source_id=sid, stage="abstract",
-            ))
-
         _add_included_source(export_project, "settled include")
-        vote(_add_included_source(export_project, "include changed to exclude"), "exclude")
+        changed = _add_included_source(export_project, "include changed to exclude")
+        vote(db, changed, "exclude", "amber", stage="abstract")
         in_conflict = _add_included_source(export_project, "AI include, human exclude", include=False)
-        vote(in_conflict, "include", "gpt", "ai")
-        vote(in_conflict, "exclude")
+        vote(db, in_conflict, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, in_conflict, "exclude", "amber", stage="abstract")
         db.mark_source_duplicate(_add_included_source(export_project, "flagged duplicate"), True)
 
         assert [r["title"] for r in rispy.loads(export_includes_ris(export_project))] == ["settled include"]

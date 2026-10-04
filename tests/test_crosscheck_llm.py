@@ -8,26 +8,8 @@ from ailr.core.source import Source
 from ailr.crosschecker import LLMCrossChecker, build_tool_schema, format_record_message, load_prompt
 from ailr.exceptions import LLMError
 from ailr.extraction import FieldSpec
-from ailr.llm.base import CallMetadata
 from ailr.reviewers import ExtractionResult
-
-
-class _StubClient:
-    """Records what it was asked and returns a canned tool payload."""
-
-    provider_name = "stub"
-    model_name = "checker-1"
-    temperature = 0.0
-    effective_seed = None
-
-    def __init__(self, output):
-        self.output = output
-        self.calls: list[dict] = []
-
-    def complete_structured(self, *, system, user_message, tool_schema, max_tokens, cache_system=False):
-        self.calls.append({"system": system, "user": user_message, "schema": tool_schema})
-        return self.output, CallMetadata(provider="stub", model="checker-1", input_tokens=10, output_tokens=5)
-
+from tests.helpers import StubClient
 
 FIELDS = [FieldSpec(name="design", type="string"), FieldSpec(name="sample_size", type="integer")]
 
@@ -101,7 +83,7 @@ def test_a_field_with_no_quote_is_marked_rather_than_dropped():
 # ----- The call -----
 
 def test_check_returns_one_verdict_per_field():
-    client = _StubClient({"design": _verdict(), "sample_size": _verdict("disagree", "paper says 52", "52")})
+    client = StubClient({"design": _verdict(), "sample_size": _verdict("disagree", "paper says 52", "52")})
     checker = LLMCrossChecker(client)
     out = checker.check(Source(title="P", id=1), "body", _rows(), FIELDS, "PROMPT {{schema_md}}")
 
@@ -111,14 +93,14 @@ def test_check_returns_one_verdict_per_field():
 
 
 def test_the_schema_is_rendered_into_the_system_prompt():
-    client = _StubClient({"design": _verdict(), "sample_size": _verdict()})
+    client = StubClient({"design": _verdict(), "sample_size": _verdict()})
     LLMCrossChecker(client).check(Source(title="P", id=1), "body", _rows(), FIELDS, "HEAD\n{{schema_md}}")
     system = client.calls[0]["system"]
     assert "HEAD" in system and "design" in system and "{{schema_md}}" not in system
 
 
 def test_project_name_and_additional_instructions_reach_the_prompt():
-    client = _StubClient({"design": _verdict(), "sample_size": _verdict()})
+    client = StubClient({"design": _verdict(), "sample_size": _verdict()})
     LLMCrossChecker(client).check(
         Source(title="P", id=1), "body", _rows(), FIELDS,
         "review: {{project_name}}\n{{schema_md}}\n{{additional}}",
@@ -131,7 +113,7 @@ def test_project_name_and_additional_instructions_reach_the_prompt():
 
 def test_additional_instructions_survive_a_template_with_no_marker():
     """A hand-written project prompt predating {{additional}} still picks it up."""
-    client = _StubClient({"design": _verdict(), "sample_size": _verdict()})
+    client = StubClient({"design": _verdict(), "sample_size": _verdict()})
     LLMCrossChecker(client).check(
         Source(title="P", id=1), "body", _rows(), FIELDS, "just the rules",
         additional="count dyads",
@@ -140,13 +122,13 @@ def test_additional_instructions_survive_a_template_with_no_marker():
 
 
 def test_an_unknown_verdict_is_rejected():
-    client = _StubClient({"design": _verdict("looks-fine"), "sample_size": _verdict()})
+    client = StubClient({"design": _verdict("looks-fine"), "sample_size": _verdict()})
     with pytest.raises(LLMError):
         LLMCrossChecker(client).check(Source(title="P", id=1), "body", _rows(), FIELDS, "P")
 
 
 def test_no_rows_means_no_call():
-    client = _StubClient({})
+    client = StubClient({})
     assert LLMCrossChecker(client).check(Source(title="P", id=1), "body", [], FIELDS, "P") == {}
     assert client.calls == []
 
@@ -234,7 +216,7 @@ def test_cross_checking_a_quick_test_run_stores_against_that_run(tmp_project):
     from ailr.tasks.crosscheck import QuickTestCrossCheckTask, quick_test_target_id
 
     sid, run_id = _seed_quick_test(tmp_project, [{"field": "design", "value": "within", "quote": "q"}])
-    client = _StubClient({"design": _verdict("disagree", "quote does not support it")})
+    client = StubClient({"design": _verdict("disagree", "quote does not support it")})
     summary = QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run_id).run_for_run()
 
     assert summary.checked == 1 and summary.findings == 1
@@ -251,7 +233,7 @@ def test_quick_test_findings_do_not_leak_into_the_extraction_badges(tmp_project)
     from ailr.tasks.crosscheck import QuickTestCrossCheckTask
 
     sid, run_id = _seed_quick_test(tmp_project, [{"field": "design", "value": "within", "quote": "q"}])
-    client = _StubClient({"design": _verdict("disagree", "nope")})
+    client = StubClient({"design": _verdict("disagree", "nope")})
     QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run_id).run_for_run()
 
     assert tmp_project.db.cross_checks_by_field(sid) == {}
@@ -266,7 +248,7 @@ def test_field_summary_ranks_the_worst_field_first(tmp_project):
         {"field": "design", "value": "within", "quote": "q"},
         {"field": "sample_size", "value": 48, "quote": "q2"},
     ])
-    client = _StubClient({
+    client = StubClient({
         "design": _verdict("agree"),
         "sample_size": _verdict("disagree", "paper says 52", "52"),
     })
@@ -289,7 +271,7 @@ def test_two_quick_test_runs_keep_separate_findings(tmp_project):
                                           [{"field": "design", "value": "between", "quote": "q"}], None)
 
     for run in (run_a, run_b):
-        client = _StubClient({"design": _verdict("disagree", f"run {run}")})
+        client = StubClient({"design": _verdict("disagree", f"run {run}")})
         QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run).run_for_run()
 
     assert len(tmp_project.db.cross_checks_for_target(quick_test_target_id(run_a))) == 1
@@ -332,7 +314,7 @@ def test_each_quick_test_run_keeps_its_findings_under_its_own_name(tmp_project):
     tmp_project.db.insert_test_extraction(run_b, sid, "include",
                                           [{"field": "design", "value": "between", "quote": "q"}], None)
     for run in (run_a, run_b):
-        client = _StubClient({"design": _verdict("disagree", f"run {run}")})
+        client = StubClient({"design": _verdict("disagree", f"run {run}")})
         QuickTestCrossCheckTask(tmp_project, LLMCrossChecker(client), run).run_for_run()
 
     stored = sorted((r["target_id"], r["reason"]) for r in tmp_project.db.get_cross_checks(sid))

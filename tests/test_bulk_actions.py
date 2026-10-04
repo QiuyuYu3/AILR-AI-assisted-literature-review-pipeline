@@ -6,62 +6,24 @@ queue and every PRISMA count — while still counting towards inter-rater agreem
 pin the lock, the reporting, and idempotence.
 """
 
-import dash
 import pytest
-import yaml
 
 import ailr.ui._project as ui_project
 from ailr.core.config import save_stage_workflow
 from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
 from ailr.ui import sources_view
+from tests.helpers import add_source, callbacks_of, component_text, set_config, vote
 
 
 @pytest.fixture
 def bulk_apply():
     """The registered bulk-decision callback, unwrapped so it can be called directly."""
-    app = dash.Dash(suppress_callback_exceptions=True)
-    sources_view.register_callbacks(app)
-    entry = next(
-        c for key, c in app.callback_map.items()
-        if "bulk-feedback.children" in key and "allow_duplicate" not in key
-    )
-    return entry["callback"].__wrapped__
-
-
-def _text(component) -> str:
-    out: list[str] = []
-
-    def walk(x):
-        if isinstance(x, str):
-            out.append(x)
-        children = getattr(x, "children", None)
-        for y in (children if isinstance(children, (list, tuple)) else [children] if children is not None else []):
-            walk(y)
-
-    walk(component)
-    return " ".join(out)
+    return callbacks_of(sources_view)["_bulk_apply"]
 
 
 def _sources(project, n: int) -> list[int]:
-    return [
-        project.db.insert_source(Source(title=t, doi=f"10.1/{t}", project_id=project.project_id))
-        for t in "ABCDEFGH"[:n]
-    ]
-
-
-def _vote(project, sid: int, rid: str, decision: str, stage: str = "abstract") -> None:
-    project.db.insert_screening_decision(ScreeningDecision(
-        decision=decision, reasoning="", reviewer_type="human",
-        reviewer_id=rid, source_id=sid, stage=stage,
-    ))
-
-
-def _set_workflow(project_root, value: str) -> None:
-    cfg = project_root / "lit_review.yaml"
-    data = yaml.safe_load(cfg.read_text(encoding="utf-8"))
-    data.setdefault("screening", {})["workflow"] = value
-    cfg.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return [add_source(project, t, doi=f"10.1/{t}") for t in "ABCDEFGH"[:n]]
 
 
 # ----- the lock itself -----------------------------------------------------------------------
@@ -70,8 +32,8 @@ def _set_workflow(project_root, value: str) -> None:
 def test_batch_lock_check_agrees_with_the_single_source_one(tmp_project):
     db = tmp_project.db
     ids = _sources(tmp_project, 4)
-    _vote(tmp_project, ids[0], "amber", "include")
-    _vote(tmp_project, ids[1], "bo", "exclude")
+    vote(tmp_project.db, ids[0], "include", "amber", stage="abstract")
+    vote(tmp_project.db, ids[1], "exclude", "bo", stage="abstract")
     batch = db.screening_lock_check_many(ids, "amber", "abstract")
     for sid in ids:
         assert batch[sid] == db.screening_lock_check(sid, "amber", "abstract")
@@ -86,10 +48,10 @@ def test_batch_lock_check_on_an_empty_selection(db):
 
 def test_bulk_skips_papers_another_human_already_screened(tmp_project, bulk_apply):
     ids = _sources(tmp_project, 3)
-    _vote(tmp_project, ids[0], "amber", "include")
-    _vote(tmp_project, ids[1], "amber", "include")
+    vote(tmp_project.db, ids[0], "include", "amber", stage="abstract")
+    vote(tmp_project.db, ids[1], "include", "amber", stage="abstract")
 
-    out = _text(bulk_apply(1, [{"id": s} for s in ids], "abstract", "exclude", "not dyadic", "bo"))
+    out = component_text(bulk_apply(1, [{"id": s} for s in ids], "abstract", "exclude", "not dyadic", "bo"))
     assert "Marked 1 source(s) as exclude" in out
     assert "2 skipped — already reviewed by someone else" in out
 
@@ -100,7 +62,7 @@ def test_bulk_skips_papers_another_human_already_screened(tmp_project, bulk_appl
 
 def test_bulk_leaves_the_other_reviewers_result_standing(tmp_project, bulk_apply):
     ids = _sources(tmp_project, 2)
-    _vote(tmp_project, ids[0], "amber", "include")
+    vote(tmp_project.db, ids[0], "include", "amber", stage="abstract")
     bulk_apply(1, [{"id": s} for s in ids], "abstract", "exclude", "", "bo")
     final = tmp_project.db.final_include_ids(tmp_project.project_id, "abstract", workflow="assisted")
     assert ids[0] in final          # amber's include survives the bulk exclude
@@ -108,8 +70,8 @@ def test_bulk_leaves_the_other_reviewers_result_standing(tmp_project, bulk_apply
 
 def test_bulk_skips_papers_i_already_decided(tmp_project, bulk_apply):
     ids = _sources(tmp_project, 2)
-    _vote(tmp_project, ids[0], "bo", "include")
-    out = _text(bulk_apply(1, [{"id": s} for s in ids], "abstract", "exclude", "", "bo"))
+    vote(tmp_project.db, ids[0], "include", "bo", stage="abstract")
+    out = component_text(bulk_apply(1, [{"id": s} for s in ids], "abstract", "exclude", "", "bo"))
     assert "Marked 1 source(s)" in out
     assert "1 skipped — you had already decided them" in out
 
@@ -120,7 +82,7 @@ def test_running_the_same_bulk_twice_changes_nothing(tmp_project, bulk_apply):
     bulk_apply(1, sel, "abstract", "exclude", "", "bo")
     before = {s: len(tmp_project.db.get_human_decisions_for_sources([s], stage="abstract")[s]) for s in ids}
 
-    out = _text(bulk_apply(2, sel, "abstract", "exclude", "", "bo"))
+    out = component_text(bulk_apply(2, sel, "abstract", "exclude", "", "bo"))
     assert "Marked 0 source(s)" in out
     after = {s: len(tmp_project.db.get_human_decisions_for_sources([s], stage="abstract")[s]) for s in ids}
     assert after == before
@@ -137,12 +99,8 @@ def test_bulk_writes_one_audit_row_per_applied_paper(tmp_project, bulk_apply):
 # ----- independent: two humans per paper -----------------------------------------------------
 
 
-def test_independent_allows_a_second_human_and_that_makes_a_conflict(tmp_project, bulk_apply, monkeypatch):
-    import ailr.ui._project as ui_project
-
-    _set_workflow(tmp_project.root, "independent")
-    monkeypatch.setattr(ui_project, "_project", None)
-    project = ui_project.get_project()
+def test_independent_allows_a_second_human_and_that_makes_a_conflict(tmp_project, bulk_apply):
+    project = set_config(tmp_project, "screening", workflow="independent")
 
     sid = project.db.insert_source(Source(title="A", doi="10.1/a", project_id=project.project_id))
     project.db.insert_screening_decision(ScreeningDecision(
@@ -150,11 +108,11 @@ def test_independent_allows_a_second_human_and_that_makes_a_conflict(tmp_project
         reviewer_id="amber", source_id=sid, stage="abstract",
     ))
 
-    out = _text(bulk_apply(1, [{"id": sid}], "abstract", "exclude", "", "bo"))
+    out = component_text(bulk_apply(1, [{"id": sid}], "abstract", "exclude", "", "bo"))
     assert "Marked 1 source(s)" in out
     assert len(project.db.list_screening_conflicts(project.project_id, stage="abstract")) == 1
 
-    capped = _text(bulk_apply(1, [{"id": sid}], "abstract", "exclude", "", "cy"))
+    capped = component_text(bulk_apply(1, [{"id": sid}], "abstract", "exclude", "", "cy"))
     assert "Marked 0 source(s)" in capped
     assert "2 human reviewer(s) per paper" in capped
 
@@ -163,11 +121,11 @@ def test_independent_allows_a_second_human_and_that_makes_a_conflict(tmp_project
 
 
 def test_bulk_needs_a_reviewer_id(tmp_project, bulk_apply):
-    assert "Set your reviewer ID" in _text(bulk_apply(1, [{"id": 1}], "abstract", "exclude", "", "  "))
+    assert "Set your reviewer ID" in component_text(bulk_apply(1, [{"id": 1}], "abstract", "exclude", "", "  "))
 
 
 def test_bulk_needs_a_selection(tmp_project, bulk_apply):
-    assert "No rows selected" in _text(bulk_apply(1, [], "abstract", "exclude", "", "bo"))
+    assert "No rows selected" in component_text(bulk_apply(1, [], "abstract", "exclude", "", "bo"))
 
 
 # ----- what the lock counts ------------------------------------------------------------------
@@ -180,15 +138,15 @@ def test_an_ai_verdict_does_not_take_the_human_slot(tmp_project, bulk_apply):
         decision="exclude", reasoning="t", reviewer_type="ai", reviewer_id="openai:gpt",
         source_id=sid, stage="abstract",
     ))
-    assert "Marked 1 source(s)" in _text(bulk_apply(1, [{"id": sid}], "abstract", "include", "", "bo"))
+    assert "Marked 1 source(s)" in component_text(bulk_apply(1, [{"id": sid}], "abstract", "include", "", "bo"))
     assert [d["reviewer_id"] for d in tmp_project.db.get_human_decisions(sid, "abstract")] == ["bo"]
 
 
 def test_a_full_text_bulk_vote_is_counted_at_full_text_only(tmp_project, bulk_apply):
     """Someone's abstract vote neither blocks a full-text bulk vote nor receives it."""
     [sid] = _sources(tmp_project, 1)
-    _vote(tmp_project, sid, "amber", "include")
-    assert "Marked 1 source(s)" in _text(bulk_apply(1, [{"id": sid}], "full_text", "exclude", "", "bo"))
+    vote(tmp_project.db, sid, "include", "amber", stage="abstract")
+    assert "Marked 1 source(s)" in component_text(bulk_apply(1, [{"id": sid}], "full_text", "exclude", "", "bo"))
     assert [d["reviewer_id"] for d in tmp_project.db.get_human_decisions(sid, "full_text")] == ["bo"]
     assert [d["reviewer_id"] for d in tmp_project.db.get_human_decisions(sid, "abstract")] == ["amber"]
 
@@ -198,5 +156,5 @@ def test_a_full_text_bulk_vote_follows_the_full_text_workflow(tmp_project, bulk_
     save_stage_workflow(tmp_project.root, "full_text_screening", "independent")
     monkeypatch.setattr(ui_project, "_project", None)
     [sid] = _sources(tmp_project, 1)
-    _vote(tmp_project, sid, "amber", "include", stage="full_text")
-    assert "Marked 1 source(s)" in _text(bulk_apply(1, [{"id": sid}], "full_text", "exclude", "", "bo"))
+    vote(tmp_project.db, sid, "include", "amber", stage="full_text")
+    assert "Marked 1 source(s)" in component_text(bulk_apply(1, [{"id": sid}], "full_text", "exclude", "", "bo"))

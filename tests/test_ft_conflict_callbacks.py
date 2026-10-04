@@ -8,26 +8,14 @@ test_screen_callbacks.py; here: stage='full_text' semantics + resolve/undo.
 import pytest
 from dash import no_update
 
-from ailr.core.source import Source
-from ailr.reviewers import ScreeningDecision
 from ailr.ui._actions import _apply_reset, _apply_resolve, _apply_undo_resolve, _apply_vote
-
-
-def _add_source(project, title="Paper"):
-    return project.db.insert_source(Source(title=title, project_id=project.project_id))
-
-
-def _vote(db, sid, decision, reviewer_id, reviewer_type="human", stage="full_text"):
-    db.insert_screening_decision(ScreeningDecision(
-        decision=decision, reasoning="test", reviewer_type=reviewer_type,
-        reviewer_id=reviewer_id, source_id=sid, stage=stage,
-    ))
+from tests.helpers import add_source, vote
 
 
 class TestFullTextVote:
     def test_vote_lands_on_full_text_stage(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _, last = _apply_vote(db, sid, "include", "amber", "assisted", stage="full_text")
         assert last["decision"] == "include"
         assert [d["decision"] for d in db.get_human_decisions(sid, "full_text")] == ["include"]
@@ -36,14 +24,14 @@ class TestFullTextVote:
     def test_stages_lock_independently(self, tmp_project):
         """An abstract vote must not lock the full-text stage (and vice versa)."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "assisted", stage="abstract")
         _, last = _apply_vote(db, sid, "exclude", "amber", "assisted", stage="full_text")
         assert last["decision"] == "exclude"  # not skipped as a double-click
 
     def test_assisted_blocks_second_human_at_full_text(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "assisted", stage="full_text")
         _, last = _apply_vote(db, sid, "exclude", "bob", "assisted", stage="full_text")
         assert last["blocked"] is True and last["by"] == "amber"
@@ -52,7 +40,7 @@ class TestFullTextVote:
     def test_custom_reasoning_is_stored(self, tmp_project):
         """The exclude-with-reasons modal passes its reasons through the same vote path."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "exclude", "amber", "assisted", stage="full_text",
                     reasoning="wrong population; no dyadic interaction")
         [row] = db.get_human_decisions(sid, "full_text")
@@ -61,7 +49,7 @@ class TestFullTextVote:
     def test_modal_exclude_respects_the_vote_lock(self, tmp_project):
         """Voting include inline, then excluding via the modal, must not stack a second vote."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "assisted", stage="full_text")
         _, last = _apply_vote(db, sid, "exclude", "amber", "assisted", stage="full_text",
                               reasoning="changed my mind")
@@ -70,7 +58,7 @@ class TestFullTextVote:
 
     def test_independent_modal_exclude_capped_at_two_humans(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "independent", stage="full_text")
         _apply_vote(db, sid, "include", "bob", "independent", stage="full_text")
         _, last = _apply_vote(db, sid, "exclude", "carol", "independent", stage="full_text",
@@ -80,7 +68,7 @@ class TestFullTextVote:
 
     def test_ft_reset_touches_only_full_text(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "assisted", stage="abstract")
         _apply_vote(db, sid, "exclude", "amber", "assisted", stage="full_text")
         db.insert_screening_reconciliation(sid, "exclude", adjudicator="amber", stage="full_text")
@@ -99,9 +87,9 @@ class TestResolveConflict:
     def test_resolve_records_final_decision_and_action(self, tmp_project):
         db = tmp_project.db
         pid = tmp_project.project_id
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai", stage="abstract")
-        _vote(db, sid, "exclude", "amber", stage="abstract")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
         assert db.unresolved_conflict_ids(pid, "assisted", stage="abstract") == {sid}
         refresh = _apply_resolve(db, sid, "exclude", "amber", "clearly off-topic", stage="abstract")
         assert refresh and "ts" in refresh
@@ -115,7 +103,7 @@ class TestResolveConflict:
     def test_resolve_full_text_stage_uses_its_own_reconcile_stage(self, tmp_project):
         db = tmp_project.db
         pid = tmp_project.project_id
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_resolve(db, sid, "include", "amber", None, stage="full_text")
         assert len(db.list_reconciliations(pid, stage="full_text_screening")) == 1
         assert db.list_reconciliations(pid, stage="abstract_screening") == []
@@ -123,9 +111,9 @@ class TestResolveConflict:
     def test_undo_reopens_the_conflict(self, tmp_project):
         db = tmp_project.db
         pid = tmp_project.project_id
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai", stage="abstract")
-        _vote(db, sid, "exclude", "amber", stage="abstract")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
         _apply_resolve(db, sid, "include", "amber", None, stage="abstract")
         [rec] = db.list_reconciliations(pid, stage="abstract_screening")
         refresh = _apply_undo_resolve(db, rec["id"])
@@ -139,7 +127,7 @@ class TestResolveConflict:
         """History reads screening_actions, not reconciliations: an undo deletes the latter, and a
         paper adjudicated twice keeps only its newest row, so the reason has to live on the event."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_resolve(db, sid, "include", "amber", "borderline on the dyadic criterion", stage="abstract")
         [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
         assert row["rationale"] == "borderline on the dyadic criterion"
@@ -147,7 +135,7 @@ class TestResolveConflict:
     def test_a_rationale_outlives_the_undo_that_removes_the_reconciliation(self, tmp_project):
         db = tmp_project.db
         pid = tmp_project.project_id
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_resolve(db, sid, "exclude", "amber", "conference abstract only", stage="abstract")
         [rec] = db.list_reconciliations(pid, stage="abstract_screening")
         _apply_undo_resolve(db, rec["id"])
@@ -159,14 +147,14 @@ class TestResolveConflict:
     def test_a_vote_without_reasons_records_no_rationale(self, tmp_project):
         """The stage placeholders ('(inline screening)') are not reasons and must not surface."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "assisted", stage="full_text")
         [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "vote"]
         assert row["rationale"] is None
 
     def test_a_modal_exclude_carries_its_reasons_into_history(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "exclude", "amber", "assisted", stage="full_text",
                     reasoning="Wrong population; No full text")
         [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "vote"]
@@ -177,7 +165,7 @@ class TestResolveConflict:
         reconciliation deleted with nothing in History to say who deleted it."""
         db = tmp_project.db
         pid = tmp_project.project_id
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_resolve(db, sid, "include", "amber", None, stage="abstract")
         [rec] = db.list_reconciliations(pid, stage="abstract_screening")
 
@@ -195,9 +183,9 @@ class TestResolveConflict:
         neighbouring reconciliation must survive and no undo may be logged against it."""
         db = tmp_project.db
         pid = tmp_project.project_id
-        sid = _add_source(tmp_project)
-        _vote(db, sid, "include", "gpt", reviewer_type="ai", stage="abstract")
-        _vote(db, sid, "exclude", "amber", stage="abstract")
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
         _apply_resolve(db, sid, "include", "amber", None, stage="abstract")
 
         refresh = _apply_undo_resolve(db, 99999)
@@ -215,7 +203,7 @@ class TestAdjudicationVisibility:
 
     def test_another_reviewers_adjudication_is_visible_but_their_votes_are_not(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "independent", stage="abstract")
         _apply_vote(db, sid, "exclude", "bo", "independent", stage="abstract")
         _apply_resolve(db, sid, "exclude", "bo", "off-topic", stage="abstract")
@@ -231,7 +219,7 @@ class TestAdjudicationVisibility:
         """Without it a withdrawn ruling would still read as the current final decision."""
         db = tmp_project.db
         pid = tmp_project.project_id
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "independent", stage="abstract")
         _apply_resolve(db, sid, "exclude", "bo", None, stage="abstract")
         [rec] = db.list_reconciliations(pid, stage="abstract_screening")
@@ -242,7 +230,7 @@ class TestAdjudicationVisibility:
 
     def test_the_all_reviewer_view_is_unchanged(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         _apply_vote(db, sid, "include", "amber", "independent", stage="abstract")
         _apply_vote(db, sid, "exclude", "bo", "independent", stage="abstract")
         assert len(db.get_screening_actions(sid)) == 2
@@ -255,7 +243,7 @@ class TestFullTextExcludeKeepsPrismaReasonsClean:
 
     def _conflicted(self, project, reviewer_b="bo"):
         db = project.db
-        sid = _add_source(project)
+        sid = add_source(project)
         _apply_vote(db, sid, "include", "amber", "independent", stage="full_text")
         _apply_vote(db, sid, "exclude", reviewer_b, "independent", stage="full_text")
         return sid

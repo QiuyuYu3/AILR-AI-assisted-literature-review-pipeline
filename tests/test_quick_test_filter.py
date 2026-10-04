@@ -8,12 +8,8 @@ lists the papers the most recent quick-test run covered, which is a different ta
 
 from pathlib import Path
 
-from ailr.core.source import Source
 from ailr.reviewers import ScreeningDecision
-
-
-def _add_source(project, title):
-    return project.db.insert_source(Source(title=title, project_id=project.project_id))
+from tests.helpers import add_source
 
 
 def _run(db, project, stage, sample_size):
@@ -30,9 +26,9 @@ def _abstract_page(db, pid, status="quick_test"):
 
 def test_abstract_queue_lists_the_latest_quick_test_only(tmp_project):
     db = tmp_project.db
-    old = [_add_source(tmp_project, f"old {i}") for i in range(2)]
-    new = [_add_source(tmp_project, f"new {i}") for i in range(3)]
-    _add_source(tmp_project, "never tested")
+    old = [add_source(tmp_project, f"old {i}") for i in range(2)]
+    new = [add_source(tmp_project, f"new {i}") for i in range(3)]
+    add_source(tmp_project, "never tested")
 
     old_run = _run(db, tmp_project, "abstract", len(old))
     for sid in old:
@@ -46,7 +42,7 @@ def test_abstract_queue_lists_the_latest_quick_test_only(tmp_project):
 
 def test_the_old_filter_value_still_works_from_a_saved_session(tmp_project):
     db = tmp_project.db
-    sid = _add_source(tmp_project, "tested")
+    sid = add_source(tmp_project, "tested")
     run_id = _run(db, tmp_project, "abstract", 1)
     db.insert_test_decision(run_id, sid, "include", "r", 0.9, [], [])
 
@@ -54,7 +50,7 @@ def test_the_old_filter_value_still_works_from_a_saved_session(tmp_project):
 
 
 def test_no_quick_test_yet_matches_nothing(tmp_project):
-    _add_source(tmp_project, "untested")
+    add_source(tmp_project, "untested")
     assert _abstract_page(tmp_project.db, tmp_project.project_id) == set()
 
 
@@ -62,7 +58,7 @@ def test_an_extraction_run_does_not_leak_into_the_abstract_queue(tmp_project):
     """The two stages write different tables under different stage names; reading the wrong
     pair is the mistake this filter is one rename away from."""
     db = tmp_project.db
-    sid = _add_source(tmp_project, "full-text tested")
+    sid = add_source(tmp_project, "full-text tested")
     run_id = _run(db, tmp_project, "extraction", 1)
     db.insert_test_extraction(run_id, sid, "include", [], None)
 
@@ -74,7 +70,7 @@ def test_full_text_queue_lists_the_latest_quick_test_only(tmp_project):
     pid = tmp_project.project_id
     sids = []
     for i in range(3):
-        sid = _add_source(tmp_project, f"ft {i}")
+        sid = add_source(tmp_project, f"ft {i}")
         db.update_markdown_path(sid, Path("data/markdown") / f"{sid}.md")
         db.insert_screening_decision(ScreeningDecision(
             decision="include", reasoning="in", reviewer_type="human",

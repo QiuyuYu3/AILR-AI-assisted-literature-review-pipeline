@@ -31,6 +31,7 @@ from ailr.ui import (
     template_view,
     workflow_view,
 )
+from tests.helpers import walk
 
 
 def test_build_app(seeded_project):
@@ -77,17 +78,10 @@ _LAYOUTS = [
 ]
 
 
-def _walk(x):
-    yield x
-    children = getattr(x, "children", None)
-    for kid in (children if isinstance(children, (list, tuple)) else [children] if children is not None else []):
-        yield from _walk(kid)
-
-
 def _ids(component) -> set[str]:
     """Every string id in the tree. Pattern-matching (dict) ids are skipped: they are built per
     row from live data, so they say nothing about whether the page shell rendered."""
-    return {node.id for node in _walk(component)
+    return {node.id for node in walk(component)
             if isinstance(getattr(node, "id", None), str)}
 
 

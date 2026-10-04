@@ -17,6 +17,7 @@ import pytest
 from ailr.core.source import Source
 from ailr.reviewers import ExtractionResult, ScreeningDecision
 from ailr.ui import ft_conflicts_view
+from tests.helpers import component_text, find_by_id, walk
 
 _N = 5
 
@@ -144,30 +145,11 @@ def test_a_paper_without_side_data_gets_nothing_from_its_neighbours(conflicted):
 
 # ----- Rendered cards -----
 
-def _walk(node):
-    yield node
-    children = getattr(node, "children", None)
-    if children is None:
-        return
-    for child in (children if isinstance(children, (list, tuple)) else [children]):
-        yield from _walk(child)
-
-
-def _find_by_id(node, comp_id):
-    for n in _walk(node):
-        if getattr(n, "id", None) == comp_id:
-            return n
-    raise AssertionError(f"no component with id {comp_id!r} in the layout")
-
-
-def _text(node) -> str:
-    return " ".join(n for n in _walk(node) if isinstance(n, str))
-
 
 def _source_ids_targeted(card) -> set:
     """Every source id the card's buttons and inputs would act on when clicked."""
     out = set()
-    for n in _walk(card):
+    for n in walk(card):
         comp_id = getattr(n, "id", None)
         if isinstance(comp_id, dict) and "source" in comp_id:
             out.add(comp_id["source"])
@@ -177,7 +159,7 @@ def _source_ids_targeted(card) -> set:
 def test_every_card_shows_one_papers_data_and_acts_on_that_paper(conflicted):
     project, sids, _ = conflicted
     assert project.config.screening_workflow("full_text") == "assisted"
-    cards = _find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
+    cards = find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
     assert len(cards) == _N
 
     by_sid = {sid: m for m, sid in sids.items()}
@@ -189,7 +171,7 @@ def test_every_card_shows_one_papers_data_and_acts_on_that_paper(conflicted):
         mine = by_sid[sid]
         seen.add(mine)
 
-        text = _text(card)
+        text = component_text(card)
         for marker in (f"Paper {mine}", f"human-{mine}", f"ai-{mine}", f"crit-{mine}", f"tag-{mine}"):
             assert marker in text, f"card for {mine} is missing its own {marker!r}"
         assert f"Note ({int(mine[1:])})" in text
@@ -226,12 +208,12 @@ def test_a_conflicted_paper_with_no_side_data_does_not_shift_its_neighbours(tmp_
     the next paper's card."""
     sids = {m: _ft_conflict(tmp_project, m, side_data=(m != "Y")) for m in ("X", "Y", "Z")}
     by_sid = {sid: m for m, sid in sids.items()}
-    cards = _find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
+    cards = find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
     assert len(cards) == 3
     for card in cards:
         [sid] = _source_ids_targeted(card)
         mine = by_sid[sid]
-        text = _text(card).replace(f"Paper {mine}", "")
+        text = component_text(card).replace(f"Paper {mine}", "")
         for other in (m for m in sids if m != mine):
             assert f"crit-{other}" not in text and f"tag-{other}" not in text, (mine, other)
 
@@ -244,8 +226,8 @@ def test_a_full_text_card_shows_no_abstract_votes(tmp_project):
             decision="include", reasoning=f"abstract-{rtype}", reviewer_type=rtype,
             reviewer_id=rid, source_id=sid, stage="abstract",
         ))
-    [card] = _find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
-    text = _text(card)
+    [card] = find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
+    text = component_text(card)
     assert "human-W" in text and "ai-W" in text
     assert "abstract-human" not in text and "abstract-ai" not in text
 
@@ -253,14 +235,14 @@ def test_a_full_text_card_shows_no_abstract_votes(tmp_project):
 def test_the_reader_button_opens_the_paper_whose_card_it_is_on(conflicted):
     """The 'Read full text' button is what turns a card mix-up into reading the wrong PDF."""
     project, sids, _ = conflicted
-    cards = _find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
+    cards = find_by_id(ft_conflicts_view.layout(), "ft-conflicts-cards").children
     by_sid = {sid: m for m, sid in sids.items()}
     for card in cards:
         read_btn = next(
-            n for n in _walk(card)
+            n for n in walk(card)
             if isinstance(getattr(n, "id", None), dict) and n.id.get("type") == "ft-read-btn"
         )
-        assert f"Paper {by_sid[read_btn.id['source']]}" in _text(card)
+        assert f"Paper {by_sid[read_btn.id['source']]}" in component_text(card)
 
 
 def test_the_flag_check_shown_is_the_one_stored_for_that_paper(conflicted):

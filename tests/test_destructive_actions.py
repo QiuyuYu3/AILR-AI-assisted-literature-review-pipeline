@@ -2,39 +2,15 @@
 
 import json
 
-import dash
 import pytest
 
 from ailr.core._db_screening import reconcile_stage_for
 from ailr.core.source import Source, source_to_record
 from ailr.exceptions import DatabaseError
-from ailr.reviewers import ScreeningDecision
 from ailr.ui import duplicates_view, extract_view, full_text_view, sources_view
+from tests.helpers import add_source, callbacks_of, component_text, vote
 
 STAGES = ("abstract", "full_text")
-
-
-def _callbacks(register) -> dict:
-    app = dash.Dash(suppress_callback_exceptions=True)
-    register(app)
-    return {c["callback"].__wrapped__.__name__: c["callback"].__wrapped__
-            for c in app.callback_map.values() if "callback" in c}     # clientside entries have none
-
-
-def _text(component) -> str:
-    parts: list[str] = []
-
-    def walk(x):
-        if isinstance(x, str):
-            parts.append(x)
-            return
-        children = getattr(x, "children", None)
-        for child in children if isinstance(children, (list, tuple)) else [children]:
-            if child is not None:
-                walk(child)
-
-    walk(component)
-    return " ".join(" ".join(parts).split())
 
 
 def _boom(*_args, **_kwargs):
@@ -44,13 +20,10 @@ def _boom(*_args, **_kwargs):
 def _paper(project, title="Paper") -> int:
     """Human and AI votes at both stages, each stage also ruled on by an adjudicator."""
     db = project.db
-    sid = db.insert_source(Source(title=title, project_id=project.project_id))
+    sid = add_source(project, title)
     for stage in STAGES:
         for rtype, rid in (("ai", "gpt"), ("human", "amber")):
-            db.insert_screening_decision(ScreeningDecision(
-                decision="include", reasoning="t", reviewer_type=rtype, reviewer_id=rid,
-                source_id=sid, stage=stage,
-            ))
+            vote(db, sid, "include", rid, stage=stage, reviewer_type=rtype)
         db.insert_screening_reconciliation(sid, "include", "pi", "agreed", stage=stage)
     return sid
 
@@ -72,7 +45,7 @@ def _extract_action(button: str, sid: int):
     """Call the extraction page's action callback as a click on `button` would."""
     clicks = {name: (1 if name == button else None) for name in
               ("extract-submit", "extract-save", "extract-move-ft", "extract-move-screen", "extract-duplicate")}
-    fn = _callbacks(extract_view.register_callbacks)["_actions"]
+    fn = callbacks_of(extract_view)["_actions"]
     return fn(*clicks.values(), None, {"sid": sid}, "amber", [], [], [], [], [], [])
 
 
@@ -88,13 +61,13 @@ class TestMoveToScreening:
     def test_from_the_full_text_card(self, tmp_project, click):
         sid = _paper(tmp_project)
         click({"type": "ft-move-screen", "source": sid})
-        assert "ts" in _callbacks(full_text_view.register_callbacks)["_on_move_to_screening"]([1], "amber")
+        assert "ts" in callbacks_of(full_text_view)["_on_move_to_screening"]([1], "amber")
         self._assert_moved(tmp_project, sid)
 
     def test_from_the_sources_table_in_bulk(self, tmp_project):
         ids = [_paper(tmp_project, t) for t in ("A", "B")]
-        out = _callbacks(sources_view.register_callbacks)["_bulk_more"](1, [{"id": s} for s in ids], "to_screening", "amber")
-        assert "2 source(s) moved to abstract screening" in _text(out)
+        out = callbacks_of(sources_view)["_bulk_more"](1, [{"id": s} for s in ids], "to_screening", "amber")
+        assert "2 source(s) moved to abstract screening" in component_text(out)
         for sid in ids:
             self._assert_moved(tmp_project, sid)
 
@@ -110,7 +83,7 @@ class TestMoveToScreening:
         monkeypatch.setattr(type(tmp_project.db), "insert_screening_action", _boom)
         click({"type": "ft-move-screen", "source": sid})
         with pytest.raises(DatabaseError):
-            _callbacks(full_text_view.register_callbacks)["_on_move_to_screening"]([1], "amber")
+            callbacks_of(full_text_view)["_on_move_to_screening"]([1], "amber")
         assert _humans(tmp_project.db, sid) == {"abstract": ["amber"], "full_text": ["amber"]}
         assert _ruled(tmp_project, sid) == {"abstract": True, "full_text": True}
 
@@ -118,7 +91,7 @@ class TestMoveToScreening:
         sid = _paper(tmp_project)
         monkeypatch.setattr(type(tmp_project.db), "insert_screening_action", _boom)
         with pytest.raises(DatabaseError):
-            _callbacks(sources_view.register_callbacks)["_bulk_more"](1, [{"id": sid}], "to_screening", "amber")
+            callbacks_of(sources_view)["_bulk_more"](1, [{"id": sid}], "to_screening", "amber")
         assert _humans(tmp_project.db, sid) == {"abstract": ["amber"], "full_text": ["amber"]}
         assert _ruled(tmp_project, sid) == {"abstract": True, "full_text": True}
 
@@ -141,15 +114,15 @@ class TestMoveBackToFullText:
 
     def test_from_the_sources_table_in_bulk(self, tmp_project):
         sid = _paper(tmp_project)
-        out = _callbacks(sources_view.register_callbacks)["_bulk_more"](1, [{"id": sid}], "to_fulltext", "amber")
-        assert "1 source(s) moved back to full-text" in _text(out)
+        out = callbacks_of(sources_view)["_bulk_more"](1, [{"id": sid}], "to_fulltext", "amber")
+        assert "1 source(s) moved back to full-text" in component_text(out)
         self._assert_moved(tmp_project, sid)
 
     def test_a_failure_part_way_through_undoes_the_bulk_move(self, tmp_project, monkeypatch):
         sid = _paper(tmp_project)
         monkeypatch.setattr(type(tmp_project.db), "insert_screening_action", _boom)
         with pytest.raises(DatabaseError):
-            _callbacks(sources_view.register_callbacks)["_bulk_more"](1, [{"id": sid}], "to_fulltext", "amber")
+            callbacks_of(sources_view)["_bulk_more"](1, [{"id": sid}], "to_fulltext", "amber")
         assert _humans(tmp_project.db, sid) == {"abstract": ["amber"], "full_text": ["amber"]}
         assert _ruled(tmp_project, sid) == {"abstract": True, "full_text": True}
 
@@ -164,7 +137,7 @@ class TestDuplicates:
 
     def test_marking_in_bulk_keeps_every_vote(self, tmp_project):
         sid = _paper(tmp_project)
-        _callbacks(sources_view.register_callbacks)["_bulk_more"](1, [{"id": sid}], "duplicate", "amber")
+        callbacks_of(sources_view)["_bulk_more"](1, [{"id": sid}], "duplicate", "amber")
         assert [s["id"] for s in tmp_project.db.list_manual_duplicates(tmp_project.project_id)] == [sid]
         assert _humans(tmp_project.db, sid) == {"abstract": ["amber"], "full_text": ["amber"]}
 
@@ -176,8 +149,8 @@ class TestDuplicates:
 
     def test_restoring_a_record_dropped_at_import_brings_it_back_whole(self, tmp_project):
         dup_id = self._stash(tmp_project)
-        _rows, feedback = _callbacks(duplicates_view.register_callbacks)["_restore_ingest"](1, [{"id": dup_id}])
-        assert "Restored 1." in _text(feedback)
+        _rows, feedback = callbacks_of(duplicates_view)["_restore_ingest"](1, [{"id": dup_id}])
+        assert "Restored 1." in component_text(feedback)
         [src] = tmp_project.db.list_sources(tmp_project.project_id)
         assert (src.title, src.doi, src.year, src.identification_route) == ("Dropped twin", "10.1/twin", 2020, "other")
         assert tmp_project.db.list_duplicates(tmp_project.project_id) == []
@@ -186,7 +159,7 @@ class TestDuplicates:
         """Half a restore would count the paper twice in PRISMA: as a record and as a duplicate."""
         dup_id = self._stash(tmp_project)
         monkeypatch.setattr(type(tmp_project.db), "delete_duplicate", _boom)
-        _rows, feedback = _callbacks(duplicates_view.register_callbacks)["_restore_ingest"](1, [{"id": dup_id}])
-        assert "1 failed." in _text(feedback)
+        _rows, feedback = callbacks_of(duplicates_view)["_restore_ingest"](1, [{"id": dup_id}])
+        assert "1 failed." in component_text(feedback)
         assert tmp_project.db.list_sources(tmp_project.project_id) == []
         assert [d["id"] for d in tmp_project.db.list_duplicates(tmp_project.project_id)] == [dup_id]

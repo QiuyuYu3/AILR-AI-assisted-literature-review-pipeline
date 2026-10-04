@@ -15,6 +15,7 @@ from ailr.extraction import FieldSpec
 from ailr.ingest.results_import import import_ai_results, import_ai_screening_results
 from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult, ScreeningDecision, _unwrap_value_quote
 from ailr.tasks.extract import _derive_ft_decision
+from tests.helpers import add_source
 
 _LIST_FIELD = FieldSpec(name="study_design", type="list", item_type="string")
 _INT_FIELD = FieldSpec(name="n_dyads", type="integer")
@@ -122,15 +123,11 @@ class TestDeriveFtDecision:
         assert _derive_ft_decision([{"verdict": None}, {"reason": "no verdict key"}]) == "uncertain"
 
 
-def _add_source(project, title="Paper", doi=None):
-    return project.db.insert_source(Source(title=title, doi=doi, project_id=project.project_id))
-
-
 class TestImportAiScreening:
     def test_records_land_by_source_id_and_doi(self, tmp_project):
         db = tmp_project.db
-        sid1 = _add_source(tmp_project, "A")
-        sid2 = _add_source(tmp_project, "B", doi="10.1/b")
+        sid1 = add_source(tmp_project, "A")
+        sid2 = add_source(tmp_project, "B", doi="10.1/b")
         summary = import_ai_screening_results(tmp_project, [
             {"source_id": sid1, "decision": "include", "reasoning": "fits", "confidence": 8},
             {"doi": "10.1/B", "decision": "exclude"},  # DOI match is case-insensitive
@@ -140,7 +137,7 @@ class TestImportAiScreening:
         assert db.get_latest_ai_decisions([sid2], "abstract") == {sid2: "exclude"}
 
     def test_bad_decision_and_unmatched_are_reported_not_imported(self, tmp_project):
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         summary = import_ai_screening_results(tmp_project, [
             {"source_id": sid, "decision": "maybe"},
             {"source_id": 99999, "decision": "include"},
@@ -153,7 +150,7 @@ class TestImportAiScreening:
 
     def test_reimport_replaces_instead_of_stacking(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "include"}])
         import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "exclude"}])
         assert db.get_latest_ai_decision(sid, "abstract")["decision"] == "exclude"
@@ -161,7 +158,7 @@ class TestImportAiScreening:
 
     def test_reimport_leaves_an_in_app_ai_verdict_alone(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_screening_decision(ScreeningDecision(
             decision="include", reasoning="t", reviewer_type="ai", reviewer_id="anthropic:claude",
             source_id=sid, stage="abstract",
@@ -174,7 +171,7 @@ class TestImportAiScreening:
 class TestImportAiExtraction:
     def test_fields_and_flag_check_land(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         summary = import_ai_results(tmp_project, [{
             "source_id": sid,
             "extraction": {
@@ -193,14 +190,14 @@ class TestImportAiExtraction:
 
     def test_reimport_replaces_prior_ai_extraction(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "old"}}])
         import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "new"}}])
         rows = db.list_extractions(sid, extractor_type="ai")
         assert [r["value"] for r in rows] == ["new"]
 
     def test_a_record_with_only_a_doi_is_matched_by_it(self, tmp_project):
-        sid = _add_source(tmp_project, doi="10.1/match")
+        sid = add_source(tmp_project, doi="10.1/match")
         summary = import_ai_results(tmp_project, [{"doi": "10.1/MATCH", "extraction": {"design": "x"}}])
         assert (summary.imported, summary.unmatched) == (1, [])
         assert [r["value"] for r in tmp_project.db.list_extractions(sid, extractor_type="ai")] == ["x"]
@@ -220,7 +217,7 @@ class TestImportAiExtraction:
 
     def test_an_exclude_verdict_and_an_object_field_land(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         summary = import_ai_results(tmp_project, [{
             "source_id": sid,
             "extraction": {"task": {"name": "free play", "minutes": 10}},   # an object, not a {value, quote} wrapper
@@ -235,7 +232,7 @@ class TestImportAiExtraction:
         """Two imported verdicts on one paper would leave only MAX(id) to tell them apart; an
         in-app AI verdict from another model is not the import's to replace."""
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_screening_decision(ScreeningDecision(
             decision="include", reasoning="t", reviewer_type="ai", reviewer_id="anthropic:claude",
             source_id=sid, stage="full_text",
@@ -251,7 +248,7 @@ class TestImportAiExtraction:
 
     def test_a_failure_part_way_through_a_record_keeps_the_previous_import(self, tmp_project, monkeypatch):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "old", "sample": "old"}}])
         real_insert, calls = type(db).insert_extraction, []
 
@@ -268,7 +265,7 @@ class TestImportAiExtraction:
 
     def test_invalid_flag_decision_is_ignored(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         summary = import_ai_results(tmp_project, [{
             "source_id": sid, "extraction": {"design": "x"}, "flag_check": {"decision": "maybe"},
         }])
@@ -279,7 +276,7 @@ class TestImportAiExtraction:
 class TestExtractionValueRoundTrip:
     def test_list_and_dict_values_come_back_typed(self, tmp_project):
         db = tmp_project.db
-        sid = _add_source(tmp_project)
+        sid = add_source(tmp_project)
         db.insert_extraction(ExtractionResult(
             extractor_type="ai", extractor_id="gpt", field_name="modalities",
             value=["audio", "video"], source_id=sid,

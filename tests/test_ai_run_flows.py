@@ -8,30 +8,16 @@
 
 import json
 
-from ailr.core.source import Source
 from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
 from ailr.reviewers import LLMReviewer, ScreeningDecision
 from ailr.tasks.screen import ScreeningTask
+from tests.helpers import INCLUDE_RESPONSE, add_source, screen_reviewer
 
-_INCLUDE_RESPONSE = {
-    "decision": "include",
-    "reasoning": "mock says fits",
-    "matched_criteria": [],
-    "evidence_quotes": [],
-    "confidence": 8,
-}
-
-_EXCLUDE_RESPONSE = {**_INCLUDE_RESPONSE, "decision": "exclude", "reasoning": "mock says no"}
+_EXCLUDE_RESPONSE = {**INCLUDE_RESPONSE, "decision": "exclude", "reasoning": "mock says no"}
 
 
 def _add_source(project, title="Paper", abstract="An abstract."):
-    return project.db.insert_source(Source(
-        title=title, abstract=abstract, project_id=project.project_id,
-    ))
-
-
-def _mock_reviewer(response=_INCLUDE_RESPONSE):
-    return LLMReviewer(MockLLMClient(response=response))
+    return add_source(project, title, abstract=abstract)
 
 
 class TestScreeningRun:
@@ -44,7 +30,7 @@ class TestScreeningRun:
             decision="include", reasoning="derived from extraction", reviewer_type="ai",
             reviewer_id="gpt", source_id=sid, stage="full_text",
         ))
-        summary = ScreeningTask(tmp_project, _mock_reviewer()).run()
+        summary = ScreeningTask(tmp_project, screen_reviewer()).run()
         assert summary.screened == 1
         assert db.get_latest_ai_decision(sid, "abstract")["decision"] == "include"
 
@@ -52,9 +38,9 @@ class TestScreeningRun:
         """The canned response elsewhere carries empty lists, so nothing showed these being kept,
         and the screening cross-check has nothing to verify without them."""
         sid = _add_source(tmp_project)
-        response = {**_INCLUDE_RESPONSE, "evidence_quotes": ["mothers and infants were filmed"],
+        response = {**INCLUDE_RESPONSE, "evidence_quotes": ["mothers and infants were filmed"],
                     "matched_criteria": ["B1"]}
-        ScreeningTask(tmp_project, _mock_reviewer(response)).run()
+        ScreeningTask(tmp_project, screen_reviewer(response)).run()
         stored = tmp_project.db.get_latest_ai_decision(sid, "abstract")
         assert stored["evidence_quotes"] == ["mothers and infants were filmed"]
         assert stored["matched_criteria"] == ["B1"]
@@ -73,7 +59,7 @@ class TestScreeningRun:
     def test_run_screens_all_unscreened(self, tmp_project):
         db = tmp_project.db
         sids = [_add_source(tmp_project, f"P{i}") for i in range(3)]
-        summary = ScreeningTask(tmp_project, _mock_reviewer()).run()
+        summary = ScreeningTask(tmp_project, screen_reviewer()).run()
         assert summary.total == 3 and summary.screened == 3 and summary.include == 3
         assert summary.failed == 0
         for sid in sids:
@@ -83,8 +69,8 @@ class TestScreeningRun:
 
     def test_second_run_skips_already_screened(self, tmp_project):
         _add_source(tmp_project)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
-        again = ScreeningTask(tmp_project, _mock_reviewer()).run()
+        ScreeningTask(tmp_project, screen_reviewer()).run()
+        again = ScreeningTask(tmp_project, screen_reviewer()).run()
         assert again.total == 0 and again.screened == 0
         assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
 
@@ -95,37 +81,37 @@ class TestScreeningRun:
             decision="exclude", reasoning="t", reviewer_type="human",
             reviewer_id="amber", source_id=sid, stage="abstract",
         ))
-        summary = ScreeningTask(tmp_project, _mock_reviewer()).run()
+        summary = ScreeningTask(tmp_project, screen_reviewer()).run()
         assert summary.screened == 1  # unscreened is per reviewer_type
 
     def test_no_abstract_gets_a_placeholder_uncertain(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "no abstract", abstract=None)
-        client = MockLLMClient(response=_INCLUDE_RESPONSE)
+        client = MockLLMClient(response=INCLUDE_RESPONSE)
         summary = ScreeningTask(tmp_project, LLMReviewer(client)).run()
         assert summary.skipped_no_abstract == 1
         assert client.call_count == 0  # no LLM call for it
         latest = db.get_latest_ai_decision(sid, "abstract")
         assert latest["decision"] == "uncertain" and latest["confidence"] == 1
         # and it is not re-attempted on the next run
-        assert ScreeningTask(tmp_project, _mock_reviewer()).run().total == 0
+        assert ScreeningTask(tmp_project, screen_reviewer()).run().total == 0
 
     def test_batch_mode_lands_everything(self, tmp_project):
         [_add_source(tmp_project, f"P{i}") for i in range(4)]
-        summary = ScreeningTask(tmp_project, _mock_reviewer()).run(batch=True)
+        summary = ScreeningTask(tmp_project, screen_reviewer()).run(batch=True)
         assert summary.screened == 4
         assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 4
 
     def test_limit_caps_the_run(self, tmp_project):
         [_add_source(tmp_project, f"P{i}") for i in range(3)]
-        summary = ScreeningTask(tmp_project, _mock_reviewer()).run(limit=2)
+        summary = ScreeningTask(tmp_project, screen_reviewer()).run(limit=2)
         assert summary.total == 2 and summary.screened == 2
 
     def test_raw_output_is_stored_as_json(self, tmp_project):
         """0.24 regression: raw_output must be JSON, not a Python repr."""
         db = tmp_project.db
         sid = _add_source(tmp_project)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        ScreeningTask(tmp_project, screen_reviewer()).run()
         row = db._conn.execute(
             "SELECT raw_output FROM screening_decisions WHERE source_id = ?", (sid,)
         ).fetchone()
@@ -138,35 +124,35 @@ class TestForcedRescreen:
 
     def test_force_rejudges_already_screened_sources(self, tmp_project):
         sid = _add_source(tmp_project)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
-        summary = ScreeningTask(tmp_project, _mock_reviewer(_EXCLUDE_RESPONSE)).run(force=True)
+        ScreeningTask(tmp_project, screen_reviewer()).run()
+        summary = ScreeningTask(tmp_project, screen_reviewer(_EXCLUDE_RESPONSE)).run(force=True)
         assert summary.total == 1 and summary.screened == 1
         assert tmp_project.db.get_latest_ai_decision(sid, "abstract")["decision"] == "exclude"
 
     def test_force_appends_and_keeps_the_earlier_decision(self, tmp_project):
         _add_source(tmp_project)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
-        ScreeningTask(tmp_project, _mock_reviewer(_EXCLUDE_RESPONSE)).run(force=True)
+        ScreeningTask(tmp_project, screen_reviewer()).run()
+        ScreeningTask(tmp_project, screen_reviewer(_EXCLUDE_RESPONSE)).run(force=True)
         assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 2
 
     def test_without_force_the_second_run_still_skips(self, tmp_project):
         _add_source(tmp_project)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
-        assert ScreeningTask(tmp_project, _mock_reviewer()).run(force=False).total == 0
+        ScreeningTask(tmp_project, screen_reviewer()).run()
+        assert ScreeningTask(tmp_project, screen_reviewer()).run(force=False).total == 0
 
     def test_force_does_not_stack_placeholders_for_missing_abstracts(self, tmp_project):
         """The placeholder does not depend on the prompt, so re-running must not add a copy."""
         _add_source(tmp_project, "no abstract", abstract=None)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
-        summary = ScreeningTask(tmp_project, _mock_reviewer()).run(force=True)
+        ScreeningTask(tmp_project, screen_reviewer()).run()
+        summary = ScreeningTask(tmp_project, screen_reviewer()).run(force=True)
         assert summary.skipped_no_abstract == 1 and summary.screened == 0
         assert tmp_project.db.count_screening_decisions(tmp_project.project_id, reviewer_type="ai") == 1
 
     def test_force_reaches_sources_that_were_never_screened(self, tmp_project):
         _add_source(tmp_project, "first")
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        ScreeningTask(tmp_project, screen_reviewer()).run()
         _add_source(tmp_project, "added later")
-        assert ScreeningTask(tmp_project, _mock_reviewer()).run(force=True).screened == 2
+        assert ScreeningTask(tmp_project, screen_reviewer()).run(force=True).screened == 2
 
 
 class TestApiTelemetry:
@@ -176,7 +162,7 @@ class TestApiTelemetry:
 
     def test_one_row_per_call_written_after_the_run(self, tmp_project):
         [_add_source(tmp_project, f"P{i}") for i in range(3)]
-        summary = ScreeningTask(tmp_project, _mock_reviewer()).run()
+        summary = ScreeningTask(tmp_project, screen_reviewer()).run()
 
         rows = tmp_project.db.api_call_summary(tmp_project.project_id)
         assert len(rows) == 1                       # one (provider, model) group
@@ -186,12 +172,12 @@ class TestApiTelemetry:
 
     def test_no_spend_estimate_is_reported(self, tmp_project):
         _add_source(tmp_project)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        ScreeningTask(tmp_project, screen_reviewer()).run()
 
         assert "cost_estimate" not in tmp_project.db.api_call_summary(tmp_project.project_id)[0]
 
     def test_a_run_that_made_no_calls_writes_nothing(self, tmp_project):
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
+        ScreeningTask(tmp_project, screen_reviewer()).run()
         assert tmp_project.db.api_call_summary(tmp_project.project_id) == []
 
 
@@ -199,7 +185,7 @@ class TestClearMockResults:
     def test_clear_removes_only_mock_rows(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()  # reviewer_id mock:mock
+        ScreeningTask(tmp_project, screen_reviewer()).run()  # reviewer_id mock:mock
         db.insert_screening_decision(ScreeningDecision(
             decision="exclude", reasoning="real ai", reviewer_type="ai",
             reviewer_id="anthropic:claude", source_id=sid, stage="abstract",
@@ -219,10 +205,10 @@ class TestClearMockResults:
         again instead of being skipped as already-screened."""
         db = tmp_project.db
         _add_source(tmp_project)
-        ScreeningTask(tmp_project, _mock_reviewer()).run()
-        assert ScreeningTask(tmp_project, _mock_reviewer()).run().total == 0  # blocked by mock rows
+        ScreeningTask(tmp_project, screen_reviewer()).run()
+        assert ScreeningTask(tmp_project, screen_reviewer()).run().total == 0  # blocked by mock rows
         db.clear_mock_ai_decisions(tmp_project.project_id)
-        rerun = ScreeningTask(tmp_project, _mock_reviewer()).run()
+        rerun = ScreeningTask(tmp_project, screen_reviewer()).run()
         assert rerun.total == 1 and rerun.screened == 1
 
     def test_clear_mock_extractions_removes_derived_ft_decisions(self, tmp_project):
