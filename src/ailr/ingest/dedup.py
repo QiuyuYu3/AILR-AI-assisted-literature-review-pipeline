@@ -22,11 +22,17 @@ def normalize_title(title: str) -> str:
     return title.strip()
 
 
-def normalize_doi(doi: str | None) -> str | None:
-    """One DOI written as a URL, with a doi: prefix, or in another case compares equal."""
+def bare_doi(doi: str | None) -> str | None:
+    """The DOI without a URL or doi: prefix, case kept; None when blank."""
     if not doi or not doi.strip():
         return None
-    return _DOI_PREFIX.sub("", doi.strip()).strip().lower() or None
+    return _DOI_PREFIX.sub("", doi.strip()).strip() or None
+
+
+def normalize_doi(doi: str | None) -> str | None:
+    """One DOI written as a URL, with a doi: prefix, or in another case compares equal."""
+    bare = bare_doi(doi)
+    return bare.lower() if bare else None
 
 
 def dedup_by_doi(sources: list[Source]) -> tuple[list[Source], list[Source]]:

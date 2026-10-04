@@ -1,21 +1,27 @@
 """CSV / TSV parser. Case-insensitive column name detection for common WoS/Scopus/PubMed exports."""
 
 import csv as _csv
+import re
 from pathlib import Path
 from typing import Any
 
 from ailr.core.source import Source
 from ailr.exceptions import IngestError, InputNotFoundError
 
-_COLUMN_ALIASES: dict[str, set[str]] = {
-    "title": {"title", "ti", "article title", "primary_title"},
-    "abstract": {"abstract", "ab", "abstract note"},
-    "doi": {"doi", "do", "digital object identifier"},
-    "year": {"year", "py", "publication year", "publication_year"},
-    "authors": {"authors", "author", "au"},
-    "journal": {"journal", "source", "so", "t2", "secondary title", "journal name", "publication title"},
-    "pmid": {"pmid", "pubmed id", "pubmed_id"},
+# The first alias present wins, so order matters: Scopus has "Source title" (the journal) and
+# "Source" (always "Scopus"). WoS tab exports use the two-letter tags; IEEE says "Document Title".
+_COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
+    "title": ("title", "document title", "article title", "primary_title", "ti"),
+    "abstract": ("abstract", "abstract note", "ab"),
+    "doi": ("doi", "digital object identifier", "di", "do"),
+    "year": ("year", "publication year", "publication_year", "py"),
+    "authors": ("authors", "author", "au"),
+    "journal": ("journal", "source title", "journal/book", "publication title", "journal name",
+                "secondary title", "t2", "so", "source"),
+    "pmid": ("pmid", "pubmed id", "pubmed_id", "pm"),
 }
+
+_INITIALS = re.compile(r"^[A-Z]{1,3}\.?$")
 
 
 def parse_csv(
@@ -101,8 +107,10 @@ def _split_authors(raw: str) -> list[str]:
     for sep in ["; ", " and ", "\n"]:
         if sep in raw:
             return [p.strip() for p in raw.split(sep) if p.strip()]
-    if raw.count(",") > 1:
-        return [p.strip() for p in raw.split(",") if p.strip()]
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    # PubMed writes "Lee J, Park S": two names, not one "Surname, Initials"
+    if len(parts) > 2 or (len(parts) == 2 and all(" " in p and _INITIALS.match(p.split()[-1]) for p in parts)):
+        return parts
     s = raw.strip()
     return [s] if s else []
 

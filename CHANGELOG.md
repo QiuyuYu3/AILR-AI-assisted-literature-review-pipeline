@@ -12,7 +12,8 @@
 - Two-arm PRISMA: the SVG subtracted duplicates twice; each arm is counted before deduplication.
 - Methods text used the wrong numbers for records screened and completed extractions.
 - Title deduplication merged papers with merely similar titles; it now needs identical titles and no conflicting DOI, year or first author.
-- DOIs written as links now match the bare DOI.
+- DOIs written as links are now stored and matched as bare DOIs.
+- Import dropped or misread records in RIS, BibTeX and CSV exports (IEEE, Scopus, WoS, PubMed).
 - RIS export and AI extraction candidates now follow the full-text queue.
 - The final extraction export included unsubmitted drafts.
 

@@ -160,6 +160,11 @@ class TestIngestPipeline:
         dois = [s.doi for s in tmp_project.db.list_sources(tmp_project.project_id)]
         assert dois == [None, None]  # blanks normalized to NULL, not ''
 
+    def test_a_doi_given_as_a_link_is_stored_bare(self, tmp_project, tmp_path):
+        linked = _RIS_A.replace("DO  - 10.1/dyad", "DO  - https://doi.org/10.1/Dyad")
+        tmp_project.ingest(_write_ris(tmp_path / "a.ris", [linked]), source_database="test")
+        assert [s.doi for s in tmp_project.db.list_sources(tmp_project.project_id)] == ["10.1/Dyad"]
+
     def test_same_doi_within_one_import_is_deduplicated(self, tmp_project, tmp_path):
         ris = _write_ris(tmp_path / "in.ris", [
             "TY  - JOUR", "TI  - Original", "DO  - 10.1/same", "ER  - ", "",

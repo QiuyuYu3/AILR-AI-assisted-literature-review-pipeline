@@ -1,16 +1,18 @@
 """BibTeX parser. Uses `bibtexparser`; preserves unmapped fields in Source.metadata."""
 
+import re
 from pathlib import Path
 from typing import Any
 
 import bibtexparser
+from bibtexparser.bparser import BibTexParser
 
 from ailr.core.source import Source
 from ailr.exceptions import IngestError, InputNotFoundError
 
 _KNOWN_KEYS = {
-    "title", "abstract", "doi", "journal", "booktitle",
-    "author", "year", "ENTRYTYPE", "ID",
+    "title", "abstract", "doi", "journal", "journaltitle", "booktitle",
+    "author", "year", "date", "ENTRYTYPE", "ID",
 }
 
 
@@ -20,7 +22,8 @@ def parse_bibtex(file_path: Path, source_database: str | None = None) -> list[So
 
     try:
         with open(file_path, encoding="utf-8-sig") as f:
-            db = bibtexparser.load(f)
+            # biblatex types (@online, @thesis, @report) are otherwise dropped without a word
+            db = bibtexparser.load(f, parser=BibTexParser(ignore_nonstandard_types=False))
     except Exception as e:
         raise IngestError(f"Failed to parse BibTeX file {file_path}: {e}") from e
 
@@ -32,10 +35,10 @@ def _entry_to_source(entry: dict[str, Any], source_database: str | None) -> Sour
     abstract_raw = _strip_braces(entry.get("abstract", "")).strip()
     abstract = abstract_raw or None
     doi = (entry.get("doi") or "").strip() or None
-    journal = _strip_braces(entry.get("journal") or entry.get("booktitle") or "").strip() or None
+    journal = _strip_braces(entry.get("journal") or entry.get("journaltitle") or entry.get("booktitle") or "").strip() or None
 
     authors = _parse_authors(entry.get("author", ""))
-    year = _coerce_year(entry.get("year"))
+    year = _coerce_year(entry.get("year") or entry.get("date"))
 
     metadata = {k: v for k, v in entry.items() if k not in _KNOWN_KEYS}
 
@@ -60,7 +63,7 @@ def _strip_braces(text: Any) -> str:
 def _parse_authors(raw: str) -> list[str]:
     if not raw:
         return []
-    parts = [p.strip() for p in raw.split(" and ")]
+    parts = [p.strip() for p in re.split(r"\s+and\s+", raw)]
     return [_strip_braces(p) for p in parts if p.strip()]
 
 

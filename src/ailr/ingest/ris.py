@@ -5,6 +5,7 @@ descriptive Python keys (TI -> title, T2 -> secondary_title, AU -> authors, etc.
 Any rispy key not consumed by the mapping below is preserved in Source.metadata.
 """
 
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -34,8 +35,8 @@ def parse_ris(file_path: Path, source_database: str | None = None) -> list[Sourc
         raise InputNotFoundError(f"RIS file not found: {file_path}")
 
     try:
-        with open(file_path, encoding="utf-8-sig") as f:
-            records = rispy.load(f)
+        text = _close_last_record(file_path.read_text(encoding="utf-8-sig"))
+        records = rispy.loads(text)
     except Exception as e:
         raise IngestError(f"Failed to parse RIS file {file_path}: {e}") from e
 
@@ -43,6 +44,14 @@ def parse_ris(file_path: Path, source_database: str | None = None) -> list[Sourc
         source_database = detect_source_database(records)
 
     return [_record_to_source(rec, source_database) for rec in records]
+
+
+def _close_last_record(text: str) -> str:
+    """rispy silently drops a final record without its ER line, which a truncated export lacks."""
+    starts = [m.start() for m in re.finditer(r"^TY  -", text, re.MULTILINE)]
+    if starts and not re.search(r"^ER  -", text[starts[-1]:], re.MULTILINE):
+        return text.rstrip() + "\nER  - \n"
+    return text
 
 
 def detect_source_database(records: list[dict[str, Any]]) -> str | None:
