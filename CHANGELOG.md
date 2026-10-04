@@ -16,6 +16,7 @@
 - Import dropped or misread records in RIS, BibTeX and CSV exports (IEEE, Scopus, WoS, PubMed).
 - RIS export and AI extraction candidates now follow the full-text queue.
 - The final extraction export included unsubmitted drafts.
+- Agreement figures and the reliability CSV now leave out records flagged as duplicates.
 
 ---
 ## [0.36.0] – 2026-10-04

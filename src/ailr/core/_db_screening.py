@@ -1276,8 +1276,9 @@ class ScreeningMixin:
 
         Reconciliations are deliberately NOT applied: reliability describes agreement between
         reviewers before adjudication, unlike the PRISMA counts where a reconciliation overrides
-        the votes. Pairing is left to ailr.metrics so any two raters can be compared."""
-        sql = """
+        the votes. Pairing is left to ailr.metrics so any two raters can be compared. A record flagged
+        as a duplicate is left out: PRISMA counts it as removed, not screened."""
+        sql = f"""
             SELECT sd.source_id, sd.reviewer_type, sd.reviewer_id, sd.decision, sd.confidence
             FROM screening_decisions sd
             JOIN (SELECT source_id, reviewer_type, reviewer_id, MAX(id) AS mid
@@ -1286,7 +1287,7 @@ class ScreeningMixin:
                   GROUP BY source_id, reviewer_type, reviewer_id) m
               ON m.mid = sd.id
             JOIN sources s ON s.id = sd.source_id
-            WHERE s.project_id = ?
+            WHERE s.project_id = ? {_NOT_DUPLICATE}
             ORDER BY sd.source_id, sd.reviewer_type, sd.reviewer_id
         """
         rows = [dict(r) for r in self._conn.execute(sql, (stage, project_id)).fetchall()]

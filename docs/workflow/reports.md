@@ -35,14 +35,15 @@ These boxes depend on something you record rather than something the app infers:
 
 Pick the **stage** (abstract or full text) and the **pair of reviewers** — AI vs. a human in `assisted` mode, the two humans in `independent` mode, or any other combination if more than two people worked on the review. Only the records both of them judged are counted.
 
-Two conventions to know, because they are the ones journals ask about:
+Conventions to know, because they are the ones journals ask about:
 
 - **Votes are read as first cast, before adjudication.** Resolving a conflict does not improve the agreement figure, which is the point: κ describes how well the reviewers agreed independently. This is deliberately different from the PRISMA flow, where a reconciliation does override the votes.
+- **Records flagged as duplicates are left out**, since the PRISMA flow counts them as removed rather than screened.
 - **`uncertain` counts as an include** by default, because an uncertain vote does not exclude a record (a paper with one waits for adjudication rather than moving on). The three-way κ, which scores uncertain as its own class, is shown beside it, and switching **Categories** to three-way shows the full three-way table. Calibration reads κ the same way, so the κ you tune a prompt against is the one the methods text reports.
 
 **PABAK** is shown next to κ because κ is depressed when one category dominates, which is the normal state of screening: at a 5% include rate, reviewers who agree on 95% of records can still show a κ near zero. PABAK adjusts for that. Report both, or report κ and explain the prevalence.
 
-If you want to compute agreement some other way, **Download the votes behind this (CSV)** gives one row per record and one column per reviewer.
+If you want to compute agreement some other way, **Download the votes behind this (CSV)** gives one row per record and one column per reviewer, covering the same records as the figures.
 
 ### Quote audit
 

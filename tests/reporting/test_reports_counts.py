@@ -431,6 +431,13 @@ class TestMethodsAgreement:
         assert "judged at title/abstract screening was Cohen's κ = 0.66" in text
         assert "judged at full-text review was Cohen's κ = 0.00" in text
 
+    def test_a_record_flagged_as_a_duplicate_leaves_the_agreement(self, tmp_project):
+        """It counts as a duplicate removed rather than as screened, so not towards κ either."""
+        sids = self._screened(tmp_project)
+        tmp_project.db.mark_source_duplicate(sids[10], True)     # the pair that disagreed outright
+        text = build_methods_skeleton(tmp_project)
+        assert "on the 11 records both reviewers judged at title/abstract screening was Cohen's κ = 0.81" in text
+
     def test_further_reviewer_pairs_are_listed_with_their_own_figures(self, tmp_project):
         sids = self._screened(tmp_project)
         # bob shares five records: he agrees with amber on all five and with the AI on three
