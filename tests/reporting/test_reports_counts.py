@@ -17,7 +17,6 @@ from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.exports.methods import build_methods_skeleton
 from ailr.exports.prisma import build_prisma_report, build_prisma_svg, prisma_counts
-from ailr.ingest.dedup import TITLE_MATCH_MAX_YEAR_GAP, TITLE_MIN_WORDS
 from ailr.llm.base import CallMetadata
 from ailr.metrics import (
     BINARY_CATEGORIES,
@@ -312,9 +311,8 @@ class TestMethodsSkeleton:
     def test_describes_the_title_rule_and_the_guards_in_force(self, tmp_project):
         _add_source(tmp_project, "S1")
         text = build_methods_skeleton(tmp_project)
-        assert "by exact DOI matching, then by exact title matching" in text
-        assert f"fewer than {TITLE_MIN_WORDS} words, when the two records had different DOIs" in text
-        assert f"differed by more than {TITLE_MATCH_MAX_YEAR_GAP} year, or when their first authors shared no name" in text
+        assert ("by exact DOI match, then by identical normalized titles unless DOI, publication year or "
+                "first author conflicted") in text
         assert "fuzzy" not in text and "threshold" not in text
 
     def test_describes_the_full_text_design(self, tmp_project):
@@ -776,7 +774,7 @@ class TestAgreementReporting:
         text = build_methods_skeleton(tmp_project)
         assert text.startswith("# Methods")
         # the sections still render off zero counts rather than the header alone coming back
-        assert "exact title matching" in text
+        assert "exact DOI match" in text
         assert "Full texts" in text
 
 

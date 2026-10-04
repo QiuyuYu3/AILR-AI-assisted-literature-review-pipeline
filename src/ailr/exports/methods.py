@@ -2,7 +2,6 @@
 
 from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
-from ailr.ingest.dedup import TITLE_MATCH_MAX_YEAR_GAP, TITLE_MIN_WORDS
 from ailr.metrics import (
     BINARY_CATEGORIES,
     binarize,
@@ -163,12 +162,8 @@ def build_methods_skeleton(
     lines.append("## Search and ingestion")
     ingestion = (
         f"Records were identified through searches of {db_str} (N = {counts['records_identified']} retrieved). "
-        f"Deduplication was performed at ingestion by exact DOI matching, then by exact title matching "
-        f"with case, punctuation and spacing ignored. A title match was not merged when the title had "
-        f"fewer than {TITLE_MIN_WORDS} words, when the two records had different DOIs, when their "
-        f"publication years differed by more than {TITLE_MATCH_MAX_YEAR_GAP} year, or when their first "
-        f"authors shared no name. Records not merged at ingestion went on to screening, where a remaining "
-        f"duplicate could be marked as one."
+        f"Duplicates were removed at import by exact DOI match, then by identical normalized titles unless "
+        f"DOI, publication year or first author conflicted."
     )
     if counts["duplicates_flagged"]:
         ingestion += (
