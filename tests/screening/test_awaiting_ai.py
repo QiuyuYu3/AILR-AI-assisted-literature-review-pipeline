@@ -1,5 +1,4 @@
-"""Assisted mode makes the AI one of the two reviewers, so a paper a human has voted on but the AI
-has not judged yet is not settled. It is not a conflict either, since only one side has voted."""
+"""Assisted mode: a paper the AI has not judged yet is not settled, and it is not a conflict either."""
 
 import json
 
@@ -110,8 +109,7 @@ class TestFullText:
         assert "Awaiting the AI's full-text verdict" in component_text(_ft_render("all"))
 
     def test_the_external_run_template_asks_for_every_paper_that_waits(self, tmp_project):
-        """Results imported from an external run give the AI's verdict, so the template must list a
-        paper the human excluded at full text as well as one they included."""
+        """An imported external run gives the AI's verdict, so excluded papers belong in it too."""
         db = tmp_project.db
         included = self._included_by_the_human(tmp_project)
         excluded = add_source(tmp_project, "excluded at full text", with_md=True)

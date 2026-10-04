@@ -69,10 +69,7 @@ def _awaiting_ai_sql(stage: str) -> str:
 
 
 def _stage_final_sql(stage: str, team_size: int, verdict: str, ai_votes: bool) -> str:
-    """A stage finished for the paper and settled on `verdict`, as a parameterless fragment: an
-    adjudicator ruled `verdict`, or everyone the workflow calls for has voted (team_size humans, and
-    the AI when ai_votes) and some human's latest vote is `verdict`. Papers whose reviewers disagree
-    still pass; the caller subtracts unresolved_conflict_ids."""
+    """Adjudicated as `verdict`, or every required reviewer voted and a human's latest vote is `verdict`."""
     rec_stage = reconcile_stage_for(stage)
     ai_voted = f"AND {_ai_voted_sql(stage)}" if ai_votes else ""
     return f"""(
@@ -98,7 +95,8 @@ def stage_final_include_sql(stage: str, team_size: int = 1, *, ai_votes: bool) -
     larger WHERE without disturbing their own placeholder order.
 
     Reads the latest vote PER REVIEWER, not the single most recent row for the paper: with two
-    reviewers the latter made the answer depend on who happened to vote last.
+    reviewers the latter made the answer depend on who happened to vote last. Papers whose
+    reviewers disagree still pass; the caller subtracts unresolved_conflict_ids.
     """
     return _stage_final_sql(stage, team_size, "include", ai_votes)
 
@@ -864,9 +862,7 @@ class ScreeningMixin:
         return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
 
     def awaiting_ai_ids(self, project_id: int, workflow: str, stage: str = "abstract") -> set[int]:
-        """Assisted mode: papers a human has voted on that the AI has not judged yet. Not a conflict,
-        since only one side has voted, and not settled either: they wait for the AI's verdict. At
-        full text that verdict comes from AI extraction."""
+        """Papers a human has voted on that the AI has not judged yet: unsettled, but not a conflict."""
         if not ai_votes_for(workflow):
             return set()
         sql = f"SELECT s.id FROM sources s WHERE s.project_id = ? {_NOT_DUPLICATE} AND {_awaiting_ai_sql(stage)}"

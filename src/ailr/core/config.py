@@ -228,8 +228,7 @@ def team_size_for(workflow: str) -> int:
 
 
 def ai_votes_for(workflow: str) -> bool:
-    """Whether the AI is one of the reviewers a workflow calls for. In `assisted` a stage is only
-    finished for a paper once the AI has voted on it as well as the human."""
+    """Whether a stage waits for the AI's vote as well as the humans' before a paper is settled."""
     return workflow == "assisted"
 
 
