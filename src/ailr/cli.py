@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 import yaml
 
-from ailr.core.config import resolve_stage_llm, save_stage_workflow
+from ailr.core.config import ai_votes_for, resolve_stage_llm, save_stage_workflow
 from ailr.core.project import Project
 from ailr.exceptions import AILRError
 from ailr.llm.factory import make_llm_client
@@ -420,11 +420,17 @@ def metrics(
             agreement_by_stage[stage] = entries
 
         api_summary = proj.db.api_call_summary(proj.project_id)
+        # None where the stage does not wait for the AI, so it cannot read as nothing pending.
+        awaiting_ai = {
+            stage: len(proj.db.awaiting_ai_ids(proj.project_id, wf, stage=stage)) if ai_votes_for(wf) else None
+            for stage, wf in ((s, proj.config.screening_workflow(s)) for s in ("abstract", "full_text"))
+        }
 
         if as_json:
             payload = {
                 "screening": {"ai": ai_counts, "human": human_counts},
                 "agreement": agreement_by_stage,
+                "awaiting_ai": awaiting_ai,
                 "api_calls": api_summary,
             }
             typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -433,6 +439,9 @@ def metrics(
         typer.echo("Screening decisions:")
         typer.echo(f"  AI:    include={ai_counts['include']:>4}  exclude={ai_counts['exclude']:>4}  uncertain={ai_counts['uncertain']:>4}")
         typer.echo(f"  Human: include={human_counts['include']:>4}  exclude={human_counts['exclude']:>4}  uncertain={human_counts['uncertain']:>4}")
+        waiting = "  ".join(f"{stage}={n}" for stage, n in awaiting_ai.items() if n is not None)
+        if waiting:
+            typer.echo(f"  Awaiting AI: {waiting}")
         typer.echo("")
 
         if any(agreement_by_stage.values()):

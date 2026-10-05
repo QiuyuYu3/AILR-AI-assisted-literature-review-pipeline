@@ -16,7 +16,7 @@ from ailr.core.config import save_stage_workflow
 from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.llm.base import CallMetadata
-from tests.helpers import vote
+from tests.helpers import settle, vote
 
 runner = CliRunner()
 
@@ -136,6 +136,39 @@ def _two_raters(project):
 
 
 class TestMetrics:
+    def _awaiting(self, project):
+        """Two papers at the abstract stage and one at full text that a human voted on and the AI has not."""
+        db = project.db
+        for sid in _sources(project, 2):
+            vote(db, sid, "include", "amber", stage="abstract")
+        ft = project.db.insert_source(Source(title="Full text", project_id=project.project_id))
+        settle(db, ft, "include", stage="abstract")
+        vote(db, ft, "include", "amber", stage="full_text")
+
+    def test_papers_awaiting_the_ai_are_counted_per_stage(self, tmp_project):
+        self._awaiting(tmp_project)
+
+        out = json.loads(_run("metrics", str(tmp_project.root), "--json").stdout)
+
+        assert out["awaiting_ai"] == {"abstract": 2, "full_text": 1}
+        assert "  Awaiting AI: abstract=2  full_text=1" in _run("metrics", str(tmp_project.root)).stdout
+
+    def test_a_stage_that_does_not_wait_for_the_ai_shows_none(self, tmp_project):
+        """Under independent the AI is a reference; a 0 there would read as "nothing pending"."""
+        self._awaiting(tmp_project)
+        save_stage_workflow(tmp_project.root, "screening", "independent")
+        save_stage_workflow(tmp_project.root, "full_text_screening", "assisted")
+
+        out = json.loads(_run("metrics", str(tmp_project.root), "--json").stdout)
+        text = _run("metrics", str(tmp_project.root)).stdout
+
+        assert out["awaiting_ai"] == {"abstract": None, "full_text": 1}
+        assert "  Awaiting AI: full_text=1" in text
+
+    def test_no_line_when_no_stage_waits_for_the_ai(self, tmp_project):
+        save_stage_workflow(tmp_project.root, "screening", "independent")
+        assert "Awaiting AI" not in _run("metrics", str(tmp_project.root)).stdout
+
     def test_json_reports_the_rater_pair(self, tmp_project):
         _two_raters(tmp_project)
 
