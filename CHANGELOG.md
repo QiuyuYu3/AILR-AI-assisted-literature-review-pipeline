@@ -56,6 +56,7 @@
 - A BibTeX entry that cannot be read now stops the import, naming its line, instead of vanishing.
 - PDF linking no longer matches a title onto a paper with a different DOI; Re-scan names those papers.
 - The variables editor rejects names starting with _ and repeated sub-field names.
+- An unreachable or silent Postgres server froze the UI indefinitely; connections now time out after 10 seconds.
 
 ---
 ## [0.36.0] – 2026-10-04

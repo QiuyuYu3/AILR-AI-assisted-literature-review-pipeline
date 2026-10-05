@@ -66,6 +66,23 @@ def test_release_frees_the_slot_while_the_thread_is_still_alive(facade):
         t.join()
 
 
+def test_a_holder_that_ends_during_the_wait_hands_its_slot_over(facade):
+    """Checkout times out on the slot a dead thread still lists; reaping it and retrying must succeed."""
+    held, stop = threading.Event(), threading.Event()
+
+    def worker():
+        _query(facade)
+        held.set()
+        stop.wait(10)
+
+    t = threading.Thread(target=worker)
+    t.start()
+    assert held.wait(10)
+    threading.Timer(0.3, stop.set).start()      # ends while the main thread waits on the pool
+    assert _query(facade) == 1
+    t.join()
+
+
 def test_a_live_thread_that_never_releases_keeps_the_slot(facade):
     """The control for the two above: without a release the slot really is held, so they are
     not passing for some unrelated reason."""

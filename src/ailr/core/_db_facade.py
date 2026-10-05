@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from functools import lru_cache
 
-from sqlalchemy import Integer, create_engine, event, text
+from sqlalchemy import Integer, create_engine, event, make_url, text
 from sqlalchemy.exc import IntegrityError as _SAIntegrityError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as _SAPoolTimeout
@@ -366,6 +366,22 @@ _POOL_SIZE = 10
 _POOL_OVERFLOW = 20
 # The default 30s meant an exhausted pool froze the UI for half a minute before erroring.
 _POOL_TIMEOUT = 10
+# Bounds on a silent or unreachable server, which otherwise blocks a request until the OS gives up.
+_CONNECT_TIMEOUT = 10
+_PG_KEEPALIVES = {
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+    "tcp_user_timeout": 30000,  # ms; Linux only, libpq ignores it elsewhere
+}
+
+
+def _pg_network_args(url: str) -> dict:
+    """Timeout and keepalive settings, leaving out any the URL already sets."""
+    given = make_url(url).query
+    defaults = {"connect_timeout": _CONNECT_TIMEOUT, **_PG_KEEPALIVES}
+    return {k: v for k, v in defaults.items() if k not in given}
 
 
 def _make_engine(url: str):
@@ -392,6 +408,7 @@ def _make_engine(url: str):
     # breaks on PgBouncer transaction-pooling endpoints (e.g. Neon's `-pooler` host) where a
     # connection is reassigned per transaction. Disable auto-prepare so poolers work.
     connect_args = {"prepare_threshold": None} if "psycopg" in url else {}
+    connect_args.update(_pg_network_args(url))
     return create_engine(
         url,
         future=True,
