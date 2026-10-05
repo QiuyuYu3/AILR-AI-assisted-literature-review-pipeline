@@ -24,7 +24,8 @@ class OpenAIClient(LLMClient):
         except ImportError as e:
             raise LLMError("openai SDK not installed. Run: pip install ailr[openai]") from e
         self._openai = openai
-        self._client = openai.OpenAI(api_key=api_key)
+        # with_retries is the one retry layer; the SDK's own retries would multiply its attempts.
+        self._client = openai.OpenAI(api_key=api_key, max_retries=0)
         self._model = model
         self._temperature = temperature
         self._seed = seed
@@ -82,7 +83,8 @@ class OpenAIClient(LLMClient):
             )
 
         def is_retryable(e: Exception) -> bool:
-            if isinstance(e, (openai.RateLimitError, openai.APITimeoutError, openai.InternalServerError)):
+            if isinstance(e, (openai.RateLimitError, openai.APITimeoutError, openai.APIConnectionError,
+                              openai.InternalServerError)):
                 return True
             if isinstance(e, openai.APIStatusError):
                 return getattr(e, "status_code", None) is not None and e.status_code >= 500

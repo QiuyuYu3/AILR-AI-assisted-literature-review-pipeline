@@ -30,6 +30,9 @@
 - The extraction import template now lists the same papers an in-app extraction run takes.
 - An AI extraction returning no flag_check counted as done; it now fails, and normal runs redo earlier ones.
 - Imports list records without a full-text decision; Protocol warns when flag_check is off under assisted full text.
+- Anthropic input token counts left out cache reads and writes; they now count them, as other providers do.
+- LLM calls retry dropped connections, and the SDKs' own retries no longer multiply attempts.
+- Gemini treated a 504 timeout as a permanent error.
 
 ---
 ## [0.36.0] – 2026-10-04

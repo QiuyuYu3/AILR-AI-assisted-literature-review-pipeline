@@ -17,15 +17,19 @@ from ailr.llm.retry import with_retries
 # so an error this list has not seen behaves as it did before rather than failing fast.
 _PERMANENT_MARKERS = (
     "api key", "api_key", "unauthenticated", "permission",
-    "invalid argument", "invalid_argument", "400",
+    "invalid argument", "invalid_argument", "bad request",
 )
 
 
 def _is_retryable(e: Exception) -> bool:
     """Whether another attempt could plausibly succeed. google-generativeai has no stable exception
     hierarchy across versions (the other two providers use isinstance on their SDK's classes), so
-    this reads the message. Retrying a bad key 3 times with backoff costs ~7s per call, which on a
-    batch run is hours of sleeping before the user learns the key is wrong."""
+    this reads the HTTP status when the error carries one, and the message otherwise. Retrying a bad
+    key 3 times with backoff costs ~7s per call, which on a batch run is hours of sleeping before
+    the user learns the key is wrong."""
+    code = getattr(e, "code", None)
+    if isinstance(code, int):
+        return code in (408, 429) or code >= 500
     msg = str(e).lower()
     return not any(m in msg for m in _PERMANENT_MARKERS)
 

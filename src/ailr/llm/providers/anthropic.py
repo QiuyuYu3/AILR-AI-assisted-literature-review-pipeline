@@ -25,7 +25,8 @@ class AnthropicClient(LLMClient):
             ) from e
 
         self._anthropic = anthropic
-        self._client = anthropic.Anthropic(api_key=api_key)
+        # with_retries is the one retry layer; the SDK's own retries would multiply its attempts.
+        self._client = anthropic.Anthropic(api_key=api_key, max_retries=0)
         self._model = model
         self._temperature = temperature
         self._max_retries = max_retries
@@ -84,12 +85,10 @@ class AnthropicClient(LLMClient):
             )
 
         def is_retryable(e: Exception) -> bool:
-            if isinstance(e, (anthropic.RateLimitError, anthropic.APITimeoutError)):
+            if isinstance(e, (anthropic.RateLimitError, anthropic.APITimeoutError, anthropic.APIConnectionError)):
                 return True
             if isinstance(e, anthropic.APIStatusError):
                 return e.status_code is not None and e.status_code >= 500
-            if isinstance(e, anthropic.InternalServerError):
-                return True
             return False
 
         t0 = time.monotonic()
@@ -128,7 +127,8 @@ class AnthropicClient(LLMClient):
         meta = CallMetadata(
             provider="anthropic",
             model=self._model,
-            input_tokens=input_tokens,
+            # Anthropic counts cache reads and writes apart from input_tokens; the other providers include them.
+            input_tokens=input_tokens + cache_read + cache_write,
             output_tokens=output_tokens,
             cached_input_tokens=cache_read,
             cache_creation_tokens=cache_write,
