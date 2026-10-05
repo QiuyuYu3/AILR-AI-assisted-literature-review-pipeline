@@ -17,6 +17,7 @@ class ImportResultsSummary:
     imported: int = 0
     fields_written: int = 0
     flags_written: int = 0
+    no_decision: list[int] = field(default_factory=list)  # imported without a flag_check decision
     unmatched: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -43,7 +44,8 @@ def _resolve_source(project: Project, rec: dict):
 
 
 def import_ai_screening_results(
-    project: Project, records: list[dict], *, stage: str = "abstract", extractor_id: str = "imported"
+    project: Project, records: list[dict], *, stage: str = "abstract", extractor_id: str = "imported",
+    llm_params: dict | None = None,
 ) -> ImportScreeningSummary:
     """Import externally-run AI SCREENING results: per record a decision + reasoning + confidence +
     matched_criteria + evidence_quotes, recorded as the AI reviewer's decision at `stage`."""
@@ -73,13 +75,15 @@ def import_ai_screening_results(
                 reviewer_id=extractor_id,
                 source_id=src.id,
                 stage=stage,
+                llm_params=llm_params,
             )
         )
         summary.imported += 1
     return summary
 
 
-def import_ai_results(project: Project, records: list[dict], *, extractor_id: str = "imported") -> ImportResultsSummary:
+def import_ai_results(project: Project, records: list[dict], *, extractor_id: str = "imported",
+                      llm_params: dict | None = None) -> ImportResultsSummary:
     db = project.db
     pid = project.project_id
     summary = ImportResultsSummary(total_records=len(records))
@@ -127,6 +131,7 @@ def import_ai_results(project: Project, records: list[dict], *, extractor_id: st
                         value=value,
                         source_quote=quote,
                         source_id=src.id,
+                        llm_params=llm_params,
                     )
                 )
                 summary.fields_written += 1
@@ -141,9 +146,12 @@ def import_ai_results(project: Project, records: list[dict], *, extractor_id: st
                         reviewer_id=extractor_id,
                         source_id=src.id,
                         stage="full_text",
+                        llm_params=llm_params,
                     )
                 )
                 summary.flags_written += 1
+            else:
+                summary.no_decision.append(src.id)
 
         summary.imported += 1
 

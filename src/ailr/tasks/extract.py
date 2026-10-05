@@ -29,6 +29,8 @@ class ExtractRunSummary:
     failed: int = 0
     failures: list[dict] = field(default_factory=list)
     archived: int = 0  # rows from a previous AI run retired by a forced re-extract
+    rerun_no_verdict: int = 0  # papers this model had extracted without a full-text verdict, run again
+    no_verdict_elsewhere: list[int] = field(default_factory=list)  # same gap, extracted by another source
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cached_input_tokens: int = 0
@@ -84,6 +86,17 @@ class ExtractionTask:
             already_done = self.project.db.sources_with_extraction(
                 [s.id for s in candidates if s.id is not None], self.reviewer.reviewer_type
             )
+        redo: set[int] = set()
+        if flag_check and already_done and not batch:
+            # Full text waits for the verdict, so an extraction without one is unfinished. Only this
+            # model's own runs are redone; another source's would mix models, so they are reported.
+            unverdicted = already_done - set(self.project.db.get_latest_ai_decisions(list(already_done), stage="full_text"))
+            redo = self.project.db.sources_with_extraction(
+                list(unverdicted), self.reviewer.reviewer_type, extractor_id=self.reviewer.reviewer_id
+            )
+            already_done -= redo
+            summary.rerun_no_verdict = len(redo)
+            summary.no_verdict_elsewhere = sorted(unverdicted - redo)
 
         # Skips are decided up front; only real LLM calls go to the pool below.
         done = 0
@@ -162,6 +175,7 @@ class ExtractionTask:
                             source_id=source.id,
                             stage="full_text",
                             confidence=_avg_flag_confidence(extraction.flag_check),
+                            llm_params=next((r.llm_params for r in extraction.results if r.llm_params), None),
                         )
 
                     if batch:
@@ -181,7 +195,7 @@ class ExtractionTask:
                         # Doing it in that order means a failed call leaves the old extraction alone.
                         previous_max = (
                             self.project.db.max_ai_extraction_id(source.id)
-                            if force and self.reviewer.reviewer_type == "ai"
+                            if (force or source.id in redo) and self.reviewer.reviewer_type == "ai"
                             else None
                         )
                         # One transaction per paper: a failure part-way through leaves none of it.

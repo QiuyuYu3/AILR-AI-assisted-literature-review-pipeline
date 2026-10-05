@@ -901,8 +901,8 @@ def _ft_card(
         extract_row = html.Div(
             dbc.Badge(
                 "Awaiting the AI's full-text verdict", color="secondary", className="align-middle",
-                title="Assisted screening settles a paper once the AI has voted too. "
-                      "AI extraction gives its full-text verdict.",
+                title="Assisted screening settles a paper once the AI has voted too: run AI extraction, "
+                      "or import the paper's result again with its flag_check decision.",
             ),
             className="mt-2",
         )

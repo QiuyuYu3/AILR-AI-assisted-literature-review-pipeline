@@ -5,12 +5,15 @@
 - batch mode lands everything; clearing mock results makes sources re-extractable
 """
 
+import json
+
 from ailr.criteria import save_criteria
 from ailr.exceptions import DatabaseError
 from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
 from ailr.reviewers import ExtractionResult, LLMReviewer, ScreeningDecision
 from ailr.tasks.extract import ExtractionTask
-from tests.helpers import add_source, extract_reviewer, settle, vote
+from ailr.ui import ai_runner
+from tests.helpers import add_source, extract_reviewer, set_config, settle, vote
 
 
 def _add_source(project, title, include=True, md_file=True, md_path=True):
@@ -210,6 +213,13 @@ class TestExtractionRun:
         rerun = ExtractionTask(tmp_project, extract_reviewer()).run()
         assert rerun.extracted == 1 and rerun.skipped_already_done == 0
 
+    def test_the_derived_full_text_verdict_records_the_model(self, tmp_project):
+        sid = _add_source(tmp_project, "Candidate")
+        ExtractionTask(tmp_project, extract_reviewer()).run()
+        [row] = tmp_project.db._conn.execute(
+            "SELECT llm_params FROM screening_decisions WHERE source_id = ? AND stage = 'full_text'", (sid,)).fetchall()
+        assert json.loads(row["llm_params"])["model"] == "mock-extract"
+
     def test_extraction_rows_carry_values_and_quotes(self, tmp_project):
         db = tmp_project.db
         sid = _add_source(tmp_project, "Candidate")
@@ -223,3 +233,80 @@ class TestExtractionRun:
         quotes = [r["source_quote"] for r in field_rows if r["source_quote"]]
         assert quotes, "with_quotes is on: at least one field must carry its supporting quote"
         assert all("Mock supporting quote" in q for q in quotes)
+
+
+def _reviewer_dropping_flag_check(as_string=False):
+    """A response that leaves _flag_check out, or sends it serialized into a JSON string."""
+    def respond(_system, _user, tool_schema):
+        out = synth_from_tool_schema(tool_schema)
+        verdicts = out.pop("_flag_check")
+        if as_string:
+            out["_flag_check"] = json.dumps(verdicts)
+        return out
+    return LLMReviewer(MockLLMClient(model="mock-extract", response_fn=respond))
+
+
+class TestTheFullTextVerdictIsPartOfTheExtraction:
+    def test_the_tool_schema_requires_it(self, tmp_project):
+        asked = []
+
+        def respond(_system, _user, tool_schema):
+            asked.append(tool_schema)
+            return synth_from_tool_schema(tool_schema)
+
+        _add_source(tmp_project, "Candidate")
+        ExtractionTask(tmp_project, LLMReviewer(MockLLMClient(model="mock-extract", response_fn=respond))).run()
+        [schema] = asked
+        assert "_flag_check" in schema.input_schema["required"]
+
+    def test_a_response_without_it_fails_the_paper_and_the_next_run_retries(self, tmp_project):
+        db = tmp_project.db
+        sid = _add_source(tmp_project, "Candidate")
+        summary = ExtractionTask(tmp_project, _reviewer_dropping_flag_check()).run()
+        assert (summary.extracted, summary.failed) == (0, 1)
+        assert "_flag_check" in summary.failures[0]["error"]
+        assert (sid in db.sources_with_extraction([sid], "ai")) is False
+
+        assert ExtractionTask(tmp_project, extract_reviewer()).run().extracted == 1
+        assert db.get_latest_ai_decision(sid, stage="full_text") is not None
+
+    def test_one_sent_as_a_json_string_is_read(self, tmp_project):
+        sid = _add_source(tmp_project, "Candidate")
+        assert ExtractionTask(tmp_project, _reviewer_dropping_flag_check(as_string=True)).run().extracted == 1
+        assert tmp_project.db.get_latest_ai_decision(sid, stage="full_text")["decision"] == "include"
+
+
+class TestAnExtractionWithoutAVerdictIsUnfinished:
+    """Full text waits for the AI's verdict, so a normal run finishes what this model left without one."""
+
+    def _extracted_without_verdict(self, project, extractor_id):
+        sid = _add_source(project, f"by {extractor_id}")
+        project.db.insert_extraction(ExtractionResult(
+            extractor_type="ai", extractor_id=extractor_id, field_name="design", value="obs", source_id=sid,
+        ))
+        return sid
+
+    def test_the_same_model_runs_it_again_and_retires_the_earlier_run(self, tmp_project):
+        db = tmp_project.db
+        sid = self._extracted_without_verdict(tmp_project, "mock:mock-extract")
+        summary = ExtractionTask(tmp_project, extract_reviewer()).run()
+        assert (summary.rerun_no_verdict, summary.extracted, summary.skipped_already_done) == (1, 1, 0)
+        assert db.get_latest_ai_decision(sid, stage="full_text") is not None
+        [run] = db.list_superseded_ai_runs(sid)
+        assert [r["value"] for r in run["rows"]] == ["obs"]
+        assert "obs" not in [r["value"] for r in db.list_extractions(sid, extractor_type="ai")]
+        assert "Re-ran 1 paper(s)" in ai_runner._extraction_summary_text(summary)
+
+    def test_another_sources_extraction_is_listed_not_redone(self, tmp_project):
+        db = tmp_project.db
+        sid = self._extracted_without_verdict(tmp_project, "imported")
+        summary = ExtractionTask(tmp_project, extract_reviewer()).run()
+        assert (summary.extracted, summary.skipped_already_done, summary.no_verdict_elsewhere) == (0, 1, [sid])
+        assert [r["extractor_id"] for r in db.list_extractions(sid, extractor_type="ai")] == ["imported"]
+        assert f"#{sid}" in ai_runner._extraction_summary_text(summary)
+
+    def test_nothing_is_redone_when_flag_check_is_off(self, tmp_project):
+        self._extracted_without_verdict(tmp_project, "mock:mock-extract")
+        project = set_config(tmp_project, "extraction", flag_check=False)
+        summary = ExtractionTask(project, extract_reviewer()).run()
+        assert (summary.rerun_no_verdict, summary.skipped_already_done) == (0, 1)

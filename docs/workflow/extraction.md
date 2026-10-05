@@ -56,6 +56,10 @@ ailr extract <project-folder> --force   # re-extract existing
 
 The run summary reports what happened rather than just a count: the **quote audit** rates for the run (how many values came back with a quote, and how many of those quotes are in the paper word for word), and for any paper that failed, the recorded error and its type, so you can tell a truncated response from a schema mismatch without opening the log.
 
+A response without the per-criterion `flag_check` gives no full-text verdict, so the paper counts as failed and the next run tries it again. A paper an earlier run extracted without a verdict is not treated as done either: a normal run extracts it again when the same model did the earlier run, and lists it when another source did, so two models never mix in one paper's record.
+
+Importing results asks for the **model** that produced them (temperature is optional) and records it on every row, as an in-app run records its own, so the methods text can name it. Each record's `flag_check.decision` is the AI's full-text verdict; under `assisted` full-text screening a paper imported without one waits for it, and the import lists those papers.
+
 ![AI extraction](../figures/ft_ai.png)
 
 ## 4. Cross-check

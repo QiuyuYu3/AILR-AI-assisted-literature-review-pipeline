@@ -253,6 +253,14 @@ def extract(
         typer.echo(f"Extracted:            {summary.extracted}")
         typer.echo(f"Already extracted:    {summary.skipped_already_done}")
         typer.echo(f"Missing markdown:     {summary.skipped_no_markdown}")
+        if summary.rerun_no_verdict:
+            typer.echo(f"Re-run (no verdict):  {summary.rerun_no_verdict}")
+        if summary.no_verdict_elsewhere:
+            typer.echo(
+                f"No full-text verdict, extracted by another source (import again with flag_check.decision): "
+                f"{', '.join(f'#{i}' for i in summary.no_verdict_elsewhere)}",
+                err=True,
+            )
         if summary.failed:
             typer.echo(f"Failed:               {summary.failed}", err=True)
             for f in summary.failures[:5]:

@@ -382,6 +382,14 @@ def _extraction_summary_text(summary: Any) -> str:
         )
     if summary.archived:
         text += f" Kept {summary.archived} row(s) from the previous AI run as an earlier version."
+    if summary.rerun_no_verdict:
+        text += f" Re-ran {summary.rerun_no_verdict} paper(s) whose earlier run gave no full-text verdict."
+    if summary.no_verdict_elsewhere:
+        text += (
+            f" {len(summary.no_verdict_elsewhere)} paper(s) extracted by another source have no full-text verdict "
+            f"({', '.join(f'#{i}' for i in summary.no_verdict_elsewhere[:10])}): import their results again "
+            f"with flag_check.decision filled in."
+        )
     # Without this a failed paper reported only "failed 1", with the reason sitting unread in
     # summary.failures.
     for f in getattr(summary, "failures", [])[:3]:

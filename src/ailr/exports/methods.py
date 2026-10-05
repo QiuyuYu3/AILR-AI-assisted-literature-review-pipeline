@@ -30,15 +30,19 @@ def _model_and_decoding(cfg, db, pid: int, stage: str, fallback_model: str) -> s
     configs = db.recorded_llm_configs(pid, stage)
     if not configs:
         return f"{fallback_model} (temperature {cfg.llm.temperature}, per the current configuration)"
+    # Rows with no record are named too: leaving them out would credit their work to the recorded model.
+    unrecorded = db.count_unrecorded_ai_rows(pid, stage)
 
     parts = []
     for c in configs:
         bits = [f"temperature {c['temperature']}" if c["temperature"] is not None else "temperature not recorded"]
         if c.get("seed") is not None:
             bits.append(f"seed {c['seed']}")
-        if len(configs) > 1:
+        if len(configs) > 1 or unrecorded:
             bits.append(f"{c['n']} rows")
         parts.append(f"{c['model'] or fallback_model} ({', '.join(bits)})")
+    if unrecorded:
+        parts.append(f"a model not recorded in the project ({unrecorded} rows)")
     return " and ".join(parts)
 
 
@@ -169,6 +173,7 @@ def build_methods_skeleton(
 
     screen_model = (cfg.screening.llm.model if cfg.screening.llm and cfg.screening.llm.model else cfg.llm.model) or "[model]"
     extract_model = (cfg.extraction.llm.model if cfg.extraction.llm and cfg.extraction.llm.model else cfg.llm.model) or "[model]"
+    extract_desc = _model_and_decoding(cfg, db, pid, "extraction", extract_model)
 
     total_calls = sum(row.get("calls") or 0 for row in api_summary)
     total_tokens = sum((row.get("input_tokens") or 0) + (row.get("output_tokens") or 0) for row in api_summary)
@@ -248,7 +253,7 @@ def build_methods_skeleton(
     else:
         lines.append(
             "Full texts of the records carried forward were then assessed by one human reviewer and by "
-            f"{extract_model}, both blinded to each other; the AI verdict was derived from a per-criterion "
+            f"{extract_desc}, both blinded to each other; the AI verdict was derived from a per-criterion "
             "re-check of the inclusion criteria against the full text. Disagreements were adjudicated and "
             "the final decision recorded against the adjudicator."
         )
@@ -271,7 +276,7 @@ def build_methods_skeleton(
     )
     if cfg.extraction.workflow == "verify":
         lines.append(
-            f"Structured extraction was performed by {extract_model} using the project's schema (see `schema.yaml`), "
+            f"Structured extraction was performed by {extract_desc} using the project's schema (see `schema.yaml`), "
             f"with each leaf field paired with a verbatim quote from the paper. A human reviewer then verified and, "
             f"where necessary, corrected the AI-extracted fields against the full text (AI-extract + human-verify design). "
             f"After extraction, inclusion criteria were re-verified against the full text "
@@ -281,7 +286,7 @@ def build_methods_skeleton(
     else:
         lines.append(
             f"Structured extraction was performed independently by two human reviewers using the project's schema "
-            f"(see `schema.yaml`), each blinded to the other and to the AI extraction ({extract_model}) until they "
+            f"(see `schema.yaml`), each blinded to the other and to the AI extraction by {extract_desc} until they "
             f"had submitted. Each leaf field was paired with a verbatim quote from the paper, and disagreements were "
             f"reconciled into a single consensus record. "
             f"After extraction, inclusion criteria were re-verified against the full text "

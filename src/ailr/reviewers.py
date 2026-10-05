@@ -306,10 +306,14 @@ class LLMReviewer(Reviewer):
                 )
             )
 
+        verdicts = _normalize_flag_check(output.get("_flag_check")) if flag_check else None
+        if flag_check and verdicts is None:
+            # The full-text verdict comes from these, so a paper without them is not done.
+            raise LLMError("The response had no usable _flag_check, so there is no full-text verdict. Re-run this paper.")
         return SourceExtraction(
             source_id=source.id or 0,
             results=results,
-            flag_check=_normalize_flag_check(output.get("_flag_check")) if flag_check else None,
+            flag_check=verdicts,
             raw_output=output,
         )
 
@@ -368,6 +372,7 @@ def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: list[str] 
             "items": item,
         }
     schema["properties"] = props
+    schema["required"] = [*(r for r in schema.get("required", []) if r != "_flag_check"), "_flag_check"]
     return ToolSchema(
         name=tool_schema.name,
         description=tool_schema.description,
@@ -378,6 +383,11 @@ def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: list[str] 
 def _normalize_flag_check(raw: Any) -> list[dict[str, Any]] | None:
     """Normalize either the named-slot object {ID: {verdict,...}} or the legacy array
     [{criterion_id, verdict,...}] into the canonical list[dict] stored in the DB."""
+    if isinstance(raw, str):  # serialized into a JSON string, as models sometimes do
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
     if raw is None:
         return None
     if isinstance(raw, dict):

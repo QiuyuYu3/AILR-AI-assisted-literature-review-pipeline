@@ -147,18 +147,13 @@ class AdminMixin:
         """
         return [dict(r) for r in self._conn.execute(sql, (project_id,)).fetchall()]
 
-    def recorded_llm_configs(self, project_id: int, stage: str) -> list[dict]:
-        """The model configurations that actually produced this project's AI rows, with counts.
-
-        stage: 'abstract' | 'full_text' read screening_decisions; 'extraction' reads extractions.
-        Rows written before temperature was recorded come back with temperature None, which the
-        caller reports as unrecorded rather than filling in from the current config.
-        """
+    def _ai_llm_param_rows(self, project_id: int, stage: str) -> list:
         if stage == "extraction":
+            # A _flag_check row never stores its call's settings; the field rows from the same call do.
             sql = """
                 SELECT e.llm_params AS llm_params, COUNT(*) AS n
                 FROM extractions e JOIN sources s ON s.id = e.source_id
-                WHERE s.project_id = ? AND e.extractor_type = 'ai'
+                WHERE s.project_id = ? AND e.extractor_type = 'ai' AND e.field_name != '_flag_check'
                 GROUP BY e.llm_params
             """
             params: tuple = (project_id,)
@@ -170,9 +165,17 @@ class AdminMixin:
                 GROUP BY d.llm_params
             """
             params = (project_id, stage)
+        return self._conn.execute(sql, params).fetchall()
 
+    def recorded_llm_configs(self, project_id: int, stage: str) -> list[dict]:
+        """The model configurations that actually produced this project's AI rows, with counts.
+
+        stage: 'abstract' | 'full_text' read screening_decisions; 'extraction' reads extractions.
+        Rows written before temperature was recorded come back with temperature None, which the
+        caller reports as unrecorded rather than filling in from the current config.
+        """
         configs: list[dict] = []
-        for row in self._conn.execute(sql, params).fetchall():
+        for row in self._ai_llm_param_rows(project_id, stage):
             raw = row["llm_params"]
             if not raw:
                 continue
@@ -189,6 +192,10 @@ class AdminMixin:
             })
         configs.sort(key=lambda c: c["n"], reverse=True)
         return configs
+
+    def count_unrecorded_ai_rows(self, project_id: int, stage: str) -> int:
+        """AI rows at the stage that carry no record of the model behind them."""
+        return sum(r["n"] for r in self._ai_llm_param_rows(project_id, stage) if not r["llm_params"])
 
     # ── Tags ────────────────────────────────────────────────────────
 

@@ -59,6 +59,19 @@ def render_prompt_body(text: str, mode: str, *, font: float = 0.95):
     return html.Pre(text, style={"whiteSpace": "pre-wrap", "fontSize": f"{font}rem", **box})
 
 
+def import_llm_params(model, temperature) -> dict | None:
+    """The model an imported file came from, recorded the way an in-app run records its own."""
+    name = (model or "").strip()
+    if not name:
+        return None
+    params: dict = {"model": name}
+    try:
+        params["temperature"] = float(temperature)
+    except (TypeError, ValueError):
+        pass
+    return params
+
+
 def triggered_click_id() -> dict | None:
     """The pattern-matching id of the input that actually carries a click this cycle.
 

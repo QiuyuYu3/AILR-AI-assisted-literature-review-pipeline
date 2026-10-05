@@ -204,17 +204,24 @@ class ExtractionMixin:
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to delete reviewer extractions: {e}") from e
 
-    def sources_with_extraction(self, source_ids: list[int], extractor_type: str = "human") -> set[int]:
+    def sources_with_extraction(self, source_ids: list[int], extractor_type: str = "human",
+                                extractor_id: str | None = None) -> set[int]:
         """Subset of source_ids that have at least one extraction field (excluding reserved markers) for this extractor."""
         if not source_ids:
             return set()
         placeholders = ",".join("?" for _ in source_ids)
+        params: list = [*source_ids, extractor_type]
+        by_id = ""
+        if extractor_id is not None:
+            by_id = "AND extractor_id = ?"
+            params.append(extractor_id)
         rows = self._conn.execute(
             f"""
             SELECT DISTINCT source_id FROM extractions
-            WHERE source_id IN ({placeholders}) AND extractor_type = ? AND field_name NOT IN ('_flag_check', '_submitted')
+            WHERE source_id IN ({placeholders}) AND extractor_type = ? {by_id}
+              AND field_name NOT IN ('_flag_check', '_submitted')
             """,
-            (*source_ids, extractor_type),
+            params,
         ).fetchall()
         return {r["source_id"] for r in rows}
 

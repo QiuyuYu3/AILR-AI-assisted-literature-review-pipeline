@@ -5,7 +5,7 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, html, no_update
 
-from ailr.core.config import save_stage_workflow
+from ailr.core.config import ai_votes_for, save_stage_workflow
 from ailr.ui import calibration_view
 from ailr.ui._project import get_project, reload_project
 
@@ -49,7 +49,7 @@ def protocol_layout() -> Any:
                 value=cfg.screening_workflow("full_text"),
                 size="sm",
             ),
-            html.Div(id="ft-workflow-feedback", className="small mt-2"),
+            html.Div(_flag_check_warning(cfg), id="ft-workflow-feedback", className="small mt-2"),
             html.Hr(className="my-3"),
             *extraction_workflow_block(),
             dbc.Alert(
@@ -58,14 +58,26 @@ def protocol_layout() -> Any:
                     "There is no separate AI full-text screening run: the AI's full-text verdict is derived "
                     "from the per-criterion flag_check verdicts produced during AI extraction. So ",
                     html.Strong("assisted"),
-                    " full-text screening needs AI extraction to have run — without it the AI has no vote and "
-                    "the stage behaves as a single human. Under ",
+                    " full-text screening needs AI extraction to have run: until it has, a paper the human has "
+                    "reviewed waits for the AI's verdict and is not settled. Under ",
                     html.Strong("independent"),
                     " the two humans decide on their own and AI extraction is not required first.",
                 ],
                 color="light", className="small py-2 mt-3 mb-0",
             ),
         ]
+    )
+
+
+def _flag_check_warning(cfg) -> Any:
+    """Assisted full text takes the AI's vote from flag_check, so with it off no paper can settle."""
+    if not ai_votes_for(cfg.screening_workflow("full_text")) or cfg.extraction.flag_check:
+        return None
+    return dbc.Alert(
+        "Full-text screening is assisted, but extraction.flag_check is off in lit_review.yaml, so AI "
+        "extraction gives no full-text verdict and every paper would wait for one. Turn flag_check on, "
+        "or make full-text screening independent.",
+        color="warning", className="py-1 mb-0",
     )
 
 
@@ -161,8 +173,9 @@ def register_callbacks(app: Any) -> None:
             return no_update
         project = get_project()
         save_stage_workflow(project.root, "screening", value)
-        reload_project()
-        return dbc.Alert(f"Saved: abstract screening workflow = {value}.", color="success", className="mb-0 py-1")
+        # Full text follows this setting unless it has its own, so the warning can change here too.
+        warning = _flag_check_warning(reload_project().config)
+        return [dbc.Alert(f"Saved: abstract screening workflow = {value}.", color="success", className="mb-0 py-1"), warning]
 
     @app.callback(
         Output("ft-workflow-feedback", "children"),
@@ -176,5 +189,4 @@ def register_callbacks(app: Any) -> None:
         if value == project.config.screening_workflow("full_text"):
             return no_update
         save_stage_workflow(project.root, "full_text_screening", value)
-        reload_project()
-        return f"saved: full-text screening workflow = {value}"
+        return [f"saved: full-text screening workflow = {value}", _flag_check_warning(reload_project().config)]

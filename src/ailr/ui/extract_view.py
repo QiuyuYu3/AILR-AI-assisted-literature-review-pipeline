@@ -10,13 +10,13 @@ import dash_ag_grid as dag
 import dash_bootstrap_components as dbc
 from dash import ALL, MATCH, Input, Output, State, ctx, dcc, html, no_update
 
-from ailr.core.config import save_stage_workflow
+from ailr.core.config import ai_votes_for, save_stage_workflow
 from ailr.core.pdf_paths import resolve_markdown_path
 from ailr.core.source import Source
 from ailr.extraction import FieldSpec, compose_schema
 from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult
 from ailr.ui import ai_runner
-from ailr.ui._common import format_authors
+from ailr.ui._common import format_authors, import_llm_params
 from ailr.ui._project import get_project, reload_project
 
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -102,7 +102,7 @@ def ai_extraction_panel() -> list[Any]:
                     [
                         html.Li([html.Code("source_id"), " or ", html.Code("doi"), " — which paper (else the filename is used)."], className="small"),
                         html.Li([html.Code("extraction"), " — required object; ", html.Strong("each key = a field name"), " (match your Template), value is the value or ", html.Code('{"value":…, "quote":…}'), "."], className="small"),
-                        html.Li([html.Code("flag_check.decision"), " — optional full-text decision (", html.Code("include / exclude / uncertain"), ")."], className="small"),
+                        html.Li([html.Code("flag_check.decision"), " — the AI's full-text decision (", html.Code("include / exclude / uncertain"), "). Under assisted full-text screening a paper without one waits for it."], className="small"),
                     ],
                     className="mb-1",
                 ),
@@ -122,12 +122,15 @@ def ai_extraction_panel() -> list[Any]:
                     ],
                     className="mt-1",
                 ),
+                dbc.Input(id="extract-importai-model", placeholder="Model that produced the file (required)", size="sm",
+                          className="mt-2 mb-1", persistence=True, persistence_type="session"),
+                dbc.Input(id="extract-importai-temperature", type="number", placeholder="Temperature (optional)", size="sm",
+                          className="mb-1", persistence=True, persistence_type="session"),
                 dbc.InputGroup(
                     [
                         dbc.Input(id="extract-importai-path", placeholder="C:/path/to/results.json or folder", size="sm"),
                         dbc.Button("Import", id="extract-importai-run", color="secondary", outline=True, size="sm"),
                     ],
-                    className="mt-2",
                 ),
                 html.Div(id="extract-importai-status", className="small mt-1"),
             ],
@@ -325,11 +328,17 @@ def register_callbacks(app: Any) -> None:
         Output("extract-refresh", "data", allow_duplicate=True),
         Input("extract-importai-run", "n_clicks"),
         State("extract-importai-path", "value"),
+        State("extract-importai-model", "value"),
+        State("extract-importai-temperature", "value"),
         prevent_initial_call=True,
     )
-    def _import_ai_results(n, path):
+    def _import_ai_results(n, path, model, temperature):
         if not n:
             return no_update, no_update
+        llm_params = import_llm_params(model, temperature)
+        if llm_params is None:
+            return dbc.Alert("Enter the model that produced these results, so the methods text can name it.",
+                             color="warning", className="py-1 mb-0"), no_update
         p = Path((path or "").strip())
         if not path or not p.exists():
             return dbc.Alert("Enter a valid file or folder path.", color="warning", className="py-1 mb-0"), no_update
@@ -356,11 +365,17 @@ def register_callbacks(app: Any) -> None:
 
         from ailr.ingest.results_import import import_ai_results
 
-        s = import_ai_results(get_project(), records)
+        project = get_project()
+        s = import_ai_results(project, records, llm_params=llm_params)
         msg = f"Imported {s.imported}/{s.total_records} record(s); {s.fields_written} fields, {s.flags_written} flags; {len(s.unmatched)} unmatched."
         if errors:
             msg += f" {len(errors)} file error(s)."
-        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": time.time()}
+        waiting = s.no_decision and ai_votes_for(project.config.screening_workflow("full_text"))
+        if s.no_decision:
+            msg += (f" {len(s.no_decision)} record(s) had no flag_check decision "
+                    f"({', '.join(f'#{i}' for i in s.no_decision[:10])})")
+            msg += ": under assisted full-text screening these papers wait for one." if waiting else "."
+        return dbc.Alert(msg, color="warning" if waiting else "success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("extract-reader", "children"),

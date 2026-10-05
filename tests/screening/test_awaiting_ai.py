@@ -6,9 +6,9 @@ from ailr.core.config import save_stage_workflow
 from ailr.core.project import Project
 from ailr.exports.prisma import prisma_counts
 from ailr.reviewers import ExtractionResult
-from ailr.ui import extract_view, full_text_view
+from ailr.ui import extract_view, full_text_view, workflow_view
 from ailr.ui.dashboard_view import _build_content
-from tests.helpers import add_source, callbacks_of, component_text, settle, vote, walk
+from tests.helpers import add_source, callbacks_of, component_text, set_config, settle, vote, walk
 
 
 def _state(project, stage="abstract"):
@@ -171,3 +171,15 @@ class TestDashboard:
 
         vote(db, sid, "include", "gpt", stage="full_text", reviewer_type="ai")
         assert "verified by human: 1" in component_text(_build_content("amber"))
+
+
+class TestFlagCheckOff:
+    def test_the_protocol_page_warns_that_full_text_could_never_settle(self, tmp_project):
+        assert workflow_view._flag_check_warning(tmp_project.config) is None
+        set_config(tmp_project, "extraction", flag_check=False)
+        text = component_text(workflow_view.protocol_layout())
+        assert "extraction.flag_check is off" in text
+        assert "waits for the AI's verdict" in text and "behaves as a single human" not in text
+
+        project = set_config(tmp_project, "screening", full_text_workflow="independent")
+        assert workflow_view._flag_check_warning(project.config) is None

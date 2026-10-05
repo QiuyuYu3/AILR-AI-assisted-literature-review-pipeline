@@ -23,6 +23,7 @@ from ailr.ui._cards import (
     tag_chips,
 )
 from ailr.ui._common import (
+    import_llm_params,
     prompt_view_toggle,
     render_prompt_body,
     triggered_click_id,
@@ -393,6 +394,10 @@ def ai_screening_panel() -> list[Any]:
                     className="mt-1",
                 ),
                 dbc.Input(id="screen-importai-path", placeholder="C:/path/to/screen_results.json or folder", size="sm", className="mb-1 mt-2"),
+                dbc.Input(id="screen-importai-model", placeholder="Model that produced the file (required)", size="sm",
+                          className="mb-1", persistence=True, persistence_type="session"),
+                dbc.Input(id="screen-importai-temperature", type="number", placeholder="Temperature (optional)", size="sm",
+                          className="mb-1", persistence=True, persistence_type="session"),
                 dbc.Button("Import", id="screen-importai-run", color="secondary", outline=True, size="sm"),
                 html.Div(id="screen-importai-status", className="small mt-1"),
             ],
@@ -735,11 +740,17 @@ def register_callbacks(app: Any) -> None:
         Output("screen-refresh", "data", allow_duplicate=True),
         Input("screen-importai-run", "n_clicks"),
         State("screen-importai-path", "value"),
+        State("screen-importai-model", "value"),
+        State("screen-importai-temperature", "value"),
         prevent_initial_call=True,
     )
-    def _import_ai_screening(n, path):
+    def _import_ai_screening(n, path, model, temperature):
         if not n:
             return no_update, no_update
+        llm_params = import_llm_params(model, temperature)
+        if llm_params is None:
+            return dbc.Alert("Enter the model that produced these results, so the methods text can name it.",
+                             color="warning", className="py-1 mb-0"), no_update
         p = Path((path or "").strip())
         if not path or not p.exists():
             return dbc.Alert("Enter a valid file or folder path.", color="warning", className="py-1 mb-0"), no_update
@@ -766,7 +777,7 @@ def register_callbacks(app: Any) -> None:
 
         from ailr.ingest.results_import import import_ai_screening_results
 
-        s = import_ai_screening_results(get_project(), records, stage="abstract")
+        s = import_ai_screening_results(get_project(), records, stage="abstract", llm_params=llm_params)
         msg = f"Imported {s.imported}/{s.total_records}; {len(s.unmatched)} unmatched, {len(s.errors) + len(errors)} error(s)."
         return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": time.time()}
 

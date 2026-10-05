@@ -12,6 +12,7 @@
 - Importing AI results archives the earlier AI extraction instead of deleting it.
 - Schema sub-fields can no longer be named value, quote or confidence.
 - Assisted screening settles a paper only once the AI has voted too; new Awaiting AI filter and dashboard count.
+- Imported AI results must name their model; the methods text names the recorded model at each stage.
 
 ### Fixed
 - PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.
@@ -27,6 +28,8 @@
 - `ailr metrics --json` failed on Postgres: the average latency came back as a Decimal.
 - The dashboard, CLI counts and Conflicts queue now leave out records flagged as duplicates.
 - The extraction import template now lists the same papers an in-app extraction run takes.
+- An AI extraction returning no flag_check counted as done; it now fails, and normal runs redo earlier ones.
+- Imports list records without a full-text decision; Protocol warns when flag_check is off under assisted full text.
 
 ---
 ## [0.36.0] – 2026-10-04
