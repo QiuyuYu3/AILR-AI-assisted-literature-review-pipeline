@@ -625,7 +625,8 @@ def show_sources(
             typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
             if not sources:
-                typer.echo("(no sources)")
+                total = proj.db.count_sources(proj.project_id, exclude_duplicates=True) if offset else 0
+                typer.echo(f"(no sources at offset {offset}; {total} in total)" if total else "(no sources)")
                 return
             typer.echo(f"{'ID':<5} {'YEAR':<5} {'DB':<8} {'TITLE'}")
             typer.echo("-" * 100)
@@ -684,9 +685,10 @@ def show_stats(
         if as_json:
             typer.echo(json.dumps(s, indent=2, ensure_ascii=False))
         else:
-            typer.echo(f"Total sources:     {s['total']}")
-            typer.echo(f"  with DOI:        {s['with_doi']}")
-            typer.echo(f"  with abstract:   {s['with_abstract']}")
+            typer.echo(f"Total sources:          {s['total']}")
+            typer.echo(f"  with DOI:             {s['with_doi']}")
+            typer.echo(f"  with abstract:        {s['with_abstract']}")
+            typer.echo(f"  flagged duplicates:   {s['flagged_duplicates']}")
             typer.echo("")
             typer.echo("By source database:")
             for r in s["by_source_database"]:

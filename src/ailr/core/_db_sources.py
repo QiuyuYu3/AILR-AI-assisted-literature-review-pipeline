@@ -328,12 +328,13 @@ class SourcesMixin:
         ).fetchone()["n"]
 
         with_abstract = self._conn.execute(
-            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND abstract IS NOT NULL",
+            "SELECT COUNT(*) AS n FROM sources WHERE project_id = ? AND abstract IS NOT NULL AND abstract != ''",
             (project_id,),
         ).fetchone()["n"]
 
         return {
             "total": total,
+            "flagged_duplicates": total - self.count_sources(project_id, exclude_duplicates=True),
             "with_doi": with_doi,
             "with_abstract": with_abstract,
             "by_source_database": by_source_database,

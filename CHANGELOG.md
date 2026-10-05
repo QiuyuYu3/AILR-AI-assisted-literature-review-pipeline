@@ -57,6 +57,8 @@
 - PDF linking no longer matches a title onto a paper with a different DOI; Re-scan names those papers.
 - The variables editor rejects names starting with _ and repeated sub-field names.
 - An unreachable or silent Postgres server froze the UI indefinitely; connections now time out after 10 seconds.
+- `ailr show stats` counted empty abstracts as abstracts; it now also reports flagged duplicates.
+- `ailr show sources` with an offset past the end now gives the total instead of "(no sources)".
 
 ---
 ## [0.36.0] – 2026-10-04
