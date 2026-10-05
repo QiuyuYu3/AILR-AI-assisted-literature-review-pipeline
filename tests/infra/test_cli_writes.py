@@ -9,6 +9,7 @@ import ailr.cli as cli
 from ailr.cli import app
 from ailr.core.database import Database
 from ailr.core.project import Project
+from ailr.exceptions import LLMError
 from ailr.prompt_versions import screening_prompt_version
 from tests.helpers import ApiClient, add_source, count_decisions, settle
 
@@ -41,6 +42,19 @@ def _use_api_client(monkeypatch):
         cli, "make_llm_client",
         lambda provider, **kw: real_factory(provider, **kw) if provider == "mock" else ApiClient(),
     )
+
+
+class _RefusesOne(ApiClient):
+    """Answers like a provider, except for the paper titled "Refused"."""
+
+    def complete_structured(self, *, user_message, **kwargs):
+        if "Title: Refused" in user_message:
+            raise LLMError("provider refused")
+        return super().complete_structured(user_message=user_message, **kwargs)
+
+
+def _refuse_one(monkeypatch):
+    monkeypatch.setattr(cli, "make_llm_client", lambda provider, **kw: _RefusesOne())
 
 
 def _reviewer_ids(db):
@@ -180,6 +194,18 @@ class TestScreen:
         assert Project.load(tmp_project.root).config.screening_workflow("abstract") == "independent"
         assert count_decisions(tmp_project.db, tmp_project.project_id) == 0
 
+    def test_a_paper_that_fails_leaves_a_nonzero_exit_code(self, tmp_project, monkeypatch):
+        """A script running the CLI has no other way to notice; the papers that worked still land."""
+        add_source(tmp_project, "Fine", abstract="About joint attention.")
+        add_source(tmp_project, "Refused", abstract="About gaze.")
+        _refuse_one(monkeypatch)
+
+        result = _run("screen", tmp_project.root)
+
+        assert result.exit_code == 1
+        assert "failed:        1" in result.output
+        assert count_decisions(tmp_project.db, tmp_project.project_id) == 1
+
     def test_an_unknown_workflow_is_rejected_unsaved(self, tmp_project):
         before = (tmp_project.root / "lit_review.yaml").read_text(encoding="utf-8")
 
@@ -223,6 +249,17 @@ class TestExtract:
         assert result.exit_code == 0, result.output
         assert {r["extractor_id"] for r in _live_ai_rows(tmp_project.db, sid)} == {"stub:model-a"}
 
+    def test_a_paper_that_fails_leaves_a_nonzero_exit_code(self, tmp_project, monkeypatch):
+        fine = _extraction_candidate(tmp_project, "Fine")
+        _extraction_candidate(tmp_project, "Refused")
+        _refuse_one(monkeypatch)
+
+        result = _run("extract", tmp_project.root)
+
+        assert result.exit_code == 1
+        assert "Failed:               1" in result.output
+        assert _live_ai_rows(tmp_project.db, fine)
+
     def test_an_unknown_workflow_is_rejected(self, tmp_project):
         result = _run("extract", tmp_project.root, "--mock", "--workflow", "assisted")
 
@@ -234,6 +271,8 @@ class _FakeConverter:
     backend_name = "fake"
 
     def convert(self, pdf_path):
+        if pdf_path.stem == "refused":
+            raise RuntimeError("cannot read this PDF")
         return "# Converted\n\n" + "Body text. " * 100
 
 
@@ -254,6 +293,24 @@ class TestPreprocess:
         src = tmp_project.db.get_source(sid)
         assert src.markdown_path is not None and src.pdf_path is not None
         assert (tmp_project.root / "data" / "markdown" / f"{sid}.md").read_text(encoding="utf-8").startswith("# Converted")
+
+    @pytest.mark.parametrize("as_json", [False, True])
+    def test_a_pdf_that_fails_leaves_a_nonzero_exit_code(self, tmp_project, as_json):
+        fine, refused = add_source(tmp_project, "Fine"), add_source(tmp_project, "Refused")
+        pdfs = tmp_project.root / "data" / "pdfs"
+        pdfs.mkdir(parents=True, exist_ok=True)
+        (pdfs / f"{fine}.pdf").write_bytes(b"%PDF-1.4")
+        linked = tmp_project.root / "zotero" / "refused.pdf"
+        linked.parent.mkdir()
+        linked.write_bytes(b"%PDF-1.4")
+        tmp_project.db.update_pdf_path(refused, linked)
+
+        result = _run("preprocess", tmp_project.root, *(["--json"] if as_json else []))
+
+        assert result.exit_code == 1, result.output
+        if as_json:
+            assert json.loads(result.stdout)["failed"] == 1
+        assert tmp_project.db.get_source(fine).markdown_path is not None
 
     def test_list_missing_names_the_papers_without_markdown(self, tmp_project):
         done = add_source(tmp_project, "Has text", md_on_disk=True)

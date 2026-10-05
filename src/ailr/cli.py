@@ -48,6 +48,12 @@ show_app = typer.Typer(
 app.add_typer(show_app, name="show")
 
 
+def _exit_on_failures(failed: int) -> None:
+    """A run that finished with failed papers exits 1, so a script running it notices."""
+    if failed:
+        raise typer.Exit(1)
+
+
 def _truncate(text: str | None, width: int) -> str:
     if text is None:
         return ""
@@ -206,6 +212,7 @@ def screen(
             typer.echo(f"  failed:        {summary.failed}", err=True)
         typer.echo("")
         typer.echo(f"Tokens:          in={summary.total_input_tokens}  out={summary.total_output_tokens}  cached_in={summary.total_cached_input_tokens}")
+        _exit_on_failures(summary.failed)
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -282,6 +289,7 @@ def extract(
                 typer.echo(f"  - [{f['source_id']}] {_truncate(f['title'], 70)}: {f['error'][:120]}", err=True)
         typer.echo("")
         typer.echo(f"Tokens:  in={summary.total_input_tokens}  out={summary.total_output_tokens}  cached_in={summary.total_cached_input_tokens}")
+        _exit_on_failures(summary.failed)
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
@@ -350,6 +358,7 @@ def preprocess(
                 "missing_pdfs": summary.missing_pdfs,
             }
             typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+            _exit_on_failures(summary.failed)
             return
 
         typer.echo("")
@@ -367,6 +376,7 @@ def preprocess(
             typer.echo(f"Failed:               {summary.failed}", err=True)
         if summary.missing_pdfs:
             typer.echo(f"Sources missing MD:   {len(summary.missing_pdfs)} (run with --list-missing to see them)")
+        _exit_on_failures(summary.failed)
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)

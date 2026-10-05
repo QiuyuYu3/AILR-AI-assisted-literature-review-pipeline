@@ -113,7 +113,7 @@ Everything below is also doable from the UI. The CLI is the power-user bypass, u
 | `ailr prompt-bump <project>` | snapshot a new prompt version |
 | `ailr db-migrate <project> --to <url>` | copy a SQLite project into Postgres |
 
-Add `--mock` to `screen` / `extract` to run with no API call. Run `ailr <command> --help` for all options.
+Add `--mock` to `screen` / `extract` to run with no API call. `screen`, `extract` and `preprocess` exit with code 1 when any paper failed, after printing the summary, so a script can tell. Run `ailr <command> --help` for all options.
 
 **Cross-check is UI-only** and has no command here. It is deliberate: the CLI covers the pipeline steps that predate the UI, and new features are added to the UI rather than to both. Both cross-check layers run from **Full text → Workflow → AI extraction** and, for screening records, from **Abstract → Workflow → AI screening** (mock mode from the same places).
 
