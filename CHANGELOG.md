@@ -44,6 +44,7 @@
 - AI result imports now match DOIs written as links.
 - A cross-check flag for a required field left empty now clears once the field gets a value.
 - The abstract queue's cross-check filter now counts AI findings only, matching the badges and dashboard.
+- Opening the app, the consensus page or changing reviewer no longer logs Dash "nonexistent object" errors.
 
 ---
 ## [0.36.0] – 2026-10-04

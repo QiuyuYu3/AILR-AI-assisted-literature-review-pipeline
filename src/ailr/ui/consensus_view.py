@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import ALL, Input, Output, State, ctx, html, no_update
+from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from ailr.extraction import FieldSpec, compose_schema
 from ailr.reviewers import ExtractionResult
@@ -50,6 +50,8 @@ def layout() -> Any:
                 className="align-items-center g-2 mb-1",
             ),
             html.Div(id="cons-feedback", className="small mb-1"),
+            # Lives with the page: the render callback fills it on every mount, so it need not outlast the tab.
+            dcc.Store(id="cons-state", data={}),
             html.Hr(className="my-1"),
             html.Div(
                 [

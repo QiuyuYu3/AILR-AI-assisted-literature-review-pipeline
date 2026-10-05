@@ -971,11 +971,10 @@ def register_callbacks(app: Any) -> None:
         Input("screen-tags-filter", "value"),
         Input("screen-pagesize", "value"),
         Input("screen-sort", "value"),
-        Input("shared-reviewer", "value"),
         State("screen-page", "data"),
         prevent_initial_call=True,
     )
-    def _page_nav(prev, nxt, _f, _s, _w, _tg, _ps, _sort, _rev, current):
+    def _page_nav(prev, nxt, _f, _s, _w, _tg, _ps, _sort, current):
         trigger = ctx.triggered_id
         page = (current or {}).get("page", 0)
         if trigger == "screen-page-prev":
@@ -985,6 +984,16 @@ def register_callbacks(app: Any) -> None:
         else:
             page = 0
         return {"page": page}
+
+    # Separate from _page_nav so a reviewer change on another tab still resets the page: the tab's
+    # own inputs are absent then, and Dash will not run a callback that names them.
+    @app.callback(
+        Output("screen-page", "data", allow_duplicate=True),
+        Input("shared-reviewer", "value"),
+        prevent_initial_call=True,
+    )
+    def _reviewer_resets_page(_rev):
+        return {"page": 0}
 
     @app.callback(
         Output("screen-refresh", "data"),

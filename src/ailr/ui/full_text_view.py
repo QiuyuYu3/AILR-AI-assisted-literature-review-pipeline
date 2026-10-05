@@ -489,17 +489,25 @@ def register_callbacks(app: Any) -> None:
         Input("ft-tags-filter", "value"),
         Input("ft-sort", "value"),
         Input("ft-pagesize", "value"),
-        Input("shared-reviewer", "value"),
         State("ft-page", "data"),
         prevent_initial_call=True,
     )
-    def _page_nav(_prev, _next, _s, _kw, _tg, _sort, _ps, _rev, current):
+    def _page_nav(_prev, _next, _s, _kw, _tg, _sort, _ps, current):
         trigger = ctx.triggered_id
         page = (current or {}).get("page", 0)
         if trigger == "ft-page-prev":
             return {"page": max(0, page - 1)}
         if trigger == "ft-page-next":
             return {"page": page + 1}
+        return {"page": 0}
+
+    # Separate from _page_nav for the same reason as on the screening page.
+    @app.callback(
+        Output("ft-page", "data", allow_duplicate=True),
+        Input("shared-reviewer", "value"),
+        prevent_initial_call=True,
+    )
+    def _reviewer_resets_page(_rev):
         return {"page": 0}
 
     @app.callback(

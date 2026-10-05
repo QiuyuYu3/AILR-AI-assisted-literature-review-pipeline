@@ -136,7 +136,6 @@ def build_app() -> Dash:
             dcc.Store(id="extract-refresh", data={"ts": 0}),
             dcc.Store(id="cons-store", data={"sid": None}, storage_type="session"),
             dcc.Store(id="cons-refresh", data={"ts": 0}),
-            dcc.Store(id="cons-state", data={}),
             dcc.Store(id="screen-page", data={"page": 0}),
             dcc.Store(id="screen-refresh", data={"ts": 0}),
             dcc.Store(id="screen-last-action", data=None),
