@@ -4,7 +4,7 @@ The first stage: bring your database search results in and flag duplicates, so t
 
 ## Import references
 
-On the **Import** page, drop a **RIS / BibTeX / CSV** export of your search results. One file per database export is fine, and you can import several in turn (a paper found in two databases is caught at the deduplicate step). Pick the file's **source database** (a required selector with the common databases like WoS, PubMed, and Scopus, a custom field for anything else, and *Auto-detect*) so each record remembers where it came from. This is what lets the PRISMA flow report "records identified per database".
+On the **Import** page, drop a **RIS / BibTeX / CSV** export of your search results. One file per database export is fine, and you can import several in turn (a paper found in two databases is caught at the deduplicate step). Pick the file's **source database** (a required selector with the common databases like WoS, PubMed, and Scopus, a custom field for anything else, and *Auto-detect*) so each record remembers where it came from. This is what lets the PRISMA flow report "records identified per database". A BibTeX file with an entry that cannot be read is refused as a whole, naming the line of each broken entry, so no record goes missing without notice.
 
 ![import](../figures/import.png)
 
