@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from pydantic import ValidationError
+
 
 @dataclass
 class ValidationItem:
@@ -29,3 +31,13 @@ class ValidationReport:
     @property
     def has_errors(self) -> bool:
         return any(i.level == "error" for i in self.items)
+
+
+def _short_error(e: ValidationError) -> str:
+    errs = e.errors()
+    if not errs:
+        return "invalid field"
+    first = errs[0]
+    loc = ".".join(str(x) for x in first.get("loc", ()))
+    msg = first.get("msg", "invalid")
+    return f"{loc}: {msg}" if loc else msg

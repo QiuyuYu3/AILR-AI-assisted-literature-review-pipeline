@@ -48,6 +48,8 @@
 - A criteria or variables save that failed was still recorded as a protocol amendment.
 - DOIs edited on the Sources tab are stored bare, as imports store them.
 - Renaming a tag to an existing name now says so instead of silently doing nothing.
+- Imported criteria: IDs are trimmed, a null rule reads as empty, and type errors name the key.
+- Imported variables: blank, padded, repeated or underscore-prefixed names and non-object sub-fields are rejected.
 
 ---
 ## [0.36.0] – 2026-10-04

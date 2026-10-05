@@ -10,7 +10,7 @@ import json
 from pydantic import ValidationError
 
 from ailr.extraction import FieldSpec
-from ailr.ingest._report import ValidationReport
+from ailr.ingest._report import ValidationReport, _short_error
 
 _FIELD_KEYS = {"name", "type", "description", "enum", "required", "multi", "verify", "item_type", "item_fields", "fields"}
 
@@ -38,8 +38,14 @@ def parse_schema_import(raw: str) -> tuple[list[dict], ValidationReport]:
         if not isinstance(f, dict):
             report.add("error", f"field #{i + 1} is not an object")
             continue
+        errors_before = len(report.errors)
         cf = _clean_field(f, report)
         name = cf.get("name")
+        if isinstance(name, str) and name.startswith("_"):
+            # extraction rows named _submitted and _flag_check are bookkeeping, not variables
+            report.add("error", "names starting with _ are reserved", field=name)
+        if len(report.errors) > errors_before:
+            continue
         try:
             FieldSpec(**cf)
         except ValidationError as e:
@@ -58,15 +64,31 @@ def parse_schema_import(raw: str) -> tuple[list[dict], ValidationReport]:
 
 def _clean_field(f: dict, report: ValidationReport) -> dict:
     name = f.get("name")
+    if isinstance(name, str):
+        name = name.strip()  # padding would let one variable appear under two names
+        if not name:
+            report.add("error", "field name is empty")
+    label = name if isinstance(name, str) else None
     out: dict = {}
     for k, v in f.items():
         if k in _FIELD_KEYS:
-            out[k] = v
+            out[k] = name if k == "name" else v
         else:
-            report.add("warning", f"ignored unknown key {k!r}", field=name if isinstance(name, str) else None)
+            report.add("warning", f"ignored unknown key {k!r}", field=label)
     for sub_key in ("fields", "item_fields"):
-        if isinstance(out.get(sub_key), list):
-            out[sub_key] = [_clean_field(s, report) for s in out[sub_key] if isinstance(s, dict)]
+        if not isinstance(out.get(sub_key), list):
+            continue
+        subs = []
+        for j, s in enumerate(out[sub_key]):
+            if isinstance(s, dict):
+                subs.append(_clean_field(s, report))
+            else:
+                report.add("error", f"sub-field #{j + 1} is not an object", field=label)
+        names = [s.get("name") for s in subs]
+        for dup in sorted({n for n in names if isinstance(n, str) and names.count(n) > 1}):
+            # the tool schema is keyed by name, so a repeat would silently replace the first
+            report.add("error", f"duplicate sub-field name {dup!r}", field=label)
+        out[sub_key] = subs
     return out
 
 
@@ -81,13 +103,3 @@ def _soft_checks(cf: dict, report: ValidationReport) -> None:
         report.add("warning", "object field has no sub-fields", field=name)
     if cf.get("type") == "list" and cf.get("item_type") == "object" and not cf.get("item_fields"):
         report.add("warning", "repeating group has no sub-fields", field=name)
-
-
-def _short_error(e: ValidationError) -> str:
-    errs = e.errors()
-    if not errs:
-        return "invalid field"
-    first = errs[0]
-    loc = ".".join(str(x) for x in first.get("loc", ()))
-    msg = first.get("msg", "invalid")
-    return f"{loc}: {msg}" if loc else msg
