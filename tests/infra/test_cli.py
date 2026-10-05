@@ -201,6 +201,15 @@ class TestMetrics:
             "  mock/small: calls=2  in=30  out=12  avg_latency=150ms",
         ]
 
+    def test_calls_without_token_or_latency_figures_still_print(self, tmp_project):
+        tmp_project.db._conn.execute("INSERT INTO api_calls (project_id, provider, model) VALUES (?, 'mock', 'bare')",
+                                     (tmp_project.project_id,))
+
+        result = _run("metrics", str(tmp_project.root))
+
+        assert result.exit_code == 0, result.output
+        assert "  mock/bare: calls=1  in=0  out=0  avg_latency=n/a" in result.stdout
+
     def test_an_empty_project(self, tmp_project):
         out = _run("metrics", str(tmp_project.root)).stdout
         assert "Agreement: (no records judged by two reviewers yet)" in out

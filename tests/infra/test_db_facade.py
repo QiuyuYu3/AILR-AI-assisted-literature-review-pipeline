@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.engine import CursorResult
 
-from ailr.core._db_facade import _coerce_row, _prepare_sql
+from ailr.core._db_facade import _coerce_row, _normalize_db_url, _prepare_sql
 from ailr.core.source import Source
 
 
@@ -48,3 +48,18 @@ def test_rows_come_back_with_plain_python_types():
     assert row == {"avg_latency_ms": 1234.5, "calls": 3, "timestamp": "2026-10-04 12:30:00"}
     assert isinstance(row["avg_latency_ms"], float)
     json.dumps(row)
+
+
+@pytest.mark.parametrize("url", [
+    "postgresql://u:p@host/db?sslmode=require",
+    "postgres://u:p@host/db?sslmode=require",
+    "postgresql+psycopg2://u:p@host/db?sslmode=require",
+    "postgresql+psycopg://u:p@host/db?sslmode=require",
+])
+def test_every_postgres_spelling_uses_the_installed_psycopg3_driver(url):
+    """A plain postgresql:// makes SQLAlchemy reach for psycopg2, which ailr does not install."""
+    assert _normalize_db_url(url) == "postgresql+psycopg://u:p@host/db?sslmode=require"
+
+
+def test_a_sqlite_url_is_left_alone():
+    assert _normalize_db_url("sqlite:///review.sqlite") == "sqlite:///review.sqlite"

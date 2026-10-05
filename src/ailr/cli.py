@@ -465,11 +465,12 @@ def metrics(
         if api_summary:
             typer.echo("API calls:")
             for row in api_summary:
+                latency = row["avg_latency_ms"]
                 typer.echo(
                     f"  {row['provider']}/{row['model']}: "
                     f"calls={row['calls']}  "
-                    f"in={row['input_tokens']}  out={row['output_tokens']}  "
-                    f"avg_latency={row['avg_latency_ms']:.0f}ms"
+                    f"in={row['input_tokens'] or 0}  out={row['output_tokens'] or 0}  "
+                    f"avg_latency={'n/a' if latency is None else f'{latency:.0f}ms'}"
                 )
         else:
             typer.echo("API calls: (none logged)")
