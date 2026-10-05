@@ -94,6 +94,44 @@ class TestLinkFromRis:
 
         assert (s.no_attachment, len(s.unmatched), s.linked) == (1, 1, 0)
 
+    def test_a_title_does_not_match_across_conflicting_dois(self, tmp_project, tmp_path):
+        """Two DOIs on one title are two papers, or a preprint and its article; a wrong PDF is worse than none."""
+        sid = add_source(tmp_project, "Infant gaze and maternal speech", doi="10.1/maternal")
+        _pdf(tmp_path, "other.pdf")
+        ris = _ris(tmp_path, _record("Infant gaze and maternal speech", "other.pdf", doi="10.1/other"))
+
+        s = link_pdfs_from_ris(tmp_project, ris)
+
+        assert tmp_project.db.get_source(sid).pdf_path is None
+        assert s.unmatched == [{"title": "Infant gaze and maternal speech", "doi": "10.1/other", "doi_differs_from": sid}]
+
+    def test_the_rescan_and_the_cli_name_the_paper_the_doi_kept_out(self, tmp_project, tmp_path):
+        from typer.testing import CliRunner
+
+        from ailr.cli import app
+        from ailr.ui import preprocess_view
+        from tests.helpers import callbacks_of, component_text
+
+        sid = add_source(tmp_project, "Infant gaze and maternal speech", doi="10.1/maternal")
+        pdfs = tmp_project.root / "data" / "pdfs"
+        _pdf(pdfs, "other.pdf")
+        ris = _ris(pdfs, _record("Infant gaze and maternal speech", "other.pdf", doi="10.1/other"))
+
+        alert, _ = callbacks_of(preprocess_view)["_link_pdfs"](1)
+        cli = CliRunner().invoke(app, ["import-pdfs", str(tmp_project.root), str(ris)])
+
+        assert f"DOI differs from the paper with the same title (#{sid})" in component_text(alert)
+        assert f"DOI differs from #{sid}" in cli.stdout
+
+    @pytest.mark.parametrize(("record_doi", "source_doi"), [(None, "10.1/a"), ("10.1/a", None)])
+    def test_a_title_still_matches_when_only_one_side_has_a_doi(self, tmp_project, tmp_path, record_doi, source_doi):
+        sid = add_source(tmp_project, "Joint attention in toddlers", doi=source_doi)
+        _pdf(tmp_path, "p.pdf")
+        ris = _ris(tmp_path, _record("Joint attention in toddlers", "p.pdf", doi=record_doi))
+
+        assert link_pdfs_from_ris(tmp_project, ris).linked == 1
+        assert tmp_project.db.get_source(sid).pdf_path is not None
+
     def test_a_missing_ris_is_an_error(self, tmp_project, tmp_path):
         with pytest.raises(InputNotFoundError):
             link_pdfs_from_ris(tmp_project, tmp_path / "none.ris")

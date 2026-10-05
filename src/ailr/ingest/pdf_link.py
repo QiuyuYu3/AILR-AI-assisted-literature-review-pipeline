@@ -55,9 +55,13 @@ def link_pdfs_from_ris(project: Project, ris_path: Path) -> PdfLinkSummary:
 
         src = _match_source(rec, existing_norms, existing_by_doi)
         if src is None:
-            summary.unmatched.append(
-                {"title": (rec.get("title") or rec.get("primary_title") or "")[:80], "doi": rec.get("doi")}
-            )
+            entry = {"title": (rec.get("title") or rec.get("primary_title") or "")[:80], "doi": rec.get("doi")}
+            if _record_doi(rec):
+                # Say so when only the DOI kept a title match out, so the user can link it by hand.
+                blocked = _match_source({**rec, "doi": None}, existing_norms, {})
+                if blocked is not None:
+                    entry["doi_differs_from"] = blocked.id
+            summary.unmatched.append(entry)
             continue
 
         pdf_path = Path(attach)
@@ -168,9 +172,9 @@ def _match_source(
     existing_norms: list[tuple[str, Source]],
     existing_by_doi: dict[str, Source],
 ) -> Source | None:
-    doi = rec.get("doi")
-    if isinstance(doi, str) and doi.strip():
-        hit = existing_by_doi.get(normalize_doi(doi))
+    doi = _record_doi(rec)
+    if doi:
+        hit = existing_by_doi.get(doi)
         if hit is not None:
             return hit
 
@@ -178,7 +182,9 @@ def _match_source(
     if not title:
         return None
     new_norm = normalize_title(title)
-    scored = [(TITLE_MATCH_SCORER(new_norm, ex_norm), ex_src) for ex_norm, ex_src in existing_norms]
+    # A paper with a different DOI is a different paper (or another version of it), however close the title.
+    scored = [(TITLE_MATCH_SCORER(new_norm, ex_norm), ex_src) for ex_norm, ex_src in existing_norms
+              if not (doi and normalize_doi(ex_src.doi) and normalize_doi(ex_src.doi) != doi)]
     if not scored:
         return None
     best_score = max(s for s, _ in scored)
@@ -193,6 +199,11 @@ def _match_source(
             if len(year_match) == 1:
                 return year_match[0]
     return max(scored, key=lambda t: t[0])[1]
+
+
+def _record_doi(rec: dict) -> str | None:
+    doi = rec.get("doi")
+    return normalize_doi(doi) if isinstance(doi, str) else None
 
 
 def _record_year(rec: dict) -> int | None:

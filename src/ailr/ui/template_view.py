@@ -245,6 +245,12 @@ def _field_summary(f: dict) -> str:
     return f"({t}{' • ' + ', '.join(enum) if enum else ''})"
 
 
+def _repeated_sub_field(f: dict) -> str | None:
+    # the tool schema is keyed by name, so a repeat would silently replace the first
+    names = [s.get("name") for s in (f.get("fields") or f.get("item_fields") or [])]
+    return next((n for n in names if names.count(n) > 1), None)
+
+
 def _build_field(name, ftype, itemtype, desc, enum, subfields, required) -> tuple:
     """Construct a field dict from the add/edit form inputs. Returns (field, error_message)."""
     if not name or not name.strip():
@@ -269,6 +275,11 @@ def _build_field(name, ftype, itemtype, desc, enum, subfields, required) -> tupl
             f["item_type"] = itemtype or "string"
     if ftype in ("group", "object") and not f.get("item_fields") and not f.get("fields"):
         return None, "Add at least one sub-field (one per line)."
+    if f["name"].startswith("_"):
+        return None, "Names starting with _ are reserved for the app's own records."
+    repeated = _repeated_sub_field(f)
+    if repeated:
+        return None, f"Sub-field {repeated!r} appears twice."
     try:
         FieldSpec(**f)
     except Exception as e:
@@ -1156,6 +1167,9 @@ def register_callbacks(app: Any) -> None:
         if not subs:
             return no_update, no_update, dbc.Alert("Add at least one sub-field.", color="warning", className="mb-0 py-1")
         f[key] = subs
+        repeated = _repeated_sub_field(f)
+        if repeated:
+            return no_update, no_update, dbc.Alert(f"Sub-field {repeated!r} appears twice.", color="warning", className="mb-0 py-1")
         try:
             FieldSpec(**f)
         except Exception as e:

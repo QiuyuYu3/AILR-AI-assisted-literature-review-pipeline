@@ -54,6 +54,8 @@
 - Zotero attachments given as Windows file:/// URLs were treated as missing.
 - BibTeX import now runs on bibtexparser 2.x; fresh installs pulled 2.x and could not import ailr.
 - A BibTeX entry that cannot be read now stops the import, naming its line, instead of vanishing.
+- PDF linking no longer matches a title onto a paper with a different DOI; Re-scan names those papers.
+- The variables editor rejects names starting with _ and repeated sub-field names.
 
 ---
 ## [0.36.0] – 2026-10-04

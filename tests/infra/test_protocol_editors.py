@@ -69,6 +69,32 @@ def test_build_field_requires_a_name():
     assert _build_field("", "string", None, "", "", "", False) == (None, "Field name required.")
 
 
+def test_build_field_rejects_a_leading_underscore():
+    """Extraction rows named _submitted and _flag_check are bookkeeping, not variables."""
+    f, err = _build_field("_flag_check", "string", None, "", "", "", False)
+    assert f is None and "reserved" in err
+
+
+@pytest.mark.parametrize("ftype", ["group", "object"])
+def test_build_field_rejects_a_repeated_sub_field(ftype):
+    f, err = _build_field("thing", ftype, None, "", "", "feature: string\nfeature: integer", False)
+    assert f is None and "'feature'" in err
+
+
+def test_editing_sub_fields_rejects_a_repeated_name(tmp_project):
+    from dash import no_update
+
+    from ailr.ui import template_view
+    from tests.helpers import callbacks_of, component_text
+
+    group, _ = _build_field("groups", "group", None, "", "", "feature: string", False)
+    store = {"include_core": False, "include_suggested": [], "fields": [group]}
+
+    out = callbacks_of(template_view)["_save_subedit"](1, {"idx": 0}, "feature: string\nfeature: integer", store)
+
+    assert out[0] is no_update and "'feature'" in component_text(out[2])
+
+
 def test_build_field_requires_subfields_for_group_and_object():
     for ftype in ("group", "object"):
         f, err = _build_field("thing", ftype, None, "", "", "", False)

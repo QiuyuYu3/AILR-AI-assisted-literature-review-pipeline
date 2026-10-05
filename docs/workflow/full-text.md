@@ -28,7 +28,7 @@ ailr does not download PDFs. You gather them in Zotero, then **drop the export i
 ::::
 :::::
 
-5. **Open the full-text pages.** ailr scans `data/pdfs/`, matches each PDF to its source **by DOI**, and links it **automatically**; there is no path to enter. (Added more later? Click **Re-scan data/pdfs** on the Preparation tab.) Files are **referenced in place, not copied**, and each link is stored **relative to the project root**.
+5. **Open the full-text pages.** ailr scans `data/pdfs/`, matches each PDF to its source **by DOI**, and links it **automatically**; there is no path to enter. (Added more later? Click **Re-scan data/pdfs** on the Preparation tab.) Files are **referenced in place, not copied**, and each link is stored **relative to the project root**. A record whose DOI is not in the project falls back to its title, but never onto a paper with a different DOI: Re-scan lists those, and if one is the same work, save its PDF as `data/pdfs/<id>.pdf`.
 
 :::{tip}
 Because links are stored relative to the project root, they **resolve on every teammate's machine** as soon as the project folder is on the shared drive; there is nothing per-person to set up. See [Sharing PDFs](../team.md#sharing-pdfs).

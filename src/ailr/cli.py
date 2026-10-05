@@ -123,7 +123,8 @@ def import_pdfs(
         if s.unmatched:
             typer.echo(f"Unmatched records:  {len(s.unmatched)} (PDF present but no source matched)")
             for m in s.unmatched[:5]:
-                typer.echo(f"  - {m['title']}  (doi={m['doi']})")
+                conflict = f"  DOI differs from #{m['doi_differs_from']}" if "doi_differs_from" in m else ""
+                typer.echo(f"  - {m['title']}  (doi={m['doi']}){conflict}")
             if len(s.unmatched) > 5:
                 typer.echo(f"    ... and {len(s.unmatched) - 5} more")
         if s.missing_files:
