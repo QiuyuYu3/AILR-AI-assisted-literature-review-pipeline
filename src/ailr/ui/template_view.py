@@ -1305,6 +1305,7 @@ def register_callbacks(app: Any) -> None:
             save_user_schema(path, store["include_core"], store["include_suggested"], store["fields"], skip_verify=skip_verify or [])
         except Exception as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
+        version_ui.save_version(_VARS_KIND, _vars_to_content(store, skip_verify))
         _write_variables_json(store.get("fields", []))  # also write a re-importable JSON archive
         return dbc.Alert(
             f"Saved to {path.name} (+ {_VARIABLES_JSON_NAME} archive). Extraction will use it on the next run.",
@@ -1312,7 +1313,7 @@ def register_callbacks(app: Any) -> None:
         )
 
     version_ui.register(app, "tmplv", _VARS_KIND, _vars_to_text, Output("tmpl-store", "data", allow_duplicate=True), lambda c: json.loads(c))
-    version_ui.register_save(app, "tmplv", _VARS_KIND, "tmpl-save", [State("tmpl-store", "data"), State("tmpl-skipverify", "value")], _vars_to_content)
+    version_ui.register_save(app, "tmplv", _VARS_KIND, "tmpl-save-feedback")
 
     @app.callback(
         Output("tmpl-prompt-ver-diff", "children"),

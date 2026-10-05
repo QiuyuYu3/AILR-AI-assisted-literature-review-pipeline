@@ -6,6 +6,7 @@ import sqlite3
 from ailr.core._db_facade import _row_to_source
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError, DuplicateError
+from ailr.ingest.dedup import bare_doi
 
 _INSERT_SOURCE_COLS = (
     "INSERT INTO sources "
@@ -141,6 +142,8 @@ class SourcesMixin:
                 clean[k] = json.dumps(v) if v else None  # v is a list of author strings
             elif k == "year":
                 clean[k] = v
+            elif k == "doi":
+                clean[k] = bare_doi(v) if isinstance(v, str) else None  # stored as imports store it
             else:
                 clean[k] = (str(v).strip() or None) if v is not None else None
         set_sql = ", ".join(f"{c} = ?" for c in clean)

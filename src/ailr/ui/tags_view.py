@@ -120,6 +120,7 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("tags-refresh", "data", allow_duplicate=True),
+        Output("tags-create-feedback", "children", allow_duplicate=True),
         Input({"type": "tag-save", "id": ALL}, "n_clicks"),
         State({"type": "tag-rename", "id": ALL}, "value"),
         State({"type": "tag-rename", "id": ALL}, "id"),
@@ -130,7 +131,7 @@ def register_callbacks(app: Any) -> None:
     def _save(_clicks, names, name_ids, colors, color_ids):
         triggered = triggered_click_id()
         if triggered is None:
-            return no_update
+            return no_update, no_update
         tag_id = int(triggered["id"])
         name = None
         for n, nid in zip(names, name_ids):
@@ -146,8 +147,10 @@ def register_callbacks(app: Any) -> None:
         try:
             db.update_tag(tag_id, name=name if (name and name.strip()) else None, color=color)
         except DuplicateError:
-            pass
-        return {"ts": time.time()}
+            # The rename and the colour go in one statement, so neither was saved.
+            return no_update, dbc.Alert(f"A tag named {name.strip()!r} already exists; nothing was changed.",
+                                        color="warning", className="mb-0")
+        return {"ts": time.time()}, ""
 
     @app.callback(
         Output("tags-delete-modal", "is_open"),

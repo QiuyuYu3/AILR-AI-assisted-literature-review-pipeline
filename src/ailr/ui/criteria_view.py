@@ -423,6 +423,7 @@ def register_callbacks(app: Any) -> None:
             cs = save_criteria(path, rows)
         except Exception as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")
+        version_ui.save_version(_KIND, _to_content(rows))
 
         archive = _write_criteria_json(project.root, cs)  # re-importable JSON backup next to the project
         suffix = f" (+ {archive.name} backup)" if archive else ""
@@ -440,4 +441,4 @@ def register_callbacks(app: Any) -> None:
         return msgs
 
     version_ui.register(app, "crit", _KIND, _to_text, Output("crit-store", "data", allow_duplicate=True), lambda c: json.loads(c).get("criteria", []))
-    version_ui.register_save(app, "crit", _KIND, "crit-save", [State("crit-store", "data")], _to_content)
+    version_ui.register_save(app, "crit", _KIND, "crit-feedback")

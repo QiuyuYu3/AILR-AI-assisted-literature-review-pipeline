@@ -118,23 +118,16 @@ def register(app, prefix: str, kind: str, to_text: Callable[[str], str],
         return value, dbc.Alert(f"Loaded {version} — review, then Save to keep it.", color="info", className="mb-0 py-1")
 
 
-def register_save(app, prefix: str, kind: str, save_btn_id: str, content_states: list, to_content: Callable[..., str]) -> None:
-    """Snapshot a version (deduped) and refresh the selects when the editor's Save button is clicked."""
+def register_save(app, prefix: str, kind: str, feedback_id: str) -> None:
+    """Refresh the version selects after the editor's Save reports back. The editor records the
+    version itself, and only for a save that went through: later versions read as protocol amendments."""
     @app.callback(
         Output(f"{prefix}-ver-restore-sel", "options"),
         Output(f"{prefix}-ver-a", "options"),
         Output(f"{prefix}-ver-b", "options"),
-        Input(save_btn_id, "n_clicks"),
-        *content_states,
+        Input(feedback_id, "children"),
         prevent_initial_call=True,
     )
-    def _snapshot(n, *vals):
-        if not n:
-            return no_update, no_update, no_update
-        try:
-            content = to_content(*vals)
-        except Exception:
-            return no_update, no_update, no_update
-        save_version(kind, content)
+    def _refresh_versions(_feedback):
         opts = options(kind)
         return opts, opts, opts

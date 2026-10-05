@@ -45,6 +45,9 @@
 - A cross-check flag for a required field left empty now clears once the field gets a value.
 - The abstract queue's cross-check filter now counts AI findings only, matching the badges and dashboard.
 - Opening the app, the consensus page or changing reviewer no longer logs Dash "nonexistent object" errors.
+- A criteria or variables save that failed was still recorded as a protocol amendment.
+- DOIs edited on the Sources tab are stored bare, as imports store them.
+- Renaming a tag to an existing name now says so instead of silently doing nothing.
 
 ---
 ## [0.36.0] – 2026-10-04
