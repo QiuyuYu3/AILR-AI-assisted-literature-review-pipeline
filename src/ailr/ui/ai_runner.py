@@ -37,12 +37,9 @@ def _make_client(project: Any, stage: str, mock: bool, synth: bool = False):
         if stage == "extract" or synth:
             # Fabricate data shaped to the tool schema so the UI populates every field
             # (value/quote, groups, _flag_check per-criterion verdicts) — no API call.
-            from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
+            from ailr.llm.mock import schema_mock_client
 
-            return MockLLMClient(
-                model=f"mock-{stage}",
-                response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts),
-            )
+            return schema_mock_client(f"mock-{stage}")
         return make_llm_client("mock", model=f"mock-{stage}")
     cfg = project.config
     stage_cfg = cfg.screening.llm if stage == "screen" else cfg.extraction.llm
@@ -197,12 +194,9 @@ def _crosscheck_client(project: Any, mock: bool, stage: str = "extraction"):
     from ailr.core.config import crosscheck_llm_blocked
 
     if mock:
-        from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
+        from ailr.llm.mock import schema_mock_client
 
-        return MockLLMClient(
-            model="mock-crosscheck",
-            response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts),
-        ), None
+        return schema_mock_client("mock-crosscheck"), None
 
     blocked = crosscheck_llm_blocked(project.config, stage)
     if blocked:
@@ -289,9 +283,10 @@ current_extraction_composed = extraction_composed
 
 def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None, force: bool = False) -> None:
     try:
-        # A real run supersedes earlier mock results: clear them first so they don't block re-screening.
-        replaced = project.db.clear_mock_ai_decisions(project.project_id) if not mock else 0
         client = _make_client(project, "screen", mock)
+        # A real run supersedes earlier mock results: clear them first so they don't block re-screening.
+        # Built the client first: a run that cannot start must not cost the mock data.
+        replaced = project.db.clear_mock_ai_decisions(project.project_id, stage="abstract") if not mock else 0
         reviewer = LLMReviewer(client, prompt_version=screening_prompt_version(project))
         summary = ScreeningTask(project, reviewer).run(
             on_progress=_progress_cb(key), batch=mock, flag_check=flag_check, force=force
@@ -421,9 +416,9 @@ def _run_single_extraction(key: str, project: Any, mock: bool, source_id: int) -
 
 def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> None:
     try:
+        client = _make_client(project, "extract", mock)
         # A real run supersedes earlier mock results: clear them first so they don't block re-extraction.
         replaced = project.db.clear_mock_ai_extractions(project.project_id) if not mock else 0
-        client = _make_client(project, "extract", mock)
         reviewer = LLMReviewer(client, prompt_version=extraction_prompt_version(project))
         summary = ExtractionTask(project, reviewer).run(
             only_includes=not all_sources, force=force, on_progress=_progress_cb(key), batch=mock

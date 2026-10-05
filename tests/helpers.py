@@ -132,6 +132,15 @@ def extract_reviewer():
     ))
 
 
+class ApiClient(MockLLMClient):
+    """Stands in for a provider client: schema-shaped answers, but not marked as mock."""
+
+    provider_name = "stub"
+
+    def __init__(self, model="model-a"):
+        super().__init__(model=model, response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts))
+
+
 class StubClient:
     """Records what it was asked and returns a canned tool payload."""
 

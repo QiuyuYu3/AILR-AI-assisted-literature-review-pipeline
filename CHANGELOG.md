@@ -33,6 +33,12 @@
 - Anthropic input token counts left out cache reads and writes; they now count them, as other providers do.
 - LLM calls retry dropped connections, and the SDKs' own retries no longer multiply attempts.
 - Gemini treated a 504 timeout as a permanent error.
+- `ailr extract --mock` failed every paper; it now gives schema-shaped answers like the UI's mock.
+- `ailr screen` and `ailr extract` real runs now replace earlier mock results, as the UI does.
+- `ailr prompt-bump` saved a version the next run never used, so its notes were orphaned.
+- `ailr db-migrate` now refuses a target database that already holds data.
+- A real AI run that failed to start had already deleted the mock results it was meant to replace.
+- Clearing mock screening results also deleted the full-text verdicts of mock extractions.
 
 ---
 ## [0.36.0] – 2026-10-04

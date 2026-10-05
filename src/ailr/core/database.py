@@ -90,6 +90,11 @@ class Database(
     def copy_all_data_to(self, target: "Database") -> dict:
         """Copy every row from this DB into target (whose schema must already be initialized).
         Preserves primary keys. Used by `ailr db-migrate` to move SQLite → PostgreSQL."""
+        # Each table commits on its own, so a key clash part-way would leave a half-copied target.
+        occupied = [t.name for t in metadata.sorted_tables
+                    if target._conn.execute(f"SELECT 1 FROM {t.name} LIMIT 1").fetchone()]
+        if occupied:
+            raise DatabaseError(f"Target database is not empty (rows in: {', '.join(occupied)}).")
         counts: dict = {}
         for tbl in metadata.sorted_tables:  # FK-safe order (parents before children)
             rows = self._conn.execute(f"SELECT * FROM {tbl.name}").fetchall()

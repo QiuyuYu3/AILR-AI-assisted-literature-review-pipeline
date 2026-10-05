@@ -588,7 +588,8 @@ def register_callbacks(app: Any) -> None:
         if not n:
             return no_update, no_update
         project = get_project()
-        cleared = project.db.clear_mock_ai_decisions(project.project_id)
+        # Full-text mock verdicts go with the mock extraction rows, which the extraction page clears.
+        cleared = project.db.clear_mock_ai_decisions(project.project_id, stage="abstract")
         return dbc.Alert(f"Cleared {cleared} mock AI screening decision(s).", color="success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(

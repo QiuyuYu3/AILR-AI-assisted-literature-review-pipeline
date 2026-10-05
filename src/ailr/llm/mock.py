@@ -111,3 +111,8 @@ class MockLLMClient(LLMClient):
             latency_ms=self._latency_ms,
         )
         return output, meta
+
+
+def schema_mock_client(model: str) -> MockLLMClient:
+    """Mock that answers in whatever shape the tool schema asks for, _flag_check included."""
+    return MockLLMClient(model=model, response_fn=lambda _s, _u, ts: synth_from_tool_schema(ts))

@@ -11,6 +11,7 @@ from ailr.core.config import resolve_stage_llm, save_stage_workflow
 from ailr.core.project import Project
 from ailr.exceptions import AILRError
 from ailr.llm.factory import make_llm_client
+from ailr.llm.mock import schema_mock_client
 from ailr.metrics import (
     BINARY_CATEGORIES,
     binarize,
@@ -22,7 +23,12 @@ from ailr.metrics import (
     percent_agreement,
     rater_overlaps,
 )
-from ailr.prompt_versions import extraction_prompt_version, screening_prompt_version
+from ailr.prompt_versions import (
+    extraction_composed,
+    extraction_prompt_version,
+    screening_composed,
+    screening_prompt_version,
+)
 from ailr.reviewers import LLMReviewer
 from ailr.tasks.calibrate import CalibrationTask
 from ailr.tasks.extract import ExtractionTask
@@ -175,6 +181,11 @@ def screen(
         typer.echo(f"Screening with {client.provider_name} / {client.model_name}")
         if mock:
             typer.echo("(MOCK MODE — no API calls)")
+        else:
+            # As in the UI: mock decisions would otherwise count as screened and be skipped.
+            replaced = proj.db.clear_mock_ai_decisions(proj.project_id, stage="abstract")
+            if replaced:
+                typer.echo(f"Replaced {replaced} earlier mock decision(s).")
 
         def on_progress(idx, total, decision, exc):
             if exc is not None:
@@ -223,7 +234,7 @@ def extract(
         llm_cfg = resolve_stage_llm(proj.config.llm, proj.config.extraction.llm)
 
         if mock:
-            client = make_llm_client("mock", model="mock-extract")
+            client = schema_mock_client("mock-extract")
         else:
             client = make_llm_client(
                 provider=llm_cfg.provider,
@@ -239,6 +250,10 @@ def extract(
         typer.echo(f"Extracting with {client.provider_name} / {client.model_name}")
         if mock:
             typer.echo("(MOCK MODE — no API calls)")
+        else:
+            replaced = proj.db.clear_mock_ai_extractions(proj.project_id)
+            if replaced:
+                typer.echo(f"Replaced {replaced} earlier mock extraction row(s).")
 
         def on_progress(idx, total, source, exc):
             if exc is not None:
@@ -393,7 +408,7 @@ def calibrate(
         llm_cfg = resolve_stage_llm(proj.config.llm, stage_llm)
 
         if mock:
-            client = make_llm_client("mock", model="mock-calibrate")
+            client = schema_mock_client("mock-calibrate") if stage == "extraction" else make_llm_client("mock", model="mock-calibrate")
         else:
             client = make_llm_client(
                 provider=llm_cfg.provider,
@@ -753,11 +768,13 @@ def prompt_bump(
         except OSError as e:
             typer.echo(f"Error: cannot read prompt file {prompt_path}: {e}", err=True)
             raise typer.Exit(1)
-        version = proj.db.save_prompt_version(proj.project_id, type_, content, notes)
+        # The composed text is what runs match a version on; without it the next run cuts another.
+        composed = screening_composed(proj) if type_ == "screening" else extraction_composed(proj)
+        version = proj.db.save_prompt_version(proj.project_id, type_, content, notes, composed=composed)
         typer.echo(f"Saved {type_} prompt snapshot {version} from {prompt_rel}.")
         if notes:
             typer.echo(f"  notes: {notes}")
-    except Exception as e:
+    except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
 
