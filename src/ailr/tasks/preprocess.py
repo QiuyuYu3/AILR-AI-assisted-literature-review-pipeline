@@ -207,7 +207,10 @@ class PreprocessTask:
                 pdf_by_source[sid] = resolved
 
         # Manually-dropped data/pdfs/<id>.pdf, matched by integer filename. pdf_path wins.
+        linked = {p.resolve() for p in pdf_by_source.values()}
         for pdf_file in sorted(pdfs_dir.glob("*.pdf")) if pdfs_dir.exists() else []:
+            if pdf_file.resolve() in linked:
+                continue
             try:
                 sid = int(pdf_file.stem)
             except ValueError:

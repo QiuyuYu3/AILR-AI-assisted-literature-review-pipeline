@@ -71,6 +71,7 @@
 - `ailr screen`, `extract` and `preprocess` exited 0 when papers failed; they now exit 1 after the summary.
 - Prompt and protocol versions saved within the same second could be read in the wrong order (v9 after v10).
 - `ailr metrics` crashed on logged calls without latency or token figures.
+- PDF conversion listed a linked PDF in `data/pdfs` as unmatched when it was not named by paper ID.
 
 ---
 ## [0.36.0] – 2026-10-04

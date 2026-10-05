@@ -312,6 +312,19 @@ class TestPreprocess:
             assert json.loads(result.stdout)["failed"] == 1
         assert tmp_project.db.get_source(fine).markdown_path is not None
 
+    def test_a_linked_pdf_in_the_drop_folder_is_not_unmatched(self, tmp_project):
+        """Only a file that no paper claims, by its name or by a recorded link, is unmatched."""
+        sid = add_source(tmp_project, "Linked")
+        pdfs = tmp_project.root / "data" / "pdfs"
+        pdfs.mkdir(parents=True, exist_ok=True)
+        (pdfs / "Lee 2020 - Linked.pdf").write_bytes(b"%PDF-1.4")
+        (pdfs / "stray.pdf").write_bytes(b"%PDF-1.4")
+        tmp_project.db.update_pdf_path(sid, pdfs / "Lee 2020 - Linked.pdf")
+
+        out = json.loads(_run("preprocess", tmp_project.root, "--json").stdout)
+
+        assert (out["converted"], out["skipped_no_match"], out["unmatched_pdfs"]) == (1, 1, ["stray.pdf"])
+
     def test_list_missing_names_the_papers_without_markdown(self, tmp_project):
         done = add_source(tmp_project, "Has text", md_on_disk=True)
         missing = add_source(tmp_project, "No text")
