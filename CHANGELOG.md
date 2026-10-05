@@ -13,6 +13,7 @@
 - Schema sub-fields can no longer be named value, quote or confidence.
 - Assisted screening settles a paper only once the AI has voted too; new Awaiting AI filter and dashboard count.
 - Imported AI results must name their model; the methods text names the recorded model at each stage.
+- Requires Dash 3.1, dash-bootstrap-components 2.0 and dash-ag-grid 31.3.1.
 
 ### Fixed
 - PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.
@@ -59,6 +60,7 @@
 - An unreachable or silent Postgres server froze the UI indefinitely; connections now time out after 10 seconds.
 - `ailr show stats` counted empty abstracts as abstracts; it now also reports flagged duplicates.
 - `ailr show sources` with an offset past the end now gives the total instead of "(no sources)".
+- With Dash before 3.1, the screening and full-text status filters reset on every tab switch or reload.
 
 ---
 ## [0.36.0] – 2026-10-04
