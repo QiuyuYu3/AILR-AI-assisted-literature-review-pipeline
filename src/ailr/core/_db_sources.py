@@ -4,6 +4,7 @@ import json
 import sqlite3
 
 from ailr.core._db_facade import _row_to_source
+from ailr.core.pdf_paths import path_for_db
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError, DuplicateError
 from ailr.ingest.dedup import bare_doi
@@ -30,8 +31,8 @@ def _source_params(source: "Source") -> tuple:
         source.journal,
         source.source_database,
         source.identification_route or "database",
-        str(source.pdf_path) if source.pdf_path else None,
-        str(source.markdown_path) if source.markdown_path else None,
+        path_for_db(source.pdf_path) if source.pdf_path else None,
+        path_for_db(source.markdown_path) if source.markdown_path else None,
         json.dumps(source.metadata) if source.metadata else None,
     )
 

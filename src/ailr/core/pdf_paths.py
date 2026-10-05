@@ -15,10 +15,20 @@ def portable_path(path: Path, project_root: Path) -> Path:
         return Path(path)
 
 
+def path_for_db(path) -> str:
+    """Forward slashes, so a path written on Windows reads back on macOS and Linux too."""
+    return Path(path).as_posix()
+
+
+def stored_path(value: str) -> Path:
+    """A path from the database; macOS and Linux would read a Windows row's backslashes as part of a name."""
+    return Path(value.replace("\\", "/"))
+
+
 def resolve_pdf_path(pdf_path: str | None, project_root: Path) -> Path | None:
     if not pdf_path:
         return None
-    p = Path(pdf_path)
+    p = stored_path(str(pdf_path))
     full = p if p.is_absolute() else project_root / p
     return full if full.exists() else None
 
@@ -32,7 +42,7 @@ def resolve_markdown_path(
     Rows written before paths were stored relative hold an absolute path from whichever machine ran
     preprocess, so on a teammate's machine only the fallback resolves."""
     if markdown_path:
-        p = Path(markdown_path)
+        p = stored_path(str(markdown_path))
         full = p if p.is_absolute() else project_root / p
         if full.exists():
             return full

@@ -1,5 +1,4 @@
-"""The UI's background runners, run inline: job-key guard, status reporting, and what each run
-writes. Threads are replaced by a synchronous stand-in; real API calls by a non-mock client."""
+"""The UI's background runners, run inline: the job-key guard, status reporting, what each run writes."""
 
 from types import SimpleNamespace
 

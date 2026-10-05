@@ -50,6 +50,9 @@
 - Renaming a tag to an existing name now says so instead of silently doing nothing.
 - Imported criteria: IDs are trimmed, a null rule reads as empty, and type errors name the key.
 - Imported variables: blank, padded, repeated or underscore-prefixed names and non-object sub-fields are rejected.
+- PDF and markdown paths written on Windows now resolve on macOS and Linux; new paths are stored with forward slashes.
+- Zotero attachments given as Windows file:/// URLs were treated as missing.
+- Fresh installs pulled bibtexparser 2.x, which broke `import ailr`; it is now held below 2.
 
 ---
 ## [0.36.0] – 2026-10-04

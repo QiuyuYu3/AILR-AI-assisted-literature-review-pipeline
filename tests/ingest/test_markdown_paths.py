@@ -134,3 +134,46 @@ def test_the_reader_renders_markdown_recorded_on_another_machine(tmp_project):
 
     out = reader_body(tmp_project, sid, "markdown")
     assert out.children == "# Real content"
+
+
+class TestAcrossOperatingSystems:
+    """Teammates share one database from Windows, macOS and Linux."""
+
+    def _raw(self, db, sid):
+        return dict(db._conn.execute("SELECT pdf_path, markdown_path FROM sources WHERE id = ?", (sid,)).fetchone())
+
+    def test_paths_are_stored_with_forward_slashes(self, tmp_project):
+        db, root = tmp_project.db, tmp_project.root
+        sid = db.insert_source(Source(title="A", project_id=tmp_project.project_id,
+                                      pdf_path=Path("data") / "pdfs" / "a.pdf", markdown_path=Path("data") / "markdown" / "a.md"))
+        assert self._raw(db, sid) == {"pdf_path": "data/pdfs/a.pdf", "markdown_path": "data/markdown/a.md"}
+
+        db.update_pdf_path(sid, portable_path(root / "data" / "pdfs" / "files" / "1" / "p.pdf", root))
+        db.update_markdown_path(sid, portable_path(root / "data" / "markdown" / "1.md", root))
+        assert self._raw(db, sid) == {"pdf_path": "data/pdfs/files/1/p.pdf", "markdown_path": "data/markdown/1.md"}
+
+    def test_a_path_written_on_windows_resolves_on_any_system(self, tmp_project):
+        db, root = tmp_project.db, tmp_project.root
+        sid = db.insert_source(Source(title="A", project_id=tmp_project.project_id))
+        pdf = root / "data" / "pdfs" / "files" / "1" / "p.pdf"
+        pdf.parent.mkdir(parents=True)
+        pdf.write_bytes(b"%PDF-1.4")
+        md = _md(root, 99)
+        db._conn.execute("UPDATE sources SET pdf_path = ?, markdown_path = ? WHERE id = ?",
+                         (r"data\pdfs\files\1\p.pdf", r"data\markdown\99.md", sid))
+
+        src = db.get_source(sid)
+        assert resolve_pdf_path(src.pdf_path, root) == root / "data" / "pdfs" / "files" / "1" / "p.pdf"
+        assert resolve_markdown_path(src.markdown_path, root) == md
+
+    def test_markdown_import_reads_the_zotero_folder_from_a_windows_path(self, tmp_project, tmp_path):
+        from ailr.tasks.preprocess import import_markdown_from_folder
+
+        db = tmp_project.db
+        sid = db.insert_source(Source(title="A", project_id=tmp_project.project_id))
+        db._conn.execute("UPDATE sources SET pdf_path = ? WHERE id = ?", (r"..\Zotero\files\123\paper.pdf", sid))
+        folder = tmp_path / "converted"
+        folder.mkdir()
+        (folder / "123.md").write_text("# Converted", encoding="utf-8")
+
+        assert import_markdown_from_folder(tmp_project, folder)["matched"] == 1

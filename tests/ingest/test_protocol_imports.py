@@ -1,6 +1,4 @@
-"""Criteria and variable definitions drafted by an external AI and pasted into Protocol. Anything
-these parsers let through becomes a criterion the screening prompt cites by ID, or a variable the
-extraction asks for, so a quiet change on the way in changes what the review measures."""
+"""Criteria and variable definitions drafted by an external AI and pasted into Protocol."""
 
 import json
 

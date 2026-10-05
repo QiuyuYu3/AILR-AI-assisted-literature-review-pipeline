@@ -3,6 +3,7 @@
 import sqlite3
 from pathlib import Path
 
+from ailr.core.pdf_paths import path_for_db
 from ailr.exceptions import DatabaseError
 
 # How a stashed import duplicate from the 'other' identification arm reads in its full_record_json.
@@ -359,7 +360,7 @@ class ScreeningAuxMixin:
         try:
             self._conn.execute(
                 "UPDATE sources SET markdown_path = ? WHERE id = ?",
-                (str(markdown_path), source_id),
+                (path_for_db(markdown_path), source_id),
             )
             self._conn.commit()
         except sqlite3.Error as e:
@@ -369,7 +370,7 @@ class ScreeningAuxMixin:
         try:
             self._conn.execute(
                 "UPDATE sources SET pdf_path = ? WHERE id = ?",
-                (str(pdf_path), source_id),
+                (path_for_db(pdf_path), source_id),
             )
             self._conn.commit()
         except sqlite3.Error as e:

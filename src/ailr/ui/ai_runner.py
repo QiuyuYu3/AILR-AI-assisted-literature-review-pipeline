@@ -284,8 +284,7 @@ current_extraction_composed = extraction_composed
 def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None, force: bool = False) -> None:
     try:
         client = _make_client(project, "screen", mock)
-        # A real run supersedes earlier mock results: clear them first so they don't block re-screening.
-        # Built the client first: a run that cannot start must not cost the mock data.
+        # After the client exists, so a run that cannot start keeps the mock results it would replace.
         replaced = project.db.clear_mock_ai_decisions(project.project_id, stage="abstract") if not mock else 0
         reviewer = LLMReviewer(client, prompt_version=screening_prompt_version(project))
         summary = ScreeningTask(project, reviewer).run(
@@ -417,7 +416,7 @@ def _run_single_extraction(key: str, project: Any, mock: bool, source_id: int) -
 def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> None:
     try:
         client = _make_client(project, "extract", mock)
-        # A real run supersedes earlier mock results: clear them first so they don't block re-extraction.
+        # After the client exists, so a run that cannot start keeps the mock results it would replace.
         replaced = project.db.clear_mock_ai_extractions(project.project_id) if not mock else 0
         reviewer = LLMReviewer(client, prompt_version=extraction_prompt_version(project))
         summary = ExtractionTask(project, reviewer).run(

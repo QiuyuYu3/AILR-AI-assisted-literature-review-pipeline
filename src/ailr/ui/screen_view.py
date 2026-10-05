@@ -985,8 +985,7 @@ def register_callbacks(app: Any) -> None:
             page = 0
         return {"page": page}
 
-    # Separate from _page_nav so a reviewer change on another tab still resets the page: the tab's
-    # own inputs are absent then, and Dash will not run a callback that names them.
+    # Apart from _page_nav, whose tab-local inputs would stop Dash running it from another tab.
     @app.callback(
         Output("screen-page", "data", allow_duplicate=True),
         Input("shared-reviewer", "value"),

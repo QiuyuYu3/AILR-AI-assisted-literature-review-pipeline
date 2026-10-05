@@ -1,5 +1,4 @@
-"""CLI commands that write project data: each test checks what landed in the DB or on disk, not
-just the exit code. LLM calls are faked at the client boundary."""
+"""CLI commands that write project data, checked by what lands in the database or on disk."""
 
 import json
 
@@ -289,8 +288,7 @@ class TestExport:
 
 class TestPromptBump:
     def test_the_bumped_version_is_the_one_the_next_run_uses(self, tmp_project):
-        """A snapshot with no composed text never matches, so the next run cut v(n+1) and the
-        notes ended up on a version no decision references."""
+        """Its notes belong on the version that runs then cite, so the next run must reuse it."""
         result = _run("prompt-bump", tmp_project.root, "screening", "--notes", "tightened I2")
 
         assert result.exit_code == 0

@@ -1,5 +1,4 @@
-"""UI callbacks that write project data and carry logic of their own (the rest hand straight off
-to helpers tested elsewhere). Each is called unwrapped, as a click would run it."""
+"""UI callbacks that write project data and carry logic of their own, called as a click runs them."""
 
 import base64
 import json
@@ -33,8 +32,7 @@ def _press(view, trigger, values):
 
 
 class TestProtocolVersions:
-    """Saved versions after the first are reported as protocol amendments, in the methods text
-    and on the Registration page, so a save that did not happen must leave none."""
+    """Versions after the first are reported as protocol amendments, so only a real save may add one."""
 
     _ROW = {"name": "Population", "pass_if": "infants", "fail_if": "adults"}
 

@@ -135,6 +135,8 @@ def pdf_attachment_from_record(rec: dict[str, Any]) -> str | None:
 def _clean_attachment_path(p: str) -> str:
     if p.lower().startswith("file://"):
         p = p[len("file://"):]
+        if re.match(r"/[A-Za-z]:[/\\]", p):  # file:///C:/... names a Windows drive, not a folder "C:" under root
+            p = p[1:]
     if "%" in p:  # only decode genuinely percent-encoded paths
         p = unquote(p)
     return p

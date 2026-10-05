@@ -376,8 +376,7 @@ class TestRepeatedRecords:
         assert tmp_project.db.get_latest_ai_decision(sid, "abstract") is None
 
     def test_extraction_writes_the_paper_once_from_the_last_record(self, tmp_project):
-        """Each write archives the one before, so writing both would leave a history entry for a
-        version that never took effect."""
+        """Each write archives the one before, so a second write would add a version that never applied."""
         db = tmp_project.db
         sid = add_source(tmp_project)
 

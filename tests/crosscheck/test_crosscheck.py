@@ -220,8 +220,7 @@ def test_a_finding_goes_stale_when_the_row_it_judged_is_re_extracted(db, tmp_pro
 
 
 def test_a_not_extracted_finding_goes_stale_once_the_field_has_a_value(db, tmp_project):
-    """No row existed to point at, so the finding carries no row id: any live row for the field
-    retires it. A row in another field does not."""
+    """With no row id to compare, any live row for the field retires the finding; other fields do not."""
     sid, _ = _seed_extraction(db, tmp_project.project_id)
     _store(db, sid, [_finding(sid, None, field="sample_size", code=EMPTY_REQUIRED)])
     assert db.get_cross_checks(sid)[0]["stale"] is False

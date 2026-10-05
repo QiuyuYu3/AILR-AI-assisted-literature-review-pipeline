@@ -1,7 +1,4 @@
-"""Callback wiring across tabs. Each tab's components exist only while that tab is shown, so a
-callback that a global component can fire while the tab is away must not name the tab's
-components, unless every output is the tab's: Dash then skips the callback, rather than throwing
-"A nonexistent object was used in an Input/Output"."""
+"""A callback a global component can fire must not name an absent tab's components, or Dash throws."""
 
 from ailr.ui.app import build_app
 from tests.helpers import walk

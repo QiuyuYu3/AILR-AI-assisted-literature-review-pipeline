@@ -338,8 +338,7 @@ def test_the_queue_filter_lists_flagged_papers_and_drops_them_once_re_screened(t
 
 
 def test_the_queue_filter_counts_only_findings_on_the_ais_decision(tmp_project):
-    """The card badge, the findings modal and the dashboard read AI findings only, so a paper
-    flagged on a human's decision alone would be listed with nothing to show for it."""
+    """The badge, findings modal and dashboard read AI findings only; the filter has to agree."""
     db = tmp_project.db
     sid = _seed_source(tmp_project)
     _decide(tmp_project, sid, quotes=["participants completed an fMRI scan"],

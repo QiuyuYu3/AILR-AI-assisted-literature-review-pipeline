@@ -119,8 +119,7 @@ def register(app, prefix: str, kind: str, to_text: Callable[[str], str],
 
 
 def register_save(app, prefix: str, kind: str, feedback_id: str) -> None:
-    """Refresh the version selects after the editor's Save reports back. The editor records the
-    version itself, and only for a save that went through: later versions read as protocol amendments."""
+    """Refresh the version selects once the editor's own Save, which records the version, reports back."""
     @app.callback(
         Output(f"{prefix}-ver-restore-sel", "options"),
         Output(f"{prefix}-ver-a", "options"),

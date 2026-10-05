@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
 from functools import lru_cache
-from pathlib import Path
 
 from sqlalchemy import Integer, create_engine, event, text
 from sqlalchemy.exc import IntegrityError as _SAIntegrityError
@@ -17,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as _SAPoolTimeout
 
 from ailr.core._db_schema import metadata
+from ailr.core.pdf_paths import stored_path
 from ailr.core.source import Source
 
 # ── Connection facade ───────────────────────────────────────────────────────
@@ -428,8 +428,8 @@ def _row_to_source(row) -> Source:
         journal=row["journal"],
         source_database=row["source_database"],
         identification_route=_opt_col(row, "identification_route") or "database",
-        pdf_path=Path(row["pdf_path"]) if row["pdf_path"] else None,
-        markdown_path=Path(row["markdown_path"]) if row["markdown_path"] else None,
+        pdf_path=stored_path(row["pdf_path"]) if row["pdf_path"] else None,
+        markdown_path=stored_path(row["markdown_path"]) if row["markdown_path"] else None,
         full_text_not_retrieved=bool(_opt_col(row, "full_text_not_retrieved") or 0),
         study_group_id=_opt_col(row, "study_group_id"),
         metadata=json.loads(metadata_raw) if metadata_raw else {},
