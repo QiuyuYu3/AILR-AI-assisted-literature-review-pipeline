@@ -400,6 +400,48 @@ class TestMethodsNumbers:
         assert "A further 2 records were flagged by hand as duplicates" in build_methods_skeleton(tmp_project)
 
 
+class TestMethodsCountsOfOne:
+    """A count of one reads in the singular, verb included, wherever the methods text cites one."""
+
+    def _text(self, project, **counts):
+        merged = prisma_counts(project)
+        merged.update(counts)
+        return build_methods_skeleton(project, counts=merged)
+
+    def test_assisted_screening_ingestion_and_extraction(self, tmp_project):
+        text = self._text(tmp_project, duplicates_flagged=1, ai_abstract_screened=1, abstract_screened=1,
+                          reports_included=1, studies_included=1, studies_extracted=1)
+        assert ("A further 1 record was flagged by hand as a duplicate during screening and is reported "
+                "among the duplicates removed.") in text
+        assert "1 record was AI-screened (" in text and "; 1 was human-screened." in text
+        assert "Extraction was completed for 1 of the 1 included study." in text
+
+    def test_one_report_of_two_studies(self, tmp_project):
+        text = self._text(tmp_project, reports_included=1, studies_included=2, studies_extracted=0)
+        assert "Extraction was completed for 0 of the 1 included report." in text
+
+    def test_independent_screening(self, tmp_project):
+        save_stage_workflow(tmp_project.root, "screening", "independent")
+        text = self._text(Project(tmp_project.root), abstract_screened=1, ai_abstract_screened=1)
+        assert "1 record was screened by human reviewers." in text
+        assert "1 AI-screened record (" in text
+
+    def test_agreement_on_one_record(self, tmp_project):
+        sid = _add_source(tmp_project, "Only")
+        vote(tmp_project.db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(tmp_project.db, sid, "include", "amber", stage="abstract")
+        assert "on the 1 record both reviewers judged at title/abstract screening" in build_methods_skeleton(tmp_project)
+
+    def test_one_row_without_a_recorded_model(self, tmp_project):
+        sid = _add_source(tmp_project, "Recorded")
+        tmp_project.db.insert_screening_decision(ScreeningDecision(
+            decision="include", reasoning="t", reviewer_type="ai", reviewer_id="gpt",
+            source_id=sid, stage="abstract", llm_params={"model": "claude-a", "temperature": 0.0}))
+        vote(tmp_project.db, _add_source(tmp_project, "Unrecorded"), "include", "gpt", stage="abstract", reviewer_type="ai")
+        text = build_methods_skeleton(tmp_project)
+        assert "claude-a (temperature 0.0, 1 row) and a model not recorded in the project (1 row)" in text
+
+
 # 12 AI/human pairs that read differently binary and three-way (worked by hand in test_calibration.py):
 # binary κ = 23/35, prevalence-adjusted κ = 2/3, agreement 10/12; three-way κ = 15/31.
 _AGREEMENT_TABLE = (
@@ -473,7 +515,7 @@ class TestMethodsDesign:
         a = {"model": "claude-a", "temperature": 0.0}
         self._ai_votes(tmp_project, a, a, a, {"model": "claude-b", "temperature": None})
         text = build_methods_skeleton(tmp_project)
-        assert "claude-a (temperature 0.0, 3 rows) and claude-b (temperature not recorded, 1 rows)" in text
+        assert "claude-a (temperature 0.0, 3 rows) and claude-b (temperature not recorded, 1 row)" in text
 
     def test_full_text_rows_are_not_title_abstract_settings(self, tmp_project):
         self._ai_votes(tmp_project, {"model": "claude-abstract", "temperature": 0.0})
@@ -533,8 +575,10 @@ class TestMethodsDesign:
         assert "The protocol was not amended after the review began." in build_methods_skeleton(tmp_project)
         db.save_artifact_version(pid, "criteria", '{"criteria": [{"id": "c1"}, {"id": "c2"}]}', "added c2")
         text = build_methods_skeleton(tmp_project)
-        assert "1 amendment(s) were made to the protocol after its first version." in text
+        assert "1 amendment was made to the protocol after its first version." in text
         assert "| Eligibility criteria | v2 |" in text and "| added c2 |" in text
+        db.save_artifact_version(pid, "criteria", '{"criteria": [{"id": "c1"}]}', "dropped c2")
+        assert "2 amendments were made to the protocol after its first version." in build_methods_skeleton(tmp_project)
 
     def test_llm_calls_and_tokens_are_totalled(self, tmp_project):
         text = build_methods_skeleton(tmp_project)

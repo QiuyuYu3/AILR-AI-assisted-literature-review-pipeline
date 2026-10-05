@@ -66,6 +66,7 @@
 - `ailr show stats` counted empty abstracts as abstracts; it now also reports flagged duplicates.
 - `ailr show sources` with an offset past the end now gives the total instead of "(no sources)".
 - With Dash before 3.1, the screening and full-text status filters reset on every tab switch or reload.
+- The methods text wrote counts of one in the plural ("1 records were screened").
 
 ---
 ## [0.36.0] – 2026-10-04

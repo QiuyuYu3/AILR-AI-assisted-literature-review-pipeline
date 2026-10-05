@@ -39,15 +39,19 @@ def _model_and_decoding(cfg, db, pid: int, stage: str, fallback_model: str) -> s
         if c.get("seed") is not None:
             bits.append(f"seed {c['seed']}")
         if len(configs) > 1 or unrecorded:
-            bits.append(f"{c['n']} rows")
+            bits.append(_plural(c["n"], "row"))
         parts.append(f"{c['model'] or fallback_model} ({', '.join(bits)})")
     if unrecorded:
-        parts.append(f"a model not recorded in the project ({unrecorded} rows)")
+        parts.append(f"a model not recorded in the project ({_plural(unrecorded, 'row')})")
     return " and ".join(parts)
 
 
-def _plural(n: int, noun: str) -> str:
-    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+def _plural(n: int, noun: str, plural: str | None = None) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {plural or noun + 's'}"
+
+
+def _was(n: int) -> str:
+    return "was" if n == 1 else "were"
 
 
 def _pilot_sentence(project: Project) -> str:
@@ -100,7 +104,7 @@ def _registration_lines(cfg, db, pid: int) -> list[str]:
     lines.append("")
     if amendments:
         lines.append(
-            f"{len(amendments)} amendment(s) were made to the protocol after its first version. "
+            f"{_plural(len(amendments), 'amendment')} {_was(len(amendments))} made to the protocol after its first version. "
             f"Each revision was recorded when it was saved:"
         )
         lines.append("")
@@ -137,7 +141,7 @@ def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
     agree_str = "undefined" if agree != agree else f"{agree:.1%}"
     lines = [
         "",
-        f"Agreement between {a} and {b} on the {len(pairs)} records both reviewers judged at "
+        f"Agreement between {a} and {b} on the {_plural(len(pairs), 'record')} both reviewers judged at "
         f"{label} was Cohen's κ = {_fmt(kappa)} (95% CI {_fmt_ci(ci)}, Fleiss-Cohen-Everitt "
         f"asymptotic variance; prevalence-adjusted κ = {_fmt(pb)}; percent "
         f"agreement = {agree_str}), computed on the votes as first cast, before conflicts were "
@@ -194,10 +198,12 @@ def build_methods_skeleton(
         f"Duplicates were removed at import by exact DOI match, then by identical normalized titles unless "
         f"DOI, publication year or first author conflicted."
     )
-    if counts["duplicates_flagged"]:
+    flagged = counts["duplicates_flagged"]
+    if flagged:
         ingestion += (
-            f" A further {counts['duplicates_flagged']} records were flagged by hand as duplicates during "
-            f"screening and are reported among the duplicates removed."
+            f" A further {_plural(flagged, 'record')} {_was(flagged)} flagged by hand as "
+            f"{'a duplicate' if flagged == 1 else 'duplicates'} during screening and "
+            f"{'is' if flagged == 1 else 'are'} reported among the duplicates removed."
         )
     lines.append(ingestion)
     strategies = db.list_search_strategies(pid)
@@ -225,13 +231,14 @@ def build_methods_skeleton(
         lines.append(
             "Titles and abstracts were screened independently by two human reviewers (Cochrane dual-blind design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score and "
-            f"supporting quotes from the abstract. {counts['abstract_screened']} records were screened by human reviewers."
+            f"supporting quotes from the abstract. {_plural(counts['abstract_screened'], 'record')} "
+            f"{_was(counts['abstract_screened'])} screened by human reviewers."
         )
         if counts["ai_abstract_screened"] > 0:
             lines.append("")
             lines.append(
                 f"{screen_model} was additionally run as a reference reviewer (not counted as one of the two required reviewers); "
-                f"{counts['ai_abstract_screened']} AI-screened records "
+                f"{_plural(counts['ai_abstract_screened'], 'AI-screened record')} "
                 f"({counts['ai_abstract_included']} include / {counts['ai_abstract_excluded']} exclude / {counts['ai_abstract_uncertain']} uncertain)."
             )
     else:
@@ -239,9 +246,10 @@ def build_methods_skeleton(
             f"Titles and abstracts were screened by {_model_and_decoding(cfg, db, pid, 'abstract', screen_model)} "
             f"and one human reviewer, both blinded to each other (PRISMA-trAIce assisted-screening design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score "
-            f"and supporting quotes from the abstract. {counts['ai_abstract_screened']} records were AI-screened "
+            f"and supporting quotes from the abstract. {_plural(counts['ai_abstract_screened'], 'record')} "
+            f"{_was(counts['ai_abstract_screened'])} AI-screened "
             f"({counts['ai_abstract_included']} include / {counts['ai_abstract_excluded']} exclude / {counts['ai_abstract_uncertain']} uncertain); "
-            f"{counts['abstract_screened']} were human-screened."
+            f"{counts['abstract_screened']} {_was(counts['abstract_screened'])} human-screened."
         )
     lines.append("")
     if cfg.screening_workflow("full_text") == "independent":
@@ -269,11 +277,11 @@ def build_methods_skeleton(
         + (", with references sections stripped." if cfg.preprocess.strip_references else ".")
     )
     # Completed means the extraction has its final record (see prisma._extraction_completed).
-    included_noun = "reports" if counts["reports_included"] != counts["studies_included"] else "studies"
-    completed = (
-        f"Extraction was completed for {counts['studies_extracted']} of the "
-        f"{counts['reports_included']} included {included_noun}."
-    )
+    if counts["reports_included"] != counts["studies_included"]:
+        included = _plural(counts["reports_included"], "included report")
+    else:
+        included = _plural(counts["reports_included"], "included study", "included studies")
+    completed = f"Extraction was completed for {counts['studies_extracted']} of the {included}."
     if cfg.extraction.workflow == "verify":
         lines.append(
             f"Structured extraction was performed by {extract_desc} using the project's schema (see `schema.yaml`), "
