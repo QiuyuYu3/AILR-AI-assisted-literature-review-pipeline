@@ -627,10 +627,11 @@ class ScreeningMixin:
             params += [project_id, test_stage]
         elif status == "crosscheck_flagged":
             # Findings whose decision has since been re-screened judge a record that is no longer
-            # live, so they are left out here exactly as they are in cross_check_counts.
+            # live, so they are left out here exactly as they are in cross_check_counts. AI only,
+            # as the card badge, the findings modal and the dashboard count.
             where.append(
                 "EXISTS (SELECT 1 FROM cross_checks c WHERE c.source_id = s.id AND c.stage = ? "
-                "AND c.verdict != 'agree' AND NOT EXISTS ("
+                "AND c.target_type = 'ai' AND c.verdict != 'agree' AND NOT EXISTS ("
                 "  SELECT 1 FROM screening_decisions d WHERE d.source_id = c.source_id "
                 "  AND d.stage = c.stage AND d.reviewer_type = c.target_type "
                 "  AND d.reviewer_id = c.target_id AND d.id > c.target_row_id))"

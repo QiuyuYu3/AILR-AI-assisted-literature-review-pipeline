@@ -39,6 +39,11 @@
 - `ailr db-migrate` now refuses a target database that already holds data.
 - A real AI run that failed to start had already deleted the mock results it was meant to replace.
 - Clearing mock screening results also deleted the full-text verdicts of mock extractions.
+- AI result imports skip records whose source_id and DOI point to different papers, and list them.
+- A paper repeated in one AI result file is imported once, from its last record, and listed.
+- AI result imports now match DOIs written as links.
+- A cross-check flag for a required field left empty now clears once the field gets a value.
+- The abstract queue's cross-check filter now counts AI findings only, matching the badges and dashboard.
 
 ---
 ## [0.36.0] – 2026-10-04

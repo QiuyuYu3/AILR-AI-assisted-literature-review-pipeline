@@ -186,6 +186,6 @@ If you must run the model elsewhere (cost, a batch job, a specific model), you t
    [paste the paper markdown]
    ```
 
-3. **Import** the results on the extraction stage. Check that the field names match your schema exactly; mismatched keys are the usual reason a value does not show up.
+3. **Import** the results on the extraction stage. Check that the field names match your schema exactly; mismatched keys are the usual reason a value does not show up. A record whose `source_id` and `doi` point to different papers is skipped and listed in the import message; if a paper appears more than once in the file, only its last record is imported.
 
 The imported values flow into the verify queue exactly like in-app AI extraction. Prefer the previous recipe when you can: inside the app the structure is enforced, but on import it is your responsibility.

@@ -24,6 +24,7 @@ from ailr.ui._cards import (
 )
 from ailr.ui._common import (
     import_llm_params,
+    import_record_notes,
     prompt_view_toggle,
     render_prompt_body,
     triggered_click_id,
@@ -780,7 +781,9 @@ def register_callbacks(app: Any) -> None:
 
         s = import_ai_screening_results(get_project(), records, stage="abstract", llm_params=llm_params)
         msg = f"Imported {s.imported}/{s.total_records}; {len(s.unmatched)} unmatched, {len(s.errors) + len(errors)} error(s)."
-        return dbc.Alert(msg, color="success", className="py-1 mb-0"), {"ts": time.time()}
+        msg += import_record_notes(s)
+        color = "warning" if s.mismatched else "success"
+        return dbc.Alert(msg, color=color, className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("screen-import-template-dl", "data"),

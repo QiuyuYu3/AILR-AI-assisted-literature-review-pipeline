@@ -36,7 +36,7 @@ If κ is low, read the disagreements rather than just lowering the bar: usually 
 
 With a calibrated prompt, use the **AI screening** tab to run screening across the un-screened sources. Use **Mock** if you just want to populate the UI with no API call (e.g. to rehearse the workflow before paying for tokens). The run makes several AI calls in parallel (4 by default; tune with `screening.workers` in `lit_review.yaml`; see [per-stage models](../concepts.md#per-stage-models)).
 
-Importing results you ran elsewhere asks for the **model** that produced them (temperature is optional) and records it on every decision, so the methods text names the model that actually screened rather than the one in the current configuration.
+Importing results you ran elsewhere asks for the **model** that produced them (temperature is optional) and records it on every decision, so the methods text names the model that actually screened rather than the one in the current configuration. A record whose `source_id` and `doi` point to different papers is skipped and listed in the import message; if a paper appears more than once in the file, only its last record is imported.
 
 CLI equivalent:
 

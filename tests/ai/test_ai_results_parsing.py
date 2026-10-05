@@ -7,6 +7,8 @@
 - extraction value survives the DB JSON round-trip
 """
 
+import json
+
 import pytest
 
 from ailr.core.source import Source
@@ -15,7 +17,8 @@ from ailr.extraction import FieldSpec
 from ailr.ingest.results_import import import_ai_results, import_ai_screening_results
 from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult, ScreeningDecision, _unwrap_value_quote
 from ailr.tasks.extract import _derive_ft_decision
-from tests.helpers import add_source, count_decisions
+from ailr.ui import extract_view, screen_view
+from tests.helpers import add_source, callbacks_of, component_text, count_decisions
 
 _LIST_FIELD = FieldSpec(name="study_design", type="list", item_type="string")
 _INT_FIELD = FieldSpec(name="n_dyads", type="integer")
@@ -282,6 +285,150 @@ class TestImportAiExtraction:
         }])
         assert summary.flags_written == 0
         assert db.get_latest_ai_decision(sid, stage="full_text") is None
+
+
+_IMPORTERS = [
+    pytest.param(import_ai_screening_results, {"decision": "include"}, id="screening"),
+    pytest.param(import_ai_results, {"extraction": {"design": "x"}}, id="extraction"),
+]
+
+
+def _has_ai_data(db, sid) -> bool:
+    return db.get_latest_ai_decision(sid, "abstract") is not None or bool(db.list_extractions(sid, extractor_type="ai"))
+
+
+@pytest.mark.parametrize(("importer", "payload"), _IMPORTERS)
+class TestRecordMatching:
+    def test_an_id_and_a_doi_naming_different_papers_import_nothing(self, tmp_project, importer, payload):
+        a = add_source(tmp_project, "A", doi="10.1/a")
+        b = add_source(tmp_project, "B", doi="10.1/b")
+
+        s = importer(tmp_project, [{"source_id": a, "doi": "10.1/b", **payload}])
+
+        assert s.imported == 0 and s.mismatched == [{"source_id": a, "doi": "10.1/b"}]
+        assert not _has_ai_data(tmp_project.db, a) and not _has_ai_data(tmp_project.db, b)
+
+    def test_a_doi_of_another_paper_conflicts_even_when_the_id_has_none(self, tmp_project, importer, payload):
+        a = add_source(tmp_project, "A")
+        b = add_source(tmp_project, "B", doi="10.1/b")
+
+        s = importer(tmp_project, [{"source_id": a, "doi": "10.1/b", **payload}])
+
+        assert s.imported == 0 and len(s.mismatched) == 1
+        assert not _has_ai_data(tmp_project.db, a) and not _has_ai_data(tmp_project.db, b)
+
+    def test_a_doi_unlike_the_papers_own_is_a_mismatch(self, tmp_project, importer, payload):
+        a = add_source(tmp_project, "A", doi="10.1/a")
+
+        s = importer(tmp_project, [{"source_id": a, "doi": "10.1/elsewhere", **payload}])
+
+        assert s.imported == 0 and len(s.mismatched) == 1
+        assert not _has_ai_data(tmp_project.db, a)
+
+    def test_a_doi_nobody_in_the_project_has_is_no_conflict_for_a_paper_without_one(self, tmp_project, importer, payload):
+        a = add_source(tmp_project, "A")
+
+        s = importer(tmp_project, [{"source_id": a, "doi": "10.1/new", **payload}])
+
+        assert (s.imported, s.mismatched) == (1, [])
+        assert _has_ai_data(tmp_project.db, a)
+
+    def test_the_same_doi_written_as_a_link_agrees(self, tmp_project, importer, payload):
+        a = add_source(tmp_project, "A", doi="10.1/AbC")
+
+        s = importer(tmp_project, [{"source_id": a, "doi": "https://doi.org/10.1/abc", **payload}])
+
+        assert (s.imported, s.mismatched) == (1, [])
+
+    def test_a_doi_link_alone_finds_the_paper(self, tmp_project, importer, payload):
+        a = add_source(tmp_project, "A", doi="10.1/a")
+
+        s = importer(tmp_project, [{"doi": "https://doi.org/10.1/A", **payload}])
+
+        assert (s.imported, s.unmatched) == (1, [])
+        assert _has_ai_data(tmp_project.db, a)
+
+
+class TestRepeatedRecords:
+    def test_screening_counts_the_paper_once_and_takes_the_last_record(self, tmp_project):
+        db = tmp_project.db
+        sid = add_source(tmp_project, doi="10.1/a")
+
+        s = import_ai_screening_results(tmp_project, [
+            {"source_id": sid, "decision": "include"},
+            {"doi": "10.1/A", "decision": "uncertain"},
+            {"source_id": sid, "decision": "exclude"},
+        ])
+
+        assert (s.imported, s.duplicates) == (1, [sid])
+        assert db.get_latest_ai_decision(sid, "abstract")["decision"] == "exclude"
+        assert count_decisions(db, tmp_project.project_id, reviewer_type="ai") == 1
+
+    def test_a_broken_last_record_is_not_covered_by_an_earlier_one(self, tmp_project):
+        sid = add_source(tmp_project)
+
+        s = import_ai_screening_results(tmp_project, [
+            {"source_id": sid, "decision": "include"},
+            {"source_id": sid, "decision": "maybe"},
+        ])
+
+        assert (s.imported, len(s.errors), s.duplicates) == (0, 1, [sid])
+        assert tmp_project.db.get_latest_ai_decision(sid, "abstract") is None
+
+    def test_extraction_writes_the_paper_once_from_the_last_record(self, tmp_project):
+        """Each write archives the one before, so writing both would leave a history entry for a
+        version that never took effect."""
+        db = tmp_project.db
+        sid = add_source(tmp_project)
+
+        s = import_ai_results(tmp_project, [
+            {"source_id": sid, "extraction": {"design": "first"}, "flag_check": {"decision": "include"}},
+            {"source_id": sid, "extraction": {"design": "second"}, "flag_check": {"decision": "exclude"}},
+        ])
+
+        assert (s.imported, s.duplicates, s.fields_written, s.flags_written) == (1, [sid], 1, 1)
+        assert [r["value"] for r in db.list_extractions(sid, extractor_type="ai")] == ["second"]
+        assert db.list_superseded_ai_runs(sid) == []
+        assert db.get_latest_ai_decision(sid, "full_text")["decision"] == "exclude"
+
+
+class TestImportMessages:
+    def _file(self, tmp_path, records):
+        path = tmp_path / "results.json"
+        path.write_text(json.dumps(records), encoding="utf-8")
+        return str(path)
+
+    def test_screening_import_names_mismatches_and_repeats(self, tmp_project, tmp_path):
+        a = add_source(tmp_project, "A", doi="10.1/a")
+        b = add_source(tmp_project, "B", doi="10.1/b")
+        path = self._file(tmp_path, [
+            {"source_id": a, "doi": "10.1/b", "decision": "include"},
+            {"source_id": b, "decision": "include"},
+            {"source_id": b, "decision": "exclude"},
+        ])
+
+        alert, _ = callbacks_of(screen_view)["_import_ai_screening"](1, path, "model-a", None)
+
+        text = component_text(alert)
+        assert alert.color == "warning"
+        assert f"source_id and DOI name different papers: #{a}" in text
+        assert f"named more than once, the last record was imported: #{b}" in text
+
+    def test_extraction_import_names_mismatches_and_repeats(self, tmp_project, tmp_path):
+        a = add_source(tmp_project, "A", doi="10.1/a")
+        b = add_source(tmp_project, "B", doi="10.1/b")
+        path = self._file(tmp_path, [
+            {"source_id": a, "doi": "10.1/b", "extraction": {"design": "x"}},
+            {"source_id": b, "extraction": {"design": "x"}, "flag_check": {"decision": "include"}},
+            {"source_id": b, "extraction": {"design": "y"}, "flag_check": {"decision": "include"}},
+        ])
+
+        alert, _ = callbacks_of(extract_view)["_import_ai_results"](1, path, "model-a", None)
+
+        text = component_text(alert)
+        assert alert.color == "warning"
+        assert f"source_id and DOI name different papers: #{a}" in text
+        assert f"named more than once, the last record was imported: #{b}" in text
 
 
 class TestExtractionValueRoundTrip:

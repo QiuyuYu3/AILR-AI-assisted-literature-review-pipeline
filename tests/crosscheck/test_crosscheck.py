@@ -219,6 +219,42 @@ def test_a_finding_goes_stale_when_the_row_it_judged_is_re_extracted(db, tmp_pro
     assert db.cross_checks_by_field(sid) == {}  # stale findings are not shown as badges
 
 
+def test_a_not_extracted_finding_goes_stale_once_the_field_has_a_value(db, tmp_project):
+    """No row existed to point at, so the finding carries no row id: any live row for the field
+    retires it. A row in another field does not."""
+    sid, _ = _seed_extraction(db, tmp_project.project_id)
+    _store(db, sid, [_finding(sid, None, field="sample_size", code=EMPTY_REQUIRED)])
+    assert db.get_cross_checks(sid)[0]["stale"] is False
+    assert db.cross_check_counts([sid]) == {sid: 1}
+
+    db.insert_extraction(ExtractionResult(
+        extractor_type="ai", extractor_id=AI_ID, field_name="sample_size",
+        value=48, source_quote="Forty-eight dyads", source_id=sid,
+    ))
+    assert db.get_cross_checks(sid)[0]["stale"] is True
+    assert db.cross_check_counts([sid]) == {}
+    assert db.cross_checks_by_field(sid) == {}
+
+
+def test_a_not_extracted_finding_on_a_human_waits_for_that_human(db, tmp_project):
+    sid, _ = _seed_extraction(db, tmp_project.project_id, "human", "amber")
+    _store(db, sid, [_finding(sid, None, field="sample_size", code=EMPTY_REQUIRED,
+                              target_type="human", target_id="amber")],
+           target_type="human", target_id="amber")
+
+    db.insert_extraction(ExtractionResult(
+        extractor_type="human", extractor_id="bo", field_name="sample_size", value=48, source_id=sid,
+    ))
+    assert db.get_cross_checks(sid)[0]["stale"] is False
+    assert db.cross_check_counts([sid], target_type="human") == {sid: 1}
+
+    db.insert_extraction(ExtractionResult(
+        extractor_type="human", extractor_id="amber", field_name="sample_size", value=48, source_id=sid,
+    ))
+    assert db.get_cross_checks(sid)[0]["stale"] is True
+    assert db.cross_check_counts([sid], target_type="human") == {}
+
+
 def test_cross_check_counts_ignores_agreeing_rows(db, tmp_project):
     sid, row_id = _seed_extraction(db, tmp_project.project_id)
     _store(db, sid, [

@@ -105,11 +105,12 @@ class CrossCheckMixin:
             latest_row = d.pop("latest_row_id", None)
             latest_decision = d.pop("latest_decision_id", None)
             latest = latest_decision if d.get("stage") in SCREENING_STAGES else latest_row
+            judged = d.get("target_row_id")
             d["stale"] = bool(
                 d.get("stage") in ("extraction", *SCREENING_STAGES)
                 and latest is not None
-                and d.get("target_row_id") is not None
-                and latest > d["target_row_id"]
+                # No row id: the field had no row when checked, so any live row now supersedes it.
+                and (latest > judged if judged is not None else d.get("stage") == "extraction")
             )
             if d.get("llm_params"):
                 try:
@@ -181,7 +182,7 @@ class CrossCheckMixin:
                     AND e.field_name = c.field_name
                     AND e.extractor_type = c.target_type
                     AND (c.target_type = 'ai' OR e.extractor_id = c.target_id)
-                    AND e.id > c.target_row_id
+                    AND (c.target_row_id IS NULL OR e.id > c.target_row_id)
             """
         )
         rows = self._conn.execute(

@@ -16,7 +16,7 @@ from ailr.core.source import Source
 from ailr.extraction import FieldSpec, compose_schema
 from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult
 from ailr.ui import ai_runner
-from ailr.ui._common import format_authors, import_llm_params
+from ailr.ui._common import format_authors, import_llm_params, import_record_notes
 from ailr.ui._project import get_project, reload_project
 
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
@@ -375,7 +375,9 @@ def register_callbacks(app: Any) -> None:
             msg += (f" {len(s.no_decision)} record(s) had no flag_check decision "
                     f"({', '.join(f'#{i}' for i in s.no_decision[:10])})")
             msg += ": under assisted full-text screening these papers wait for one." if waiting else "."
-        return dbc.Alert(msg, color="warning" if waiting else "success", className="py-1 mb-0"), {"ts": time.time()}
+        msg += import_record_notes(s)
+        color = "warning" if waiting or s.mismatched else "success"
+        return dbc.Alert(msg, color=color, className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("extract-reader", "children"),

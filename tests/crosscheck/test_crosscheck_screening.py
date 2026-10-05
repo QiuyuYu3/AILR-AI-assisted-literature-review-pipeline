@@ -337,6 +337,20 @@ def test_the_queue_filter_lists_flagged_papers_and_drops_them_once_re_screened(t
     assert _listed() == []
 
 
+def test_the_queue_filter_counts_only_findings_on_the_ais_decision(tmp_project):
+    """The card badge, the findings modal and the dashboard read AI findings only, so a paper
+    flagged on a human's decision alone would be listed with nothing to show for it."""
+    db = tmp_project.db
+    sid = _seed_source(tmp_project)
+    _decide(tmp_project, sid, quotes=["participants completed an fMRI scan"],
+            reviewer_type="human", reviewer_id="amber")
+    _run(tmp_project, [sid], targets=("human",))
+    assert db.cross_check_counts([sid], stage="abstract", target_type="human") == {sid: 1}
+
+    rows, _, _ = db.list_sources_page(tmp_project.project_id, "amber", stage="abstract", status="crosscheck_flagged")
+    assert rows == []
+
+
 def test_screening_and_extraction_findings_do_not_leak_into_each_other(tmp_project):
     """Both stages share the cross_checks table; only `stage` keeps them apart."""
     from ailr.core.crosscheck import CrossCheckRecord

@@ -8,6 +8,8 @@ with a "decision" (include/exclude/uncertain) recorded as the AI's full-text scr
 from dataclasses import dataclass, field
 
 from ailr.core.project import Project
+from ailr.core.source import Source
+from ailr.ingest.dedup import normalize_doi
 from ailr.reviewers import ExtractionResult, ScreeningDecision
 
 
@@ -19,6 +21,8 @@ class ImportResultsSummary:
     flags_written: int = 0
     no_decision: list[int] = field(default_factory=list)  # imported without a flag_check decision
     unmatched: list[dict] = field(default_factory=list)
+    mismatched: list[dict] = field(default_factory=list)  # source_id and DOI name different papers
+    duplicates: list[int] = field(default_factory=list)  # papers named by more than one record
     errors: list[str] = field(default_factory=list)
 
 
@@ -27,20 +31,53 @@ class ImportScreeningSummary:
     total_records: int = 0
     imported: int = 0
     unmatched: list[dict] = field(default_factory=list)
+    mismatched: list[dict] = field(default_factory=list)
+    duplicates: list[int] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
-def _resolve_source(project: Project, rec: dict):
+def _resolve_source(project: Project, rec: dict) -> tuple[Source | None, bool]:
+    """The paper a record names, and whether its source_id and DOI name different papers."""
     db, pid = project.db, project.project_id
-    src = None
+    doi = normalize_doi(str(rec["doi"])) if rec.get("doi") else None
+    by_doi = db.find_by_doi(pid, doi) if doi else None
+    by_id = None
     if rec.get("source_id") is not None:
         try:
-            src = db.get_source(int(rec["source_id"]))
+            by_id = db.get_source(int(rec["source_id"]))
         except (TypeError, ValueError):
-            src = None
-    if src is None and rec.get("doi"):
-        src = db.find_by_doi(pid, str(rec["doi"]).strip())
-    return src if (src is not None and src.project_id == pid) else None
+            by_id = None
+    if by_id is None:
+        return by_doi, False
+    if by_id.project_id != pid:
+        return None, False
+    if doi and ((by_doi is not None and by_doi.id != by_id.id)
+                or (by_id.doi and normalize_doi(by_id.doi) != doi)):
+        return None, True
+    return by_id, False
+
+
+def _pick_records(
+    project: Project, records: list, summary: ImportResultsSummary | ImportScreeningSummary
+) -> list[tuple[int, dict, Source]]:
+    """One record per paper, the last that names it; everything else is reported on summary."""
+    chosen: dict[int, tuple[int, dict, Source]] = {}
+    for i, rec in enumerate(records):
+        if not isinstance(rec, dict):
+            summary.errors.append(f"record {i}: not an object")
+            continue
+        src, mismatch = _resolve_source(project, rec)
+        ref = {"source_id": rec.get("source_id"), "doi": rec.get("doi")}
+        if mismatch:
+            summary.mismatched.append(ref)
+            continue
+        if src is None:
+            summary.unmatched.append(ref)
+            continue
+        if src.id in chosen and src.id not in summary.duplicates:
+            summary.duplicates.append(src.id)
+        chosen[src.id] = (i, rec, src)
+    return list(chosen.values())
 
 
 def import_ai_screening_results(
@@ -51,14 +88,7 @@ def import_ai_screening_results(
     matched_criteria + evidence_quotes, recorded as the AI reviewer's decision at `stage`."""
     db = project.db
     summary = ImportScreeningSummary(total_records=len(records))
-    for i, rec in enumerate(records):
-        if not isinstance(rec, dict):
-            summary.errors.append(f"record {i}: not an object")
-            continue
-        src = _resolve_source(project, rec)
-        if src is None:
-            summary.unmatched.append({"source_id": rec.get("source_id"), "doi": rec.get("doi")})
-            continue
+    for i, rec, src in _pick_records(project, records, summary):
         decision = rec.get("decision")
         if decision not in ("include", "exclude", "uncertain"):
             summary.errors.append(f"record {i}: decision must be include/exclude/uncertain (got {decision!r})")
@@ -85,26 +115,9 @@ def import_ai_screening_results(
 def import_ai_results(project: Project, records: list[dict], *, extractor_id: str = "imported",
                       llm_params: dict | None = None) -> ImportResultsSummary:
     db = project.db
-    pid = project.project_id
     summary = ImportResultsSummary(total_records=len(records))
 
-    for i, rec in enumerate(records):
-        if not isinstance(rec, dict):
-            summary.errors.append(f"record {i}: not an object")
-            continue
-
-        src = None
-        if rec.get("source_id") is not None:
-            try:
-                src = db.get_source(int(rec["source_id"]))
-            except (TypeError, ValueError):
-                src = None
-        if src is None and rec.get("doi"):
-            src = db.find_by_doi(pid, str(rec["doi"]).strip())
-        if src is None or src.project_id != pid:
-            summary.unmatched.append({"source_id": rec.get("source_id"), "doi": rec.get("doi")})
-            continue
-
+    for i, rec, src in _pick_records(project, records, summary):
         extraction = rec.get("extraction") or {}
         if not isinstance(extraction, dict):
             summary.errors.append(f"record {i}: 'extraction' is not an object")

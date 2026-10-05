@@ -72,6 +72,18 @@ def import_llm_params(model, temperature) -> dict | None:
     return params
 
 
+def import_record_notes(summary) -> str:
+    """What an AI-results import skipped or merged, appended to its status message."""
+    text = ""
+    if summary.mismatched:
+        refs = ", ".join(f"#{m['source_id']} vs {m['doi']}" for m in summary.mismatched[:10])
+        text += f" {len(summary.mismatched)} record(s) skipped, source_id and DOI name different papers: {refs}."
+    if summary.duplicates:
+        refs = ", ".join(f"#{i}" for i in summary.duplicates[:10])
+        text += f" {len(summary.duplicates)} paper(s) named more than once, the last record was imported: {refs}."
+    return text
+
+
 def triggered_click_id() -> dict | None:
     """The pattern-matching id of the input that actually carries a click this cycle.
 
