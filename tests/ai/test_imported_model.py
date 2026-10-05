@@ -32,24 +32,24 @@ class TestImportedRowsCarryTheModel:
     def test_screening_decisions_and_the_methods_text_name_it(self, tmp_project):
         sid = add_source(tmp_project)
         import_ai_screening_results(tmp_project, [{"source_id": sid, "decision": "include"}],
-                                    llm_params={"model": "claude-haiku-4-5"})
+                                    llm_params={"model": "model-a"})
         assert _params(tmp_project.db, "SELECT llm_params FROM screening_decisions WHERE source_id = ?", sid) == [
-            {"model": "claude-haiku-4-5"}]
-        assert ("screened by claude-haiku-4-5 (temperature not recorded) and one human reviewer"
+            {"model": "model-a"}]
+        assert ("screened by model-a (temperature not recorded) and one human reviewer"
                 in build_methods_skeleton(tmp_project))
 
     def test_extraction_rows_and_the_full_text_verdict_name_it(self, tmp_project):
         sid = add_source(tmp_project)
-        sonnet = {"model": "claude-sonnet-4-6", "temperature": 0.0}
+        recorded = {"model": "model-b", "temperature": 0.0}
         import_ai_results(tmp_project, [{"source_id": sid, "extraction": {"design": "obs"},
-                                         "flag_check": {"decision": "include"}}], llm_params=sonnet)
+                                         "flag_check": {"decision": "include"}}], llm_params=recorded)
         db = tmp_project.db
-        assert _params(db, "SELECT llm_params FROM extractions WHERE source_id = ? AND extractor_type = 'ai'", sid) == [sonnet]
+        assert _params(db, "SELECT llm_params FROM extractions WHERE source_id = ? AND extractor_type = 'ai'", sid) == [recorded]
         assert _params(db, "SELECT llm_params FROM screening_decisions WHERE source_id = ? AND stage = 'full_text'",
-                       sid) == [sonnet]
+                       sid) == [recorded]
         text = build_methods_skeleton(tmp_project)
-        assert "Structured extraction was performed by claude-sonnet-4-6 (temperature 0.0) using" in text
-        assert "assessed by one human reviewer and by claude-sonnet-4-6 (temperature 0.0), both blinded" in text
+        assert "Structured extraction was performed by model-b (temperature 0.0) using" in text
+        assert "assessed by one human reviewer and by model-b (temperature 0.0), both blinded" in text
 
     def test_records_without_a_full_text_decision_are_listed(self, tmp_project):
         decided, undecided = add_source(tmp_project, "decided"), add_source(tmp_project, "undecided")
@@ -96,9 +96,9 @@ class TestTheImportFormsAskForTheModel:
         assert "Enter the model" in component_text(message)
         assert count_decisions(db, tmp_project.project_id, reviewer_type="ai") == 0
 
-        run(1, path, "claude-haiku-4-5", 0)
+        run(1, path, "model-a", 0)
         assert _params(db, "SELECT llm_params FROM screening_decisions WHERE source_id = ?", sid) == [
-            {"model": "claude-haiku-4-5", "temperature": 0.0}]
+            {"model": "model-a", "temperature": 0.0}]
 
     def test_extraction_results_need_it_too_and_papers_left_waiting_are_named(self, tmp_project, tmp_path):
         sid = add_source(tmp_project)
@@ -109,6 +109,6 @@ class TestTheImportFormsAskForTheModel:
         assert "Enter the model" in component_text(message)
         assert (sid in tmp_project.db.sources_with_extraction([sid], "ai")) is False
 
-        message, _refresh = run(1, path, "claude-sonnet-4-6", None)
+        message, _refresh = run(1, path, "model-b", None)
         text = component_text(message)
         assert f"(#{sid})" in text and "these papers wait for one" in text

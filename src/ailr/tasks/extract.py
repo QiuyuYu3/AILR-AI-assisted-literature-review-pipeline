@@ -88,8 +88,7 @@ class ExtractionTask:
             )
         redo: set[int] = set()
         if flag_check and already_done and not batch:
-            # Full text waits for the verdict, so an extraction without one is unfinished. Only this
-            # model's own runs are redone; another source's would mix models, so they are reported.
+            # No verdict means unfinished; redo only this model's runs so two models never mix in one paper.
             unverdicted = already_done - set(self.project.db.get_latest_ai_decisions(list(already_done), stage="full_text"))
             redo = self.project.db.sources_with_extraction(
                 list(unverdicted), self.reviewer.reviewer_type, extractor_id=self.reviewer.reviewer_id
