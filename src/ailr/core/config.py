@@ -57,8 +57,6 @@ class StageLLMOverride(BaseModel):
 
 
 class CalibrationConfig(BaseModel):
-    fraction: float = 0.10
-    n: int | None = None
     min: int = 30
 
 
@@ -76,7 +74,6 @@ class ScreeningConfig(BaseModel):
     # Full-text screening runs its own workflow: the common design is AI-assisted at title/abstract
     # (thousands of records) and two humans at full text (dozens). None = same as `workflow`.
     full_text_workflow: Literal["assisted", "independent"] | None = None
-    target_kappa: float = 0.7
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     llm: StageLLMOverride | None = None
     workers: int = 4  # concurrent LLM screening calls (1 = serial)
@@ -96,7 +93,6 @@ class ExtractionConfig(BaseModel):
     )
     output_format: Literal["with_quotes", "value_only"] = "with_quotes"
     flag_check: bool = True
-    target_kappa: float = 0.7
     calibration: CalibrationConfig = Field(
         default_factory=lambda: CalibrationConfig(min=10)
     )

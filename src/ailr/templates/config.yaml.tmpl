@@ -32,7 +32,7 @@ screening:
   # full_text_workflow: assisted | independent
   #   Full-text screening, set separately (defaults to `workflow`). The usual systematic-review
   #   design is assisted at title/abstract and independent at full text.
-  # target_kappa, calibration inherit from mode preset unless overridden here
+  # calibration inherits from the mode preset unless overridden here
 
 extraction:
   prompt: prompts/extraction.txt
@@ -41,7 +41,7 @@ extraction:
   # workflow: verify | independent
   #   verify     = AI extracts, human verifies/edits (PI-recommended)
   #   independent = human extracts blind, AI hidden until submit
-  # output_format, flag_check, target_kappa, calibration inherit from mode preset
+  # output_format, flag_check, calibration inherit from mode preset
   # Full text is worth the stronger model:
   # llm:
   #   model: <a strong model from your provider>

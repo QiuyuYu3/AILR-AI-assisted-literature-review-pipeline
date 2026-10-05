@@ -5,16 +5,12 @@
 
 screening:
   workflow: assisted
-  target_kappa: 0.7
   calibration:
-    fraction: 0.10
     min: 30
 
 extraction:
   workflow: verify
-  target_kappa: 0.7
   output_format: with_quotes
   flag_check: true
   calibration:
-    fraction: 0.10
     min: 10

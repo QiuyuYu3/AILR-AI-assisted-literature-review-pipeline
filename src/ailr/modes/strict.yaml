@@ -5,16 +5,12 @@
 
 screening:
   workflow: independent
-  target_kappa: 0.8
   calibration:
-    fraction: 0.10
     min: 50
 
 extraction:
   workflow: independent
-  target_kappa: 0.8
   output_format: with_quotes
   flag_check: true
   calibration:
-    fraction: 0.10
     min: 20

@@ -18,6 +18,7 @@
 
 ### Removed
 - The retired full calibration: the hidden `ailr calibrate` command and `CalibrationTask` / `CalibrationSummary`; quick tests remain.
+- Settings `target_kappa`, `calibration.fraction` and `calibration.n`, read only by the full calibration; older configs still open.
 
 ### Fixed
 - PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.
