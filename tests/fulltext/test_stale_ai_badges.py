@@ -1,6 +1,6 @@
 """Extraction staleness, and the outdated badge on the full-text conflicts card.
 
-TestStaleDetection (test_ai_run_flows.py) covers the same rule on the screening side. This file
+TestStaleDetection (test_ai_screening_run.py) covers the same rule on the screening side. This file
 covers the extraction side, which the full-text conflict cards read: their AI vote is the
 flag_check verdict an extraction run produced, so an extraction made under a prompt you have
 since edited is a stale vote to adjudicate against.
