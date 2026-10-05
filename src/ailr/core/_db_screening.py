@@ -29,8 +29,7 @@ def _flag_check_from_raw(raw_output: str | None) -> list[dict]:
 
 
 def reconcile_stage_for(stage: str) -> str:
-    """reconciliations.stage uses its own vocabulary, not screening_decisions.stage. The third
-    set of names lives in CALIBRATION_STAGE."""
+    """reconciliations.stage uses its own vocabulary, not screening_decisions.stage."""
     return "abstract_screening" if stage == "abstract" else "full_text_screening"
 
 
@@ -38,8 +37,7 @@ def _last_quick_test_sql(stage: str) -> tuple[str, str]:
     """The papers the most recent quick test covered, as (sql, test_runs.stage). The sql takes
     (project_id, test_stage).
 
-    `test_runs.stage` is a third vocabulary again: 'abstract' / 'extraction', where
-    calibration_samples says 'screening' / 'extraction'.
+    `test_runs.stage` is a third vocabulary again: 'abstract' / 'extraction'.
     """
     table, test_stage = (
         ("test_decisions", "abstract") if stage == "abstract" else ("test_extractions", "extraction")

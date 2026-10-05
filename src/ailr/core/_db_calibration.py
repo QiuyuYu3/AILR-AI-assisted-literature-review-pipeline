@@ -1,20 +1,13 @@
-"""API calls, calibration samples, test runs, and prompt versions."""
+"""API calls, quick-test runs, and prompt versions."""
 
 import json
 import sqlite3
 from typing import TYPE_CHECKING
 
-from ailr.core._db_facade import _row_to_source
-from ailr.core.source import Source
 from ailr.exceptions import DatabaseError
 
 if TYPE_CHECKING:
     from ailr.llm.base import CallMetadata
-
-# calibration_samples.stage names the config section a round belongs to (screening / extraction),
-# while screening_decisions.stage names the review stage (abstract / full_text). Anything that
-# starts from a decision stage and needs the matching calibration rows goes through this.
-CALIBRATION_STAGE = {"abstract": "screening", "full_text": "extraction"}
 
 
 class CalibrationMixin:
@@ -62,97 +55,6 @@ class CalibrationMixin:
             self._conn.commit()
         except sqlite3.Error as e:
             raise DatabaseError(f"Failed to insert api_calls: {e}") from e
-
-    # ── Calibration samples ──────────────────────────────────────────
-
-    def list_calibration_candidates(
-        self,
-        project_id: int,
-        stage: str,
-    ) -> list[Source]:
-        """Sources eligible for a new calibration round, excluding any drawn in a prior round.
-        Screening draws from records with an abstract; extraction draws from the full-text
-        queue (abstract-included and converted to markdown), the same pool extraction runs on."""
-        if stage == "extraction":
-            eligible = """
-                EXISTS (SELECT 1 FROM screening_decisions d WHERE d.source_id = s.id
-                        AND d.stage = 'abstract' AND d.decision = 'include')
-                AND s.markdown_path IS NOT NULL
-            """
-        else:
-            eligible = "s.abstract IS NOT NULL AND s.abstract != ''"
-
-        sql = f"""
-            SELECT s.* FROM sources s
-            WHERE s.project_id = ?
-              AND COALESCE(s.is_duplicate, 0) = 0
-              AND {eligible}
-              AND NOT EXISTS (
-                  SELECT 1 FROM calibration_samples cs
-                  WHERE cs.source_id = s.id AND cs.stage = ?
-              )
-            ORDER BY s.id
-        """
-        rows = self._conn.execute(sql, (project_id, stage)).fetchall()
-        return [_row_to_source(r) for r in rows]
-
-    def next_sample_round(self, project_id: int, stage: str) -> int:
-        row = self._conn.execute(
-            "SELECT COALESCE(MAX(sample_round), 0) AS r FROM calibration_samples WHERE project_id = ? AND stage = ?",
-            (project_id, stage),
-        ).fetchone()
-        return row["r"] + 1
-
-    def create_calibration_sample(
-        self,
-        project_id: int,
-        source_ids: list[int],
-        stage: str,
-        sample_round: int,
-    ) -> int:
-        inserted = 0
-        try:
-            for sid in source_ids:
-                self._conn.execute(
-                    "INSERT INTO calibration_samples (project_id, source_id, stage, sample_round) VALUES (?, ?, ?, ?)",
-                    (project_id, sid, stage, sample_round),
-                )
-                inserted += 1
-            self._conn.commit()
-        except sqlite3.Error as e:
-            raise DatabaseError(f"Failed to create calibration sample: {e}") from e
-        return inserted
-
-    def list_calibration_sample(
-        self,
-        project_id: int,
-        stage: str,
-        sample_round: int | None = None,
-    ) -> list[Source]:
-        if sample_round is None:
-            sql = """
-                SELECT s.* FROM sources s
-                JOIN calibration_samples cs ON cs.source_id = s.id
-                WHERE cs.project_id = ? AND cs.stage = ?
-                ORDER BY cs.sample_round, s.id
-            """
-            params = (project_id, stage)
-        else:
-            sql = """
-                SELECT s.* FROM sources s
-                JOIN calibration_samples cs ON cs.source_id = s.id
-                WHERE cs.project_id = ? AND cs.stage = ? AND cs.sample_round = ?
-                ORDER BY s.id
-            """
-            params = (project_id, stage, sample_round)
-        return [_row_to_source(r) for r in self._conn.execute(sql, params).fetchall()]
-
-    def list_calibration_rounds(self, project_id: int, stage: str) -> list[int]:
-        rows = self._conn.execute(
-            "SELECT DISTINCT sample_round FROM calibration_samples WHERE project_id = ? AND stage = ? ORDER BY sample_round",
-            (project_id, stage),
-        ).fetchall()
-        return [r["sample_round"] for r in rows]
 
     # --- Quick prompt-test runs (isolated from real screening_decisions) ---
 

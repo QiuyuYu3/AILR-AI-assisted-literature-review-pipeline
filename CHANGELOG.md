@@ -14,6 +14,10 @@
 - Assisted screening settles a paper only once the AI has voted too; new Awaiting AI filter and dashboard count.
 - Imported AI results must name their model; the methods text names the recorded model at each stage.
 - Requires Dash 3.1, dash-bootstrap-components 2.0 and dash-ag-grid 31.3.1.
+- Quick tests now count toward the token usage on the dashboard, Reports and `ailr metrics`.
+
+### Removed
+- The retired full calibration: the hidden `ailr calibrate` command and `CalibrationTask` / `CalibrationSummary`; quick tests remain.
 
 ### Fixed
 - PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.

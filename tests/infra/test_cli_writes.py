@@ -357,13 +357,3 @@ class TestDbMigrate:
 
         assert result.exit_code == 1
         assert "No target DB" in result.stderr
-
-
-class TestCalibrate:
-    def test_mock_run_reports_json(self, tmp_project):
-        add_source(tmp_project, "A", abstract="Text.")
-
-        result = _run("calibrate", tmp_project.root, "--mock", "--n", "1", "--json")
-
-        assert result.exit_code == 0, result.output
-        assert json.loads(result.stdout)["sample_size"] == 1

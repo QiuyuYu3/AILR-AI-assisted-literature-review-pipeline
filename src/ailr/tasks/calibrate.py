@@ -1,13 +1,11 @@
-"""CalibrationTask: sample N sources, run AI on them, report agreement vs human decisions."""
+"""Quick tests: run the current prompt on a sample into the test tables, and their agreement with human decisions."""
 
 import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ailr.core.project import Project
-from ailr.core.source import Source
 from ailr.criteria import load_screening_inputs, resolve_criteria
-from ailr.exceptions import AILRError
 from ailr.metrics import (
     BINARY_CATEGORIES,
     THREE_WAY_CATEGORIES,
@@ -20,8 +18,7 @@ from ailr.reviewers import LLMReviewer, Reviewer, ScreeningDecision
 
 ProgressCallback = Callable[[int, int, ScreeningDecision | None, Exception | None], None]
 
-# Which records a calibration round draws. Unrelated to the LLM decoding seed it used to read from
-# `llm.seed`, which only some provider APIs accept; sampling has to stay reproducible regardless.
+# Which records a quick test draws; separate from the LLM decoding seed, which only some providers accept.
 DEFAULT_SAMPLE_SEED = 42
 
 
@@ -84,9 +81,11 @@ class QuickTestTask:
             rng = random.Random(seed if seed is not None else DEFAULT_SAMPLE_SEED)
             sample = rng.sample(candidates, k=sample_size)
 
+        call_metas: list = []
         for idx, source in enumerate(sample, 1):
             try:
                 decision = self.reviewer.screen(source, criteria_text, prompt_template, additional_text, criterion_ids=criterion_ids, flag_check=self.project.config.screening.flag_check)
+                _collect_metadata(self.reviewer, call_metas)
                 self.project.db.insert_test_decision(
                     run_id=run_id,
                     source_id=source.id,
@@ -106,7 +105,13 @@ class QuickTestTask:
                 if on_progress:
                     on_progress(idx, sample_size, None, e)
 
+        self.project.db.insert_api_calls(self.project.project_id, call_metas)
         return summary
+
+
+def _collect_metadata(reviewer: Reviewer, call_metas: list) -> None:
+    if isinstance(reviewer, LLMReviewer) and reviewer.last_metadata:
+        call_metas.append(reviewer.last_metadata)
 
 
 _KAPPA_CATEGORIES = ["include", "exclude", "uncertain"]
@@ -166,27 +171,6 @@ def _agreement_stats(by_source: dict[int, dict[str, str]]) -> dict:
             if "ai" in v and "human" in v and v["ai"] != v["human"]
         ],
     }
-
-
-def sample_agreement(project: Project, sample_ids: list[int], stage: str = "abstract") -> dict:
-    """AI-vs-human agreement on a set of sources at one decision stage (abstract / full_text).
-    Used by the calibration UI to recompute κ after humans review the sample."""
-    return _agreement_stats(_latest_by_reviewer_type(project, sample_ids, stage))
-
-
-@dataclass
-class CalibrationSummary:
-    stage: str
-    sample_round: int
-    sample_size: int
-    candidates_available: int
-    ai_counts: dict[str, int] = field(default_factory=lambda: {"include": 0, "exclude": 0, "uncertain": 0})
-    human_counts: dict[str, int] = field(default_factory=lambda: {"include": 0, "exclude": 0, "uncertain": 0})
-    paired_count: int = 0
-    kappa: float = float("nan")
-    agreement: float = float("nan")
-    failed: int = 0
-    failures: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -259,6 +243,7 @@ class ExtractionQuickTestTask:
             rng = random.Random(seed if seed is not None else DEFAULT_SAMPLE_SEED)
             sample = rng.sample(candidates, k=sample_size)
 
+        call_metas: list = []
         for idx, source in enumerate(sample, 1):
             md_path = resolve_markdown_path(source.markdown_path, self.project.root, source.id)
             if md_path is None:
@@ -279,6 +264,7 @@ class ExtractionQuickTestTask:
                     flag_check=flag_check,
                     criterion_ids=criterion_ids,
                 )
+                _collect_metadata(self.reviewer, call_metas)
                 serialized = [
                     {"field": r.field_name, "value": r.value, "quote": r.source_quote, "confidence": r.confidence}
                     for r in extraction.results
@@ -301,10 +287,8 @@ class ExtractionQuickTestTask:
                 if on_progress:
                     on_progress(idx, sample_size, None, e)
 
+        self.project.db.insert_api_calls(self.project.project_id, call_metas)
         return summary
-
-
-_DECISION_STAGE = {"screening": "abstract", "extraction": "full_text"}
 
 
 def quick_test_agreement(project: Project, run_id: int, test_stage: str = "abstract") -> dict:
@@ -333,193 +317,3 @@ def quick_test_agreement(project: Project, run_id: int, test_stage: str = "abstr
             entry["human"] = human
         by_source[sid] = entry
     return _agreement_stats(by_source)
-
-
-class CalibrationTask:
-    """Draw a sample, let the AI decide on it, and report agreement once humans decide the same
-    records. At the screening stage the AI decision is a screening call; at the extraction stage
-    it is the full-text verdict the AI derives while extracting (flag_check), so a round there
-    costs one full-paper call per paper and leaves real extractions behind."""
-
-    def __init__(self, project: Project, reviewer: Reviewer, stage: str = "screening") -> None:
-        if stage not in ("screening", "extraction"):
-            raise ValueError(f"Unknown stage: {stage}")
-        stage_cfg = project.config.screening if stage == "screening" else project.config.extraction
-        if stage_cfg.workflow == "independent":
-            raise AILRError(
-                f"Calibration does not apply to the {stage} stage in `independent` workflow: two "
-                "humans decide every record, so the AI is a reference rather than a reviewer and "
-                "tuning it to agree with one of them gates nothing. Its agreement with each "
-                "reviewer is on Reports -> Reliability."
-            )
-        self.project = project
-        self.reviewer = reviewer
-        self.stage = stage
-        self.decision_stage = _DECISION_STAGE[stage]
-
-    def determine_sample_size(self, n_arg: int | None, candidates_available: int) -> int:
-        if n_arg is not None:
-            return min(n_arg, candidates_available)
-
-        if self.stage == "screening":
-            cal_cfg = self.project.config.screening.calibration
-        else:
-            cal_cfg = self.project.config.extraction.calibration
-
-        if cal_cfg.n is not None:
-            return min(cal_cfg.n, candidates_available)
-
-        target = max(round(candidates_available * cal_cfg.fraction), cal_cfg.min)
-        return min(target, candidates_available)
-
-    def run(
-        self,
-        *,
-        n: int | None = None,
-        seed: int | None = None,
-        on_progress: ProgressCallback | None = None,
-    ) -> CalibrationSummary:
-        candidates = self.project.db.list_calibration_candidates(
-            project_id=self.project.project_id, stage=self.stage
-        )
-        candidates_available = len(candidates)
-
-        sample_size = self.determine_sample_size(n, candidates_available)
-        sample_round = self.project.db.next_sample_round(self.project.project_id, self.stage)
-
-        summary = CalibrationSummary(
-            stage=self.stage,
-            sample_round=sample_round,
-            sample_size=sample_size,
-            candidates_available=candidates_available,
-        )
-
-        if sample_size == 0:
-            return summary
-
-        rng_seed = seed if seed is not None else DEFAULT_SAMPLE_SEED
-        rng = random.Random(rng_seed + sample_round)
-        sample = rng.sample(candidates, k=sample_size)
-        sample_ids = [s.id for s in sample if s.id is not None]
-
-        self.project.db.create_calibration_sample(
-            project_id=self.project.project_id,
-            source_ids=sample_ids,
-            stage=self.stage,
-            sample_round=sample_round,
-        )
-
-        if self.stage == "extraction":
-            self._run_extraction_pass(sample_ids, summary, on_progress)
-        else:
-            self._run_screening_pass(sample, sample_size, summary, on_progress)
-
-        by_source = self._compute_agreement(summary, sample_ids)
-        if self.stage == "extraction":
-            # The screening pass counts the AI as it goes; extraction's verdicts are written
-            # inside ExtractionTask, so they are read back with the agreement rows.
-            for v in by_source.values():
-                if v.get("ai") in summary.ai_counts:
-                    summary.ai_counts[v["ai"]] += 1
-        return summary
-
-    def _run_extraction_pass(
-        self,
-        sample_ids: list[int],
-        summary: CalibrationSummary,
-        on_progress: ProgressCallback | None,
-    ) -> None:
-        """The AI's full-text verdict comes from extracting the paper (flag_check re-checks the
-        criteria against the full text), so calibrating it means running the real extraction on
-        the sample. The extractions it leaves behind are the ones the review needs anyway."""
-        from ailr.tasks.extract import ExtractionTask
-
-        if not self.project.config.extraction.flag_check:
-            raise AILRError(
-                "Full-text calibration needs extraction.flag_check enabled: the AI's full-text "
-                "verdict is derived from its per-criterion check, and with the check off there is "
-                "nothing to compare against your decisions."
-            )
-
-        result = ExtractionTask(self.project, self.reviewer).run(
-            source_ids=sample_ids, on_progress=on_progress
-        )
-        summary.failed += result.failed
-        summary.failures.extend(result.failures)
-        # Candidates are filtered on markdown_path, so a skip here means the file is gone from
-        # disk. Left silent it would shrink the sample without saying so.
-        if result.skipped_no_markdown:
-            summary.failed += result.skipped_no_markdown
-            summary.failures.append(
-                {"error": f"{result.skipped_no_markdown} paper(s) in the sample have no markdown file on disk"}
-            )
-
-    def _run_screening_pass(
-        self,
-        sample: list[Source],
-        sample_size: int,
-        summary: CalibrationSummary,
-        on_progress: ProgressCallback | None,
-    ) -> None:
-        prompt_template, criteria_text, criterion_ids, additional_text = load_screening_inputs(
-            self.project.root, self.project.config.screening
-        )
-        call_metas: list = []
-
-        for idx, source in enumerate(sample, 1):
-            existing_ai = self._existing_ai_decision(source.id)
-            if existing_ai is not None:
-                summary.ai_counts[existing_ai] += 1
-                if on_progress:
-                    on_progress(idx, sample_size, None, None)
-                continue
-
-            try:
-                decision = self.reviewer.screen(
-                    source, criteria_text, prompt_template, additional_text,
-                    criterion_ids=criterion_ids, flag_check=self.project.config.screening.flag_check,
-                )
-                decision.source_id = source.id
-                self.project.db.insert_screening_decision(decision)
-                summary.ai_counts[decision.decision] += 1
-
-                if isinstance(self.reviewer, LLMReviewer) and self.reviewer.last_metadata:
-                    call_metas.append(self.reviewer.last_metadata)
-
-                if on_progress:
-                    on_progress(idx, sample_size, decision, None)
-            except Exception as e:
-                summary.failed += 1
-                summary.failures.append(
-                    {"source_id": source.id, "title": source.title, "error": str(e)}
-                )
-                if on_progress:
-                    on_progress(idx, sample_size, None, e)
-
-        self.project.db.insert_api_calls(self.project.project_id, call_metas)
-
-    def _existing_ai_decision(self, source_id: int | None) -> str | None:
-        if source_id is None:
-            return None
-        row = self.project.db._conn.execute(
-            "SELECT decision FROM screening_decisions WHERE source_id = ? AND reviewer_type = 'ai' "
-            "AND stage = ? ORDER BY id DESC LIMIT 1",
-            (source_id, self.decision_stage),
-        ).fetchone()
-        return row["decision"] if row else None
-
-    def _compute_agreement(
-        self, summary: CalibrationSummary, sample_ids: list[int]
-    ) -> dict[int, dict[str, str]]:
-        """Fill in human counts, pairs, κ. Returns the latest decision per (source, reviewer type)
-        so callers can reuse it. Shares its query and its κ with sample_agreement(), so the number
-        a round reports and the number the calibration page recomputes can never disagree."""
-        by_source = _latest_by_reviewer_type(self.project, sample_ids, self.decision_stage)
-        if not by_source:
-            return {}
-        stats = _agreement_stats(by_source)
-        summary.human_counts = stats["human_counts"]
-        summary.paired_count = stats["paired_count"]
-        summary.kappa = stats["kappa"]
-        summary.agreement = stats["agreement"]
-        return by_source

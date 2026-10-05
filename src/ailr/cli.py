@@ -30,7 +30,6 @@ from ailr.prompt_versions import (
     screening_prompt_version,
 )
 from ailr.reviewers import LLMReviewer
-from ailr.tasks.calibrate import CalibrationTask
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.preprocess import PreprocessTask
 from ailr.tasks.screen import ScreeningTask
@@ -368,117 +367,6 @@ def preprocess(
             typer.echo(f"Failed:               {summary.failed}", err=True)
         if summary.missing_pdfs:
             typer.echo(f"Sources missing MD:   {len(summary.missing_pdfs)} (run with --list-missing to see them)")
-    except AILRError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-
-
-@app.command(hidden=True)  # retired with the UI's full calibration; still runs if typed
-def calibrate(
-    project: Annotated[Path, typer.Argument(help="Path to the review project directory.")],
-    stage: Annotated[str, typer.Option("--stage", help="screening | extraction")] = "screening",
-    n: Annotated[int | None, typer.Option("--n", help="Override sample size. Defaults to config calibration.")] = None,
-    mock: Annotated[bool, typer.Option("--mock", help="Use MockLLMClient (no API call).")] = False,
-    workflow: Annotated[str | None, typer.Option("--workflow", help="Override + save the stage's workflow.")] = None,
-    as_json: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
-) -> None:
-    """Sample N sources, run AI screening on them, report agreement vs existing human decisions.
-
-    Writes REAL AI decisions, which `ailr screen` then skips. No queue lists the sample it draws.
-    """
-    try:
-        proj = Project.load(project)
-
-        if workflow:
-            valid = ("assisted", "independent") if stage == "screening" else ("verify", "independent")
-            if workflow not in valid:
-                typer.echo(f"Error: --workflow must be one of {valid} for stage {stage!r}, got {workflow!r}.", err=True)
-                raise typer.Exit(1)
-            save_stage_workflow(proj.root, stage, workflow)
-            proj = Project.load(project)
-            typer.echo(f"Saved {stage}.workflow = {workflow} to lit_review.yaml")
-
-        if stage == "screening":
-            stage_llm = proj.config.screening.llm
-        elif stage == "extraction":
-            stage_llm = proj.config.extraction.llm
-        else:
-            typer.echo(f"Error: unknown stage {stage!r}. Use 'screening' or 'extraction'.", err=True)
-            raise typer.Exit(1)
-
-        llm_cfg = resolve_stage_llm(proj.config.llm, stage_llm)
-
-        if mock:
-            client = schema_mock_client("mock-calibrate") if stage == "extraction" else make_llm_client("mock", model="mock-calibrate")
-        else:
-            client = make_llm_client(
-                provider=llm_cfg.provider,
-                model=llm_cfg.model,
-                temperature=llm_cfg.temperature,
-                seed=llm_cfg.seed,
-                max_retries=llm_cfg.max_retries,
-            )
-
-        version = extraction_prompt_version(proj) if stage == "extraction" else screening_prompt_version(proj)
-        reviewer = LLMReviewer(client, prompt_version=version)
-        task = CalibrationTask(proj, reviewer, stage=stage)
-
-        if not as_json:
-            typer.echo(f"Calibrating stage={stage} with {client.provider_name} / {client.model_name}")
-            if mock:
-                typer.echo("(MOCK MODE — no API calls)")
-
-        def on_progress(idx, total, decision, exc):
-            if as_json:
-                return
-            if exc is not None:
-                typer.echo(f"  [{idx}/{total}] FAILED: {exc}", err=True)
-            elif decision is not None:
-                tag = decision.decision.upper().ljust(9)
-                typer.echo(f"  [{idx}/{total}] {tag} (conf {decision.confidence}): {decision.reasoning[:80]}")
-            else:
-                typer.echo(f"  [{idx}/{total}] (existing AI decision — skipped)")
-
-        summary = task.run(n=n, on_progress=on_progress)
-
-        if as_json:
-            payload = {
-                "stage": summary.stage,
-                "sample_round": summary.sample_round,
-                "sample_size": summary.sample_size,
-                "candidates_available": summary.candidates_available,
-                "ai_counts": summary.ai_counts,
-                "human_counts": summary.human_counts,
-                "paired_count": summary.paired_count,
-                "cohen_kappa": None if summary.kappa != summary.kappa else summary.kappa,
-                "percent_agreement": None if summary.agreement != summary.agreement else summary.agreement,
-                "failed": summary.failed,
-                "failures": summary.failures,
-            }
-            typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
-            return
-
-        typer.echo("")
-        typer.echo(f"Calibration round {summary.sample_round} ({summary.stage})")
-        typer.echo(f"  Candidates available: {summary.candidates_available}")
-        typer.echo(f"  Sample size:          {summary.sample_size}")
-        if summary.sample_size == 0:
-            typer.echo("")
-            typer.echo("(no eligible candidates — all sources with abstracts are already in prior rounds)")
-            return
-        typer.echo("")
-        typer.echo(f"AI decisions:    include={summary.ai_counts['include']}  exclude={summary.ai_counts['exclude']}  uncertain={summary.ai_counts['uncertain']}")
-        typer.echo(f"Human decisions: include={summary.human_counts['include']}  exclude={summary.human_counts['exclude']}  uncertain={summary.human_counts['uncertain']}")
-        if summary.failed:
-            typer.echo(f"Failed:          {summary.failed}", err=True)
-        typer.echo("")
-        if summary.paired_count > 0:
-            typer.echo(f"Paired (AI + human): {summary.paired_count}")
-            typer.echo(f"  Cohen's kappa:     {summary.kappa:.3f}")
-            typer.echo(f"  Percent agreement: {summary.agreement:.1%}")
-        else:
-            typer.echo("Agreement: no paired AI+human decisions yet on this sample.")
-            typer.echo(f"  Sample ids: calibration_samples, round {summary.sample_round}. Decide those, then re-run.")
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)

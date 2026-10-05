@@ -69,7 +69,7 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 | `screening_actions` | per-source action log (move to/from a stage, undo) |
 | `notes` | free-text notes on a source |
 | `duplicates` / `exclusion_reasons` | dedup pairs and recorded exclusion reasons (feed the PRISMA flow) |
-| `calibration_samples` | which sources are in each calibration sample |
+| `calibration_samples` | samples drawn by the earlier full calibration; nothing writes it now, kept so older projects keep their data |
 | `api_calls` | token usage per LLM call (drives the API-usage report) |
 | `test_runs` / `test_decisions` / `test_extractions` | isolated calibration "quick test" runs, kept separate from real decisions |
 
@@ -105,7 +105,6 @@ Everything below is also doable from the UI. The CLI is the power-user bypass, u
 | `ailr import-pdfs <project> <ris>` | link PDFs from a Zotero RIS export |
 | `ailr preprocess <project>` | convert linked PDFs to markdown |
 | `ailr screen <project>` | run AI abstract screening |
-| `ailr calibrate <project> --stage screening` | calibrate a prompt (κ vs. human) |
 | `ailr extract <project>` | run AI data extraction |
 | `ailr workflow <project>` | print the three stage workflows; `--stage abstract\|full-text\|extraction --set VALUE` to change one |
 | `ailr show disagreements <project>` | AI/human disagreements at one stage (`--stage abstract\|full_text`) |
@@ -114,7 +113,7 @@ Everything below is also doable from the UI. The CLI is the power-user bypass, u
 | `ailr prompt-bump <project>` | snapshot a new prompt version |
 | `ailr db-migrate <project> --to <url>` | copy a SQLite project into Postgres |
 
-Add `--mock` to `screen` / `extract` / `calibrate` to run with no API call. Run `ailr <command> --help` for all options.
+Add `--mock` to `screen` / `extract` to run with no API call. Run `ailr <command> --help` for all options.
 
 **Cross-check is UI-only** and has no command here. It is deliberate: the CLI covers the pipeline steps that predate the UI, and new features are added to the UI rather than to both. Both cross-check layers run from **Full text → Workflow → AI extraction** and, for screening records, from **Abstract → Workflow → AI screening** (mock mode from the same places).
 

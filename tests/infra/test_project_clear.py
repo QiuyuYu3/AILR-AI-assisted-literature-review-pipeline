@@ -69,7 +69,8 @@ def _seed_every_table(db, pid):
     db.add_note(sid, "amber", "check the supplement")
     stash_duplicate(db, pid, "a dropped copy", None, "doi")
     db.create_exclusion_reason(pid, "Wrong population")
-    db.create_calibration_sample(pid, [sid], "screening", 1)
+    db._conn.execute("INSERT INTO calibration_samples (project_id, source_id, stage, sample_round) "
+                     "VALUES (?, ?, 'screening', 1)", (pid, sid))
     db.insert_api_call(pid, CallMetadata(provider="anthropic", model="claude-x", input_tokens=10, output_tokens=5))
     run_id = db.create_test_run(project_id=pid, stage="abstract", sample_size=1, prompt_snapshot="p", criteria_snapshot="c")
     db.insert_test_decision(run_id, sid, "include", "r", 0.9, [], [])

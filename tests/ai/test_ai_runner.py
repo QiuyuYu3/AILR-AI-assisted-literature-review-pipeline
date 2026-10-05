@@ -256,13 +256,6 @@ class TestTrialRuns:
         status = ai_runner.get_status("quicktest-extraction")
         assert status["error"] is None and "failed 0" in status["summary"]
 
-    def test_calibration_reports_its_round(self, tmp_project):
-        add_source(tmp_project, "A", abstract="Text.")
-
-        ai_runner.start_calibration(tmp_project, 1, mock=True)
-
-        assert ai_runner.get_status("calibration-abstract")["result"] == {"sample_round": 1}
-
 
 class _ShortConverter:
     backend_name = "fake"

@@ -18,8 +18,6 @@ from ailr.metrics import (
     rater_overlaps,
 )
 from ailr.tasks.calibrate import (
-    CalibrationSummary,
-    CalibrationTask,
     _agreement_stats,
     _latest_by_reviewer_type,
     quick_test_agreement,
@@ -178,11 +176,7 @@ class TestMetrics:
 
 
 def _agreement(project, sample_ids):
-    task = CalibrationTask(project, reviewer=None, stage="screening")
-    summary = CalibrationSummary(stage="screening", sample_round=1,
-                                 sample_size=len(sample_ids), candidates_available=len(sample_ids))
-    task._compute_agreement(summary, sample_ids)
-    return summary
+    return _agreement_stats(_latest_by_reviewer_type(project, sample_ids, "abstract"))
 
 
 class TestCalibrationPairing:
@@ -193,9 +187,9 @@ class TestCalibrationPairing:
             vote(db, sid, ai, "gpt", stage="abstract", reviewer_type="ai")
             vote(db, sid, human, "amber", stage="abstract")
         summary = _agreement(tmp_project, [s1, s2])
-        assert summary.paired_count == 2
-        assert summary.agreement == 0.5
-        assert summary.human_counts["include"] == 2
+        assert summary["paired_count"] == 2
+        assert summary["agreement"] == 0.5
+        assert summary["human_counts"]["include"] == 2
 
     def test_full_text_decisions_do_not_enter_screening_kappa(self, tmp_project):
         """0.24 regression: a full-text stage row must not pair into abstract κ."""
@@ -205,8 +199,8 @@ class TestCalibrationPairing:
         vote(db, sid, "include", "amber", stage="abstract")
         vote(db, sid, "exclude", "amber", stage="full_text")  # must be ignored
         summary = _agreement(tmp_project, [sid])
-        assert summary.paired_count == 1
-        assert summary.agreement == 1.0
+        assert summary["paired_count"] == 1
+        assert summary["agreement"] == 1.0
 
     def test_superseded_revote_uses_latest(self, tmp_project):
         """0.24 regression: the latest re-vote is what pairs, not the first vote."""
@@ -216,9 +210,9 @@ class TestCalibrationPairing:
         vote(db, sid, "include", "amber", stage="abstract")
         vote(db, sid, "exclude", "amber", stage="abstract")  # re-vote -> now agrees with AI
         summary = _agreement(tmp_project, [sid])
-        assert summary.paired_count == 1
-        assert summary.agreement == 1.0
-        assert summary.human_counts == {"include": 0, "exclude": 1, "uncertain": 0}
+        assert summary["paired_count"] == 1
+        assert summary["agreement"] == 1.0
+        assert summary["human_counts"] == {"include": 0, "exclude": 1, "uncertain": 0}
 
     def test_unpaired_sources_do_not_count(self, tmp_project):
         db = tmp_project.db
@@ -227,12 +221,12 @@ class TestCalibrationPairing:
         vote(db, s1, "include", "gpt", stage="abstract", reviewer_type="ai")
         vote(db, s2, "include", "amber", stage="abstract")
         summary = _agreement(tmp_project, [s1, s2])
-        assert summary.paired_count == 0
-        assert math.isnan(summary.kappa)
+        assert summary["paired_count"] == 0
+        assert math.isnan(summary["kappa"])
 
     def test_empty_sample_is_a_noop(self, tmp_project):
         summary = _agreement(tmp_project, [])
-        assert summary.paired_count == 0 and math.isnan(summary.kappa)
+        assert summary["paired_count"] == 0 and math.isnan(summary["kappa"])
 
 
 class TestQuickTestAgreement:

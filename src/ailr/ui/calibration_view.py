@@ -26,19 +26,6 @@ from ailr.ui._project import get_project
 
 _DECISION_COLOR = {"include": "success", "exclude": "danger", "uncertain": "warning"}
 
-# Full calibration is retired: it wrote real AI decisions, which then blocked the corpus run from
-# re-judging those papers under a newer prompt. The radio stays (hidden, single-valued) because the
-# run/poll/render callbacks are keyed on it.
-_MODE_OPTIONS = [
-    {"label": "Quick test — run AI, eyeball output (not saved to the review)", "value": "quick"},
-]
-
-# (config section, decision stage, where the human reviews the sample)
-_STAGE_INFO = {
-    "abstract": ("screening", "abstract", "Screening → status ‘Calibration sample’"),
-    "extraction": ("extraction", "full_text", "Full-text review → status ‘Calibration sample’"),
-}
-
 
 def _prefix(stage: str) -> str:
     return "cal-abs" if stage == "abstract" else "cal-ext"
@@ -146,15 +133,11 @@ def layout(stage: str = "abstract") -> Any:
         ))
     else:
         notes.append(kappa_bullet)
-    mode_block = [
-        dbc.RadioItems(id=f"{p}-mode", options=_MODE_OPTIONS, value="quick", className="d-none"),
-        html.Ul(notes, className="mt-1"),
-    ]
 
     return html.Div(
         [
             html.P(intro, className="text-muted small"),
-            *mode_block,
+            html.Ul(notes, className="mt-1"),
             html.Div(
                 dbc.RadioItems(
                     id=f"{p}-selmode",
@@ -231,20 +214,13 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
     p = _prefix(stage)
     test_stage = _test_stage(stage)
 
-    cal_stage, _decision_stage, _where = _STAGE_INFO[stage]
-
     @app.callback(
         Output(f"{p}-pick-col", "style"),
         Output(f"{p}-n-col", "style"),
         Output(f"{p}-selmode-wrap", "style"),
-        Input(f"{p}-mode", "value"),
         Input(f"{p}-selmode", "value"),
     )
-    def _toggle_sel(mode, selmode):
-        # Full calibration always uses a random sample (κ needs a representative draw),
-        # so the pick controls are hidden there.
-        if mode == "full":
-            return {"display": "none"}, {}, {"display": "none"}
+    def _toggle_sel(selmode):
         if selmode == "pick":
             return {}, {"display": "none"}, {}
         return {"display": "none"}, {}, {}
@@ -253,17 +229,16 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
         Output(f"{p}-poll", "disabled"),
         Output(f"{p}-status", "children"),
         Input(f"{p}-run", "n_clicks"),
-        State(f"{p}-mode", "value"),
         State(f"{p}-n", "value"),
         State(f"{p}-mock", "value"),
         State(f"{p}-selmode", "value"),
         State(f"{p}-pick", "value"),
         prevent_initial_call=True,
     )
-    def _run(n, mode, sample_n, mock, selmode, picked):
+    def _run(n, sample_n, mock, selmode, picked):
         if not n:
             return no_update, no_update
-        if mode != "full" and selmode == "pick":
+        if selmode == "pick":
             ids = _picked_ids(picked)
             if not ids:
                 return no_update, dbc.Alert("Pick at least one paper.", color="warning", className="py-1 mb-0")
@@ -273,10 +248,7 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
             sample_n = max(1, int(sample_n))
         except (TypeError, ValueError):
             return no_update, _bad_n_alert()
-        if mode == "full":
-            started = ai_runner.start_calibration(get_project(), sample_n, bool(mock), stage=cal_stage)
-        else:
-            started = ai_runner.start_quick_test(get_project(), sample_n, bool(mock), stage=test_stage)
+        started = ai_runner.start_quick_test(get_project(), sample_n, bool(mock), stage=test_stage)
         return False, _running_alert(started)
 
     @app.callback(
@@ -284,26 +256,20 @@ def register_callbacks(app: Any, stage: str = "abstract") -> None:
         Output(f"{p}-poll", "disabled", allow_duplicate=True),
         Output(f"{p}-refresh", "data", allow_duplicate=True),
         Input(f"{p}-poll", "n_intervals"),
-        State(f"{p}-mode", "value"),
         prevent_initial_call=True,
     )
-    def _poll(_n, mode):
-        key = f"calibration-{stage}" if mode == "full" else f"quicktest-{test_stage}"
-        return _poll_common(key)
+    def _poll(_n):
+        return _poll_common(f"quicktest-{test_stage}")
 
     @app.callback(
-        Output(f"{p}-runs-bar", "style"),
         Output(f"{p}-results", "children"),
-        Input(f"{p}-mode", "value"),
         Input(f"{p}-run-select", "value"),
         Input(f"{p}-refresh", "data"),
     )
-    def _render(mode, run_value, _refresh):
-        if mode == "full":
-            return {"display": "none"}, _render_full(stage)
+    def _render(run_value, _refresh):
         if stage == "abstract":
-            return {}, _render_quick_screening(run_value)
-        return {}, _render_quick_extraction(run_value)
+            return _render_quick_screening(run_value)
+        return _render_quick_extraction(run_value)
 
     @app.callback(
         Output(f"{p}-run-select", "options"),
@@ -721,63 +687,3 @@ def _value_block(val: Any, quote: Any) -> Any:
         return html.Div([html.Div(", ".join(_scalar_str(x) for x in val) if val else "—", className="small"), _quote_line(quote)])
     # scalar
     return html.Div([html.Div(_scalar_str(val), className="small"), _quote_line(quote)])
-
-
-def _render_full(stage: str = "abstract") -> Any:
-    from ailr.tasks.calibrate import sample_agreement
-
-    cal_stage, decision_stage, where = _STAGE_INFO[stage]
-    project = get_project()
-    rounds = project.db.list_calibration_rounds(project.project_id, cal_stage)
-    if not rounds:
-        return dbc.Alert("No calibration sample yet. Set N and click Run.", color="info")
-
-    latest = max(rounds)
-    sample = project.db.list_calibration_sample(project.project_id, cal_stage, latest)
-    sample_ids = [s.id for s in sample if s.id is not None]
-    ag = sample_agreement(project, sample_ids, stage=decision_stage)
-
-    kappa = "—" if ag["kappa"] != ag["kappa"] else f"{ag['kappa']:.3f}"
-    agreement = "—" if ag["agreement"] != ag["agreement"] else f"{ag['agreement'] * 100:.0f}%"
-    stage_cfg = project.config.screening if stage == "abstract" else project.config.extraction
-    target = stage_cfg.target_kappa
-
-    panel = dbc.Row(
-        [
-            dbc.Col(_stat_card(f"Sample (round {latest})", str(len(sample_ids))), width=3),
-            dbc.Col(_stat_card("AI + human paired", str(ag["paired_count"])), width=3),
-            dbc.Col(_stat_card(f"Cohen's κ (target {target})", kappa), width=3),
-            dbc.Col(_stat_card("Agreement", agreement), width=3),
-        ],
-        className="g-2",
-    )
-    if ag["paired_count"] == 0:
-        note = dbc.Alert(
-            ["AI is done. Now review these ", html.Strong(str(len(sample_ids))),
-             " in ", html.Strong(where), " to get κ."],
-            color="info", className="mt-3 mb-0",
-        )
-        return html.Div([panel, note])
-
-    dis_rows = [
-        html.Tr([
-            html.Td(f"#{d['source_id']}", className="text-muted"),
-            html.Td(dbc.Badge(d["ai"].upper(), color=_DECISION_COLOR.get(d["ai"], "secondary"))),
-            html.Td(dbc.Badge(d["human"].upper(), color=_DECISION_COLOR.get(d["human"], "secondary"))),
-        ])
-        for d in ag["disagreements"]
-    ]
-    dis = html.Div([
-        html.H6("Disagreements", className="mt-3"),
-        dbc.Table([html.Thead(html.Tr([html.Th("ID"), html.Th("AI"), html.Th("Human")])), html.Tbody(dis_rows)],
-                  bordered=False, hover=True, size="sm") if dis_rows
-        else html.P("No disagreements on paired sources.", className="text-muted small"),
-    ])
-    return html.Div([panel, dis])
-
-
-def _stat_card(label: str, value: str) -> Any:
-    return dbc.Card(
-        dbc.CardBody([html.Div(value, className="h4 mb-0"), html.Div(label, className="text-muted small")]),
-        className="text-center",
-    )
