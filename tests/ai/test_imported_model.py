@@ -71,7 +71,7 @@ class TestTheMethodsTextNamesWhatProducedTheRows:
     def test_rows_with_no_record_are_named_beside_the_recorded_model(self, tmp_project):
         x = {"model": "claude-x", "temperature": 0.0}
         self._extraction_rows(tmp_project, x, x, None)
-        assert ("performed by claude-x (temperature 0.0, 2 rows) and a model not recorded in the project (1 rows)"
+        assert ("performed by claude-x (temperature 0.0, 2 rows) and a model not recorded in the project (1 row)"
                 in build_methods_skeleton(tmp_project))
 
     def test_a_flag_check_row_is_not_an_unrecorded_model(self, tmp_project):

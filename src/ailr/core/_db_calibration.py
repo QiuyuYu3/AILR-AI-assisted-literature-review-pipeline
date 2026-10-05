@@ -9,6 +9,10 @@ from ailr.exceptions import DatabaseError
 if TYPE_CHECKING:
     from ailr.llm.base import CallMetadata
 
+# Versions are numbered v1, v2, ... in save order; within one second the longer string is the later one.
+_NEWEST_FIRST = "created_at DESC, LENGTH(version) DESC, version DESC"
+_OLDEST_FIRST = "created_at, LENGTH(version), version"
+
 
 class CalibrationMixin:
     def insert_api_call(self, project_id: int, metadata: "CallMetadata") -> int:
@@ -170,7 +174,7 @@ class CalibrationMixin:
         no-op saves don't spam history."""
         with self._lock, self._conn.transaction():
             latest = self._conn.execute(
-                "SELECT content FROM artifact_versions WHERE project_id = ? AND kind = ? ORDER BY created_at DESC, version DESC LIMIT 1",
+                f"SELECT content FROM artifact_versions WHERE project_id = ? AND kind = ? ORDER BY {_NEWEST_FIRST} LIMIT 1",
                 (project_id, kind),
             ).fetchone()
             if latest is not None and latest["content"] == content:
@@ -188,7 +192,7 @@ class CalibrationMixin:
 
     def list_artifact_versions(self, project_id: int, kind: str) -> list[dict]:
         rows = self._conn.execute(
-            "SELECT version, content, notes, created_at FROM artifact_versions WHERE project_id = ? AND kind = ? ORDER BY created_at DESC, version DESC",
+            f"SELECT version, content, notes, created_at FROM artifact_versions WHERE project_id = ? AND kind = ? ORDER BY {_NEWEST_FIRST}",
             (project_id, kind),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -217,7 +221,7 @@ class CalibrationMixin:
             col = "kind" if source == "artifact" else "prompt_type"
             rows = self._conn.execute(
                 f"SELECT version, notes, created_at FROM {table} WHERE project_id = ? AND {col} = ? "
-                "ORDER BY created_at, version",
+                f"ORDER BY {_OLDEST_FIRST}",
                 (project_id, kind),
             ).fetchall()
             for i, r in enumerate(rows):
@@ -228,14 +232,15 @@ class CalibrationMixin:
                     "notes": r["notes"],
                     "is_amendment": i > 0,      # v1 is the protocol as first written
                 })
-        return sorted(out, key=lambda d: (d["created_at"] or "", d["part"]), reverse=True)
+        return sorted(out, key=lambda d: (d["created_at"] or "", d["part"], len(d["version"]), d["version"]),
+                      reverse=True)
 
     def list_prompt_versions(self, project_id: int, prompt_type: str) -> list[dict]:
         rows = self._conn.execute(
-            """
+            f"""
             SELECT version, content, composed, notes, created_at FROM prompt_versions
             WHERE project_id = ? AND prompt_type = ?
-            ORDER BY created_at DESC, version DESC
+            ORDER BY {_NEWEST_FIRST}
             """,
             (project_id, prompt_type),
         ).fetchall()
@@ -250,7 +255,7 @@ class CalibrationMixin:
 
     def latest_prompt_version(self, project_id: int, prompt_type: str) -> str | None:
         row = self._conn.execute(
-            "SELECT version FROM prompt_versions WHERE project_id = ? AND prompt_type = ? ORDER BY created_at DESC, version DESC LIMIT 1",
+            f"SELECT version FROM prompt_versions WHERE project_id = ? AND prompt_type = ? ORDER BY {_NEWEST_FIRST} LIMIT 1",
             (project_id, prompt_type),
         ).fetchone()
         return row["version"] if row else None
