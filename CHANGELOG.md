@@ -76,6 +76,10 @@
 - An AI full-text verdict skipped criteria the model left out, counting them as passes; every criterion now needs a verdict.
 - A flag_check returned as `{ID: "FAIL"}` lost its verdicts; criteria without an ID could never fail a paper.
 - AI responses cut off at the output token limit were accepted as complete; they now fail.
+- A conflict could be adjudicated twice, leaving the paper both included and excluded; a ruling now needs an open conflict, and the newest ruling decides.
+- Undoing a ruling withdraws every ruling of that stage, needs a reviewer ID, and is logged under whoever clicked it.
+- The banner Undo withdraws the vote it announced even after the reviewer ID changed; a reset with no vote of one's own no longer clears someone else's ruling.
+- Assisted conflicts compare the AI with each human's latest vote, so votes cast before a switch from independent still count.
 
 ---
 ## [0.36.0] – 2026-10-04

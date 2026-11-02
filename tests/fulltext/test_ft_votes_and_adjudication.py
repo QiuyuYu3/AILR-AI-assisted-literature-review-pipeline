@@ -8,11 +8,11 @@ test_screen_callbacks.py; here: stage='full_text' semantics + resolve/undo.
 import pytest
 from dash import no_update
 
-from ailr.ui import full_text_view
+from ailr.ui import conflicts_view, full_text_view
 from ailr.ui._actions import _apply_reset, _apply_resolve, _apply_undo_resolve, _apply_vote
 from ailr.ui._conflicts_base import initial_payload
 from ailr.ui.conflicts_view import _CFG as ABSTRACT_CONFLICTS
-from tests.helpers import add_source, callbacks_of, vote, walk
+from tests.helpers import add_source, callbacks_of, set_config, vote, walk
 
 
 class TestFullTextVote:
@@ -119,7 +119,7 @@ class TestResolveConflict:
         vote(db, sid, "exclude", "amber", stage="abstract")
         _apply_resolve(db, sid, "include", "amber", None, stage="abstract")
         [rec] = db.list_reconciliations(pid, stage="abstract_screening")
-        refresh = _apply_undo_resolve(db, rec["id"])
+        refresh = _apply_undo_resolve(db, rec["id"], "amber")
         assert refresh and "ts" in refresh
         assert db.list_reconciliations(pid, stage="abstract_screening") == []
         assert db.unresolved_conflict_ids(pid, "assisted", stage="abstract") == {sid}
@@ -141,7 +141,7 @@ class TestResolveConflict:
         sid = add_source(tmp_project)
         _apply_resolve(db, sid, "exclude", "amber", "conference abstract only", stage="abstract")
         [rec] = db.list_reconciliations(pid, stage="abstract_screening")
-        _apply_undo_resolve(db, rec["id"])
+        _apply_undo_resolve(db, rec["id"], "amber")
 
         assert db.list_reconciliations(pid, stage="abstract_screening") == []
         [row] = [a for a in db.get_screening_actions(sid) if a["action"] == "reconcile"]
@@ -177,7 +177,7 @@ class TestResolveConflict:
 
         monkeypatch.setattr(db, "insert_screening_action", boom)
         with pytest.raises(RuntimeError):
-            _apply_undo_resolve(db, rec["id"])
+            _apply_undo_resolve(db, rec["id"], "amber")
 
         assert len(db.list_reconciliations(pid, stage="abstract_screening")) == 1
 
@@ -191,12 +191,115 @@ class TestResolveConflict:
         vote(db, sid, "exclude", "amber", stage="abstract")
         _apply_resolve(db, sid, "include", "amber", None, stage="abstract")
 
-        refresh = _apply_undo_resolve(db, 99999)
+        refresh = _apply_undo_resolve(db, 99999, "amber")
 
         assert refresh and "ts" in refresh
         assert len(db.list_reconciliations(pid, stage="abstract_screening")) == 1
         assert db.unresolved_conflict_ids(pid, "assisted", stage="abstract") == set()
         assert "reconcile_undo" not in [a["action"] for a in db.get_screening_actions(sid)]
+
+    def test_a_second_ruling_on_the_same_conflict_is_refused(self, tmp_project):
+        """Two adjudicators on stale cards, or one clicking twice, must not settle a paper both ways."""
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        _apply_resolve(db, sid, "include", "pi", None, stage="abstract", workflow="assisted")
+        _apply_resolve(db, sid, "exclude", "bo", None, stage="abstract", workflow="assisted")
+        assert [r["final_value"] for r in db.list_reconciliations(pid, stage="abstract_screening")] == ["include"]
+        assert db.final_exclude_ids(pid, "abstract", workflow="assisted") == set()
+
+    def test_a_ruling_on_a_withdrawn_conflict_is_refused(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        _apply_reset(db, sid, "amber")
+        _apply_resolve(db, sid, "exclude", "pi", None, stage="abstract", workflow="assisted")
+        assert db.list_reconciliations(pid, stage="abstract_screening") == []
+
+    def test_the_newest_of_two_rulings_decides(self, tmp_project):
+        """Rulings stacked before the guard existed: the newest is the paper's fate, not both."""
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        db.insert_screening_reconciliation(sid, "include", "pi", stage="abstract")
+        db.insert_screening_reconciliation(sid, "exclude", "bo", stage="abstract")
+        assert db.final_include_ids(pid, "abstract", workflow="assisted") == set()
+        assert db.final_exclude_ids(pid, "abstract", workflow="assisted") == {sid}
+
+    def test_undo_withdraws_every_ruling_of_the_stage(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        db.insert_screening_reconciliation(sid, "include", "pi", stage="abstract")
+        db.insert_screening_reconciliation(sid, "exclude", "bo", stage="abstract")
+        newest = db.list_reconciliations(pid, stage="abstract_screening")[0]
+        _apply_undo_resolve(db, newest["id"], "bo")
+        assert db.list_reconciliations(pid, stage="abstract_screening") == []
+        assert db.unresolved_conflict_ids(pid, "assisted", stage="abstract") == {sid}
+
+    def test_the_undo_is_logged_under_whoever_clicked_it(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        _apply_resolve(db, sid, "include", "carol", None, stage="abstract")
+        [rec] = db.list_reconciliations(pid, stage="abstract_screening")
+        _apply_undo_resolve(db, rec["id"], "dave")
+        undos = [a["reviewer_id"] for a in db.get_screening_actions(sid) if a["action"] == "reconcile_undo"]
+        assert undos == ["dave"]
+
+    def test_votes_cast_before_a_switch_to_assisted_still_raise_the_conflict(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="abstract")
+        vote(db, sid, "exclude", "bo", stage="abstract")
+        vote(db, sid, "exclude", "gpt", stage="abstract", reviewer_type="ai")
+        assert db.unresolved_conflict_ids(pid, "assisted", stage="abstract") == {sid}
+
+
+class TestResetOnlyWithdrawsMyVote:
+    def test_a_reset_without_a_vote_of_mine_leaves_the_ruling(self, tmp_project):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "amber", stage="full_text")
+        db.insert_screening_reconciliation(sid, "include", "pi", stage="full_text")
+        _apply_reset(db, sid, "zed", stage="full_text")
+        assert len(db.list_reconciliations(pid, stage="full_text_screening")) == 1
+        assert "reset" not in [a["action"] for a in db.get_screening_actions(sid)]
+
+    def test_the_banner_undo_withdraws_the_vote_it_announced(self, tmp_project):
+        """Correcting the reviewer ID after voting must not aim Undo at someone else's ruling."""
+        db = tmp_project.db
+        sid = add_source(tmp_project)
+        _, last = _apply_vote(db, sid, "include", "alic", "independent", stage="full_text")
+        _apply_vote(db, sid, "exclude", "bob", "independent", stage="full_text")
+        callbacks_of(full_text_view)["_undo"](1, last, "alice")
+        assert [d["reviewer_id"] for d in db.get_human_decisions(sid, "full_text")] == ["bob"]
+
+
+class TestConflictPageCallbacks:
+    @pytest.fixture
+    def fns(self):
+        return callbacks_of(conflicts_view)
+
+    def test_a_stale_card_cannot_rule_on_a_settled_conflict(self, tmp_project, fns, click):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        vote(db, sid, "include", "gpt", stage="abstract", reviewer_type="ai")
+        vote(db, sid, "exclude", "amber", stage="abstract")
+        for reviewer, decision in (("pi", "include"), ("bo", "exclude")):
+            click({"type": "conflict-decide", "source": sid, "decision": decision})
+            fns["_on_resolve"]([1], reviewer, [], [])
+        assert [r["final_value"] for r in db.list_reconciliations(pid, stage="abstract_screening")] == ["include"]
+
+    def test_undoing_a_ruling_needs_a_reviewer_id(self, tmp_project, fns, click):
+        db, pid = tmp_project.db, tmp_project.project_id
+        sid = add_source(tmp_project)
+        db.insert_screening_reconciliation(sid, "include", "pi", stage="abstract")
+        [rec] = db.list_reconciliations(pid, stage="abstract_screening")
+        click({"type": "conflict-undo", "rec_id": rec["id"]})
+        assert fns["_on_undo"]([1], "  ") is no_update
+        assert len(db.list_reconciliations(pid, stage="abstract_screening")) == 1
 
 
 class TestAdjudicationVisibility:
@@ -226,7 +329,7 @@ class TestAdjudicationVisibility:
         _apply_vote(db, sid, "include", "amber", "independent", stage="abstract")
         _apply_resolve(db, sid, "exclude", "bo", None, stage="abstract")
         [rec] = db.list_reconciliations(pid, stage="abstract_screening")
-        _apply_undo_resolve(db, rec["id"])
+        _apply_undo_resolve(db, rec["id"], "bo")
 
         actions = [a["action"] for a in db.get_screening_actions(sid, reviewer_id="amber")]
         assert "reconcile" in actions and "reconcile_undo" in actions
@@ -345,6 +448,7 @@ class TestFullTextPageCallbacks:
         assert (d["decision"], d["reasoning"]) == ("exclude", "Wrong population; Wrong design")
 
     def test_a_ruling_keeps_the_reasons_clean_and_files_the_cards_note_in_history(self, tmp_project, fns):
+        set_config(tmp_project, "screening", workflow="independent", full_text_workflow="independent")
         db, pid = tmp_project.db, tmp_project.project_id
         for name in ("Wrong population", "No full text"):
             db.create_exclusion_reason(pid, name)

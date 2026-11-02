@@ -266,6 +266,8 @@ class ScreeningAuxMixin:
             FROM reconciliations r JOIN sources s ON s.id = r.source_id
             WHERE s.project_id = ? AND r.stage = 'full_text_screening'
               AND r.final_value = 'exclude' AND TRIM(COALESCE(r.rationale, '')) <> ''
+              AND r.id = (SELECT MAX(id) FROM reconciliations
+                          WHERE source_id = r.source_id AND stage = r.stage)
             """,
             (project_id,),
         ).fetchall():

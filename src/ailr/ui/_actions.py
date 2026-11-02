@@ -46,6 +46,7 @@ def _apply_vote(
     src = db.get_source(source_id)
     return {"ts": time.time()}, {
         "sid": source_id,
+        "rid": rid,
         "decision": decision,
         "author_year": _short_author_year(src) if src else "",
         "title": src.title if src else "",
@@ -59,15 +60,16 @@ def _apply_reset(db: Any, source_id: int, rid: str, stage: str = "abstract") -> 
     # One commit: dropping the vote but keeping the reconciliation would leave a final decision
     # standing on no vote at all, and nothing in the UI would show it.
     with db._conn.transaction():
-        db.delete_screening_decision(source_id, rid, stage=stage, reviewer_type="human")
-        db.delete_reconciliations_for_source(source_id, _reconcile_stage(stage))
-        db.insert_screening_action(source_id, rid, action="reset")
+        # Without a vote of mine there is nothing to reset, and the adjudication is someone else's.
+        if db.delete_screening_decision(source_id, rid, stage=stage, reviewer_type="human"):
+            db.delete_reconciliations_for_source(source_id, _reconcile_stage(stage))
+            db.insert_screening_action(source_id, rid, action="reset")
     return {"ts": time.time()}, None  # clear banner
 
 
 def _apply_resolve(
     db: Any, source_id: int, decision: str, rid: str, rationale: str | None, stage: str,
-    audit_rationale: str | None = None,
+    audit_rationale: str | None = None, workflow: str | None = None,
 ) -> dict:
     """Adjudicate a conflict: record the final decision (+ audit row). Returns the refresh payload.
 
@@ -77,6 +79,9 @@ def _apply_resolve(
     which only the History timeline reads.
     """
     with db._conn.transaction():  # decision + audit row in one commit
+        # A card left open may show a conflict someone has since resolved or withdrawn.
+        if workflow is not None and not _conflict_is_open(db, source_id, workflow, stage):
+            return {"ts": time.time()}
         db.insert_screening_reconciliation(source_id, decision, rid, rationale, stage=stage)
         db.insert_screening_action(
             source_id, rid, action="reconcile", decision=decision, rationale=audit_rationale or rationale
@@ -84,12 +89,17 @@ def _apply_resolve(
     return {"ts": time.time()}
 
 
-def _apply_undo_resolve(db: Any, rec_id: int) -> dict:
-    """Undo a reconciliation, so the conflict re-enters the queue. Returns the refresh payload."""
-    # Fetch the row to learn source_id + adjudicator before deleting (for the audit trail).
+def _apply_undo_resolve(db: Any, rec_id: int, rid: str) -> dict:
+    """Undo an adjudication, so the conflict re-enters the queue. Returns the refresh payload."""
     row = db.get_reconciliation(rec_id)
-    with db._conn.transaction():  # without the audit row the decision would vanish from History
-        db.delete_reconciliation(rec_id)
-        if row:
-            db.insert_screening_action(row["source_id"], row["adjudicator"], action="reconcile_undo")
+    if row:
+        with db._conn.transaction():  # without the audit row the decision would vanish from History
+            # The whole stage goes, so an older adjudication of the same paper cannot stand in for it.
+            db.delete_reconciliations_for_source(row["source_id"], row["stage"])
+            db.insert_screening_action(row["source_id"], rid, action="reconcile_undo")
     return {"ts": time.time()}
+
+
+def _conflict_is_open(db: Any, source_id: int, workflow: str, stage: str) -> bool:
+    src = db.get_source(source_id)
+    return src is not None and source_id in db.unresolved_conflict_ids(src.project_id, workflow, stage)

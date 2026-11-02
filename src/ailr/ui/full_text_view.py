@@ -310,7 +310,7 @@ def register_callbacks(app: Any) -> None:
             return no_update, no_update
         if not last or not isinstance(last, dict):
             return no_update, no_update
-        rid = (reviewer or "").strip()
+        rid = last.get("rid") or (reviewer or "").strip()  # the vote's author, even if the ID box changed since
         if not rid:
             return no_update, no_update
         sid = last.get("sid")
@@ -459,6 +459,7 @@ def register_callbacks(app: Any) -> None:
             refresh = _apply_resolve(
                 get_project().db, sid, "exclude", rid, reason, "full_text",
                 audit_rationale=f"{reason} — {note}" if note else None,
+                workflow=get_project().config.screening_workflow("full_text"),
             )
             return no_update, no_update, False, "", refresh
         # Same vote lock as the inline buttons (idempotent self-vote + team cap) — this modal

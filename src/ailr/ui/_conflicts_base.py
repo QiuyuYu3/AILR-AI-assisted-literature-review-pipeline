@@ -181,7 +181,9 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
         source_id = int(triggered["source"])
         decision = triggered["decision"]
         rationale = value_for_source(rationales, rationale_ids, source_id)
-        return _apply_resolve(get_project().db, source_id, decision, rid, rationale, cfg.stage)
+        project = get_project()
+        return _apply_resolve(project.db, source_id, decision, rid, rationale, cfg.stage,
+                              workflow=project.config.screening_workflow(cfg.stage))
 
     if cfg.show_abstract_extras:
         @app.callback(
@@ -207,13 +209,15 @@ def register_callbacks(app: Any, cfg: ConflictConfig) -> None:
     @app.callback(
         Output(refresh_id, "data", allow_duplicate=True),
         Input({"type": undo_type, "rec_id": ALL}, "n_clicks"),
+        State("shared-reviewer", "value"),
         prevent_initial_call=True,
     )
-    def _on_undo(_clicks):
+    def _on_undo(_clicks, reviewer):
+        rid = (reviewer or "").strip()
         triggered = triggered_click_id()
-        if triggered is None:
+        if triggered is None or not rid:
             return no_update
-        return _apply_undo_resolve(get_project().db, int(triggered["rec_id"]))
+        return _apply_undo_resolve(get_project().db, int(triggered["rec_id"]), rid)
 
     @app.callback(
         Output(f"{cfg.store_prefix}-cards", "children"),

@@ -72,7 +72,9 @@ def _stage_final_sql(stage: str, team_size: int, verdict: str, ai_votes: bool) -
     ai_voted = f"AND {_ai_voted_sql(stage)}" if ai_votes else ""
     return f"""(
     EXISTS (SELECT 1 FROM reconciliations r
-            WHERE r.source_id = s.id AND r.stage = '{rec_stage}' AND r.final_value = '{verdict}')
+            WHERE r.source_id = s.id AND r.stage = '{rec_stage}' AND r.final_value = '{verdict}'
+              AND r.id = (SELECT MAX(id) FROM reconciliations
+                          WHERE source_id = s.id AND stage = '{rec_stage}'))
     OR (EXISTS (SELECT 1 FROM screening_decisions d
                 WHERE d.source_id = s.id AND d.reviewer_type = 'human' AND d.stage = '{stage}'
                   AND d.decision = '{verdict}'
@@ -218,9 +220,9 @@ _INDEPENDENT_CONFLICT_WHERE = """
 
 
 def _assisted_conflict_sql(select_clause: str, with_order: bool = False) -> str:
-    """Assisted mode: latest AI vs latest human verdict at a stage differ (or the AI is 'uncertain'),
-    with no reconciliation yet. The latest verdicts are resolved once in CTEs instead of repeating a
-    correlated subquery per condition. Params: (stage, stage, project_id, reconcile_stage)."""
+    """Assisted mode: the latest AI verdict at a stage differs from some human's latest verdict (or the
+    AI is 'uncertain'), with no reconciliation yet. Params: (stage, stage, project_id, reconcile_stage)."""
+    # Per human, not per paper: votes cast under independent before a switch to assisted still count.
     return f"""
         WITH latest_ai AS (
             SELECT sd.source_id, sd.decision
@@ -232,16 +234,16 @@ def _assisted_conflict_sql(select_clause: str, with_order: bool = False) -> str:
         latest_human AS (
             SELECT sd.source_id, sd.decision
             FROM screening_decisions sd
-            JOIN (SELECT source_id, MAX(id) AS mid FROM screening_decisions
-                  WHERE reviewer_type = 'human' AND stage = ? GROUP BY source_id) m
-              ON m.source_id = sd.source_id AND m.mid = sd.id
+            JOIN (SELECT source_id, reviewer_id, MAX(id) AS mid FROM screening_decisions
+                  WHERE reviewer_type = 'human' AND stage = ? GROUP BY source_id, reviewer_id) m
+              ON m.mid = sd.id
         )
         SELECT {select_clause}
         FROM sources s
         JOIN latest_ai a ON a.source_id = s.id
-        JOIN latest_human h ON h.source_id = s.id
         WHERE s.project_id = ? AND COALESCE(s.is_duplicate, 0) = 0
-          AND (a.decision != h.decision OR a.decision = 'uncertain')
+          AND EXISTS (SELECT 1 FROM latest_human h WHERE h.source_id = s.id
+                      AND (a.decision != h.decision OR a.decision = 'uncertain'))
           AND NOT EXISTS (SELECT 1 FROM reconciliations WHERE source_id = s.id AND stage = ?)
         {'ORDER BY s.id' if with_order else ''}
     """
