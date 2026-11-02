@@ -69,19 +69,19 @@ def _cell_value(field_name: str, owning: FieldSpec, value: Any, *, is_leaf: bool
     return v_str, q
 
 
-def _source_extraction_rows(db: Any, source_id: int, extractor_type: str) -> list[dict]:
-    """Rows for one source. `final` means the adjudicated record when there is one, else the
-    submitted human record(s) — so a reconciled paper exports as one agreed row, and an
-    unreconciled one still exports every reviewer separately rather than silently picking a
-    winner. A draft nobody has submitted is work in progress, not a record, and stays out."""
+def _extraction_rows_by_source(db: Any, project_id: int, extractor_type: str) -> dict[int, list[dict]]:
+    """Rows per source, for the whole project at once. `final` means the adjudicated record when
+    there is one, else the submitted human record(s) — so a reconciled paper exports as one agreed
+    row, and an unreconciled one still exports every reviewer separately rather than silently
+    picking a winner. A draft nobody has submitted is work in progress, not a record, and stays out."""
     if extractor_type != "final":
-        return db.list_extractions(source_id, extractor_type=extractor_type)
-    consensus = db.list_extractions(source_id, extractor_type="consensus")
-    if consensus:
-        return consensus
-    human = db.list_extractions(source_id, extractor_type="human")
-    submitted = {r["extractor_id"] for r in human if r["field_name"] == "_submitted"}
-    return [r for r in human if r["extractor_id"] in submitted]
+        return db.list_project_extractions(project_id, extractor_type)
+    out = db.list_project_extractions(project_id, "consensus")
+    for sid, human in db.list_project_extractions(project_id, "human").items():
+        if sid not in out:
+            submitted = {r["extractor_id"] for r in human if r["field_name"] == "_submitted"}
+            out[sid] = [r for r in human if r["extractor_id"] in submitted]
+    return out
 
 
 def _group_by_extractor(ex_rows: list[dict]) -> dict[str, dict[str, Any]]:
@@ -125,6 +125,11 @@ def extraction_table_rows(
     only_includes: bool = True,
 ) -> tuple[list[str], list[dict[str, str]]]:
     """Return (column_names, rows). Used by CSV export and JSON-flat export."""
+    by_source = _extraction_rows_by_source(project.db, project.project_id, extractor_type)
+    return _table_rows(project, _export_sources(project, only_includes), by_source)
+
+
+def _table_rows(project: Project, sources: list, by_source: dict[int, list[dict]]) -> tuple[list[str], list[dict[str, str]]]:
     schema_path = project.root / project.config.extraction.schema_path
     fields = compose_schema(schema_path)
     layout = _flatten_columns(fields)
@@ -148,14 +153,11 @@ def extraction_table_rows(
 
     columns = base_cols + field_cols
 
-    db = project.db
-    sources = _export_sources(project, only_includes)
-
     rows: list[dict[str, str]] = []
     for src in sources:
         # Re-pair each leaf value with its verbatim quote (stored in a separate column) so the
         # <field>_quote columns are populated; nested fields keep their inner structure.
-        for extractor_id, ex_by_field in _group_by_extractor(_source_extraction_rows(db, src.id, extractor_type)).items():
+        for extractor_id, ex_by_field in _group_by_extractor(by_source.get(src.id, [])).items():
             out_row: dict[str, str] = {
                 "source_id": str(src.id),
                 "extractor_id": extractor_id,
@@ -207,7 +209,10 @@ def extraction_table_csv(
     extractor_type: str = "ai",
     only_includes: bool = True,
 ) -> str:
-    columns, rows = extraction_table_rows(project, extractor_type=extractor_type, only_includes=only_includes)
+    return _csv_text(*extraction_table_rows(project, extractor_type=extractor_type, only_includes=only_includes))
+
+
+def _csv_text(columns: list[str], rows: list[dict[str, str]]) -> str:
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=columns)
     writer.writeheader()
@@ -224,22 +229,25 @@ def _extraction_records(
 ) -> list[dict[str, Any]]:
     """Per-source extraction dicts preserving the full {value, quote} shape. Shared by the combined
     JSON export and the per-paper ZIP export."""
-    db = project.db
-    sources = _export_sources(project, only_includes)
+    by_source = _extraction_rows_by_source(project.db, project.project_id, extractor_type)
+    return _records(project.db, _export_sources(project, only_includes), by_source)
+
+
+def _records(db: Any, sources: list, by_source: dict[int, list[dict]]) -> list[dict[str, Any]]:
+    # Under "final" the rows may be either the adjudicated record or the raw human ones;
+    # report which, rather than the word the caller asked with.
+    actual_type = {s.id: by_source[s.id][0]["extractor_type"] for s in sources if by_source.get(s.id)}
+    flag_checks = {
+        kind: db.get_flag_checks([sid for sid, k in actual_type.items() if k == kind], extractor_type=kind)
+        for kind in set(actual_type.values())
+    }
 
     out: list[dict[str, Any]] = []
     for src in sources:
         # Leaf fields store the value and its verbatim quote separately; re-pair them as
         # {value, quote} so the JSON is self-contained. Nested fields already carry quotes inside.
-        flag_check = None
-        rows = _source_extraction_rows(db, src.id, extractor_type)
-        # Under "final" the rows may be either the adjudicated record or the raw human ones;
-        # report which, rather than the word the caller asked with.
-        actual_type = rows[0]["extractor_type"] if rows else extractor_type
-        grouped = _group_by_extractor(rows)
-        for extractor_id, fields in grouped.items():
-            if flag_check is None:
-                flag_check = db.get_flag_check(src.id, extractor_type=actual_type)
+        for extractor_id, fields in _group_by_extractor(by_source.get(src.id, [])).items():
+            kind = actual_type[src.id]
             out.append(
                 {
                     "source_id": src.id,
@@ -247,10 +255,10 @@ def _extraction_records(
                     "year": src.year,
                     "doi": src.doi,
                     "title": src.title,
-                    "extractor_type": actual_type,
+                    "extractor_type": kind,
                     "extractor_id": extractor_id,
                     "fields": fields,
-                    "flag_check": flag_check,
+                    "flag_check": flag_checks[kind].get(src.id),
                 }
             )
     return out
@@ -278,23 +286,29 @@ def extraction_per_paper_zip(
     """A ZIP with one <source_id>.json per paper (same content as extraction_table_json, split per file)."""
     import zipfile
 
-    records = _extraction_records(project, extractor_type=extractor_type, only_includes=only_includes)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fn, text in _per_paper_files(_extraction_records(project, extractor_type=extractor_type, only_includes=only_includes)):
+            zf.writestr(fn, text)
+    return buf.getvalue()
+
+
+def _per_paper_files(records: list[dict[str, Any]]) -> list[tuple[str, str]]:
     per_source: dict[int, int] = {}
     for rec in records:
         per_source[rec["source_id"]] = per_source.get(rec["source_id"], 0) + 1
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for rec in records:
-            sid = rec["source_id"]
-            # Two reviewers on one paper (independent extraction) would collide on <source_id>.json.
-            if per_source[sid] > 1:
-                safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(rec.get("extractor_id") or "unknown"))
-                fn = f"{sid}__{safe}.json"
-            else:
-                fn = f"{sid}.json"
-            zf.writestr(fn, json.dumps(rec, indent=2, ensure_ascii=False))
-    return buf.getvalue()
+    files: list[tuple[str, str]] = []
+    for rec in records:
+        sid = rec["source_id"]
+        # Two reviewers on one paper (independent extraction) would collide on <source_id>.json.
+        if per_source[sid] > 1:
+            safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(rec.get("extractor_id") or "unknown"))
+            fn = f"{sid}__{safe}.json"
+        else:
+            fn = f"{sid}.json"
+        files.append((fn, json.dumps(rec, indent=2, ensure_ascii=False)))
+    return files
 
 
 _BUNDLE_README = """\
@@ -316,16 +330,24 @@ def extraction_bundle_zip(project: Project) -> bytes:
     """Every extraction export in one ZIP: the included studies and all papers, final and AI records."""
     import zipfile
 
+    db = project.db
+    everything = _export_sources(project, only_includes=False)
+    included_ids = {s.id for s in _export_sources(project, only_includes=True)}
+    # Fetched once per kind and shared by every file below, so the query count does not grow with papers.
+    by_source = {kind: _extraction_rows_by_source(db, project.project_id, kind) for kind in ("final", "ai")}
+    records = {kind: _records(db, everything, rows) for kind, rows in by_source.items()}
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("README.txt", _BUNDLE_README)
-        for folder, only_includes in (("included", True), ("all", False)):
+        for folder, sources in (("included", [s for s in everything if s.id in included_ids]), ("all", everything)):
+            ids = {s.id for s in sources}
             for kind in ("final", "ai"):
-                zf.writestr(f"{folder}/{kind}.csv", extraction_table_csv(project, extractor_type=kind, only_includes=only_includes))
-                zf.writestr(f"{folder}/{kind}.json", extraction_table_json(project, extractor_type=kind, only_includes=only_includes))
-            with zipfile.ZipFile(io.BytesIO(extraction_per_paper_zip(project, extractor_type="ai", only_includes=only_includes))) as per_paper:
-                for name in per_paper.namelist():
-                    zf.writestr(f"{folder}/ai_per_paper/{name}", per_paper.read(name))
+                zf.writestr(f"{folder}/{kind}.csv", _csv_text(*_table_rows(project, sources, by_source[kind])))
+                kept = [r for r in records[kind] if r["source_id"] in ids]
+                zf.writestr(f"{folder}/{kind}.json", json.dumps(kept, indent=2, ensure_ascii=False))
+            for fn, text in _per_paper_files([r for r in records["ai"] if r["source_id"] in ids]):
+                zf.writestr(f"{folder}/ai_per_paper/{fn}", text)
     return buf.getvalue()
 
 
@@ -336,12 +358,11 @@ def extraction_rows_long(
     only_includes: bool = True,
 ) -> list[dict[str, Any]]:
     """Long-format rows: one entry per (source, field). For ad-hoc analysis."""
-    db = project.db
-    sources = _export_sources(project, only_includes)
+    by_source = _extraction_rows_by_source(project.db, project.project_id, extractor_type)
 
     out: list[dict[str, Any]] = []
-    for src in sources:
-        for row in _source_extraction_rows(db, src.id, extractor_type):
+    for src in _export_sources(project, only_includes):
+        for row in by_source.get(src.id, []):
             out.append(
                 {
                     "source_id": src.id,

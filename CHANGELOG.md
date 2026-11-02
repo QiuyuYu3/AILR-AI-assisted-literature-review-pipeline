@@ -16,6 +16,7 @@
 - Requires Dash 3.1, dash-bootstrap-components 2.0 and dash-ag-grid 31.3.1.
 - Quick tests now count toward the token usage on the dashboard, Reports and `ailr metrics`.
 - `ailr metrics` reports the papers awaiting the AI's vote at each assisted stage.
+- Extraction exports fetch each record kind once for the whole project instead of once per paper.
 
 ### Removed
 - The retired full calibration: the hidden `ailr calibrate` command and `CalibrationTask` / `CalibrationSummary`; quick tests remain.

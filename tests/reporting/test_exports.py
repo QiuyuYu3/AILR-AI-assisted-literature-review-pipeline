@@ -184,6 +184,26 @@ class TestBundle:
         assert sorted(int(r["source_id"]) for r in ai_all) == [included, other]
         assert [int(r["source_id"]) for r in ai_included] == [included]
 
+    def test_query_count_does_not_grow_with_papers(self, export_project):
+        """Per-paper queries made the bundle crawl on a remote database."""
+        conn = export_project.db._conn
+        real = conn.execute
+
+        def bundle_queries():
+            calls = []
+            conn.execute = lambda *a, **k: calls.append(a[0]) or real(*a, **k)
+            try:
+                extraction_bundle_zip(export_project)
+            finally:
+                conn.execute = real
+            return len(calls)
+
+        _seed_extraction(export_project.db, _add_included_source(export_project, "first"))
+        one_paper = bundle_queries()
+        for i in range(4):
+            _seed_extraction(export_project.db, _add_included_source(export_project, f"more {i}"))
+        assert bundle_queries() == one_paper
+
 
 class TestFinalExport:
     """'final' = the adjudicated record when one exists, else the raw human record(s)."""

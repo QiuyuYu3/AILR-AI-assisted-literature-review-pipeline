@@ -34,6 +34,17 @@ def _as_datetime(ts: Any) -> datetime | None:
         return None
 
 
+def _decode_extraction(row: Any) -> dict:
+    d = dict(row)
+    for key in ("value", "llm_params"):
+        if d.get(key):
+            try:
+                d[key] = json.loads(d[key])
+            except json.JSONDecodeError:
+                pass
+    return d
+
+
 class ExtractionMixin:
     def insert_extraction(self, result: "ExtractionResult") -> int:
         if result.source_id is None:
@@ -452,21 +463,19 @@ class ExtractionMixin:
             sql += " AND extractor_type = ?"
             params.append(extractor_type)
         sql += " ORDER BY id"
-        rows = self._conn.execute(sql, params).fetchall()
-        out = []
+        return [_decode_extraction(r) for r in self._conn.execute(sql, params).fetchall()]
+
+    def list_project_extractions(self, project_id: int, extractor_type: str) -> dict[int, list[dict]]:
+        """list_extractions for every source in a project in one query, keyed by source id."""
+        rows = self._conn.execute(
+            "SELECT * FROM extractions WHERE source_id IN (SELECT id FROM sources WHERE project_id = ?) "
+            "AND extractor_type = ? AND field_name != '_flag_check' ORDER BY id",
+            (project_id, extractor_type),
+        ).fetchall()
+        out: dict[int, list[dict]] = {}
         for r in rows:
-            d = dict(r)
-            if d.get("value"):
-                try:
-                    d["value"] = json.loads(d["value"])
-                except json.JSONDecodeError:
-                    pass
-            if d.get("llm_params"):
-                try:
-                    d["llm_params"] = json.loads(d["llm_params"])
-                except json.JSONDecodeError:
-                    pass
-            out.append(d)
+            d = _decode_extraction(r)
+            out.setdefault(d["source_id"], []).append(d)
         return out
 
     def stale_ai_extraction_source_ids(
