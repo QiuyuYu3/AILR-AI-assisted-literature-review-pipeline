@@ -138,6 +138,13 @@ class TestAnthropic:
         with pytest.raises(LLMError, match="No tool_use block"):
             _ask(_anthropic(anthropic_sdk, reply))
 
+    def test_a_reply_cut_off_at_the_token_limit_fails_with_its_usage(self, anthropic_sdk):
+        reply = _anthropic_reply(output_tokens=16000)
+        reply.stop_reason = "max_tokens"
+        with pytest.raises(LLMError, match="output limit") as exc:
+            _ask(_anthropic(anthropic_sdk, reply))
+        assert exc.value.metadata.output_tokens == 16000
+
     def test_the_system_prompt_is_marked_for_caching(self, anthropic_sdk):
         client = _anthropic(anthropic_sdk)
         _ask(client)
@@ -194,6 +201,12 @@ class TestOpenAI:
     def test_arguments_that_are_not_json_fail(self, openai_sdk):
         with pytest.raises(LLMError, match="invalid JSON"):
             _ask(_openai(openai_sdk, _openai_reply(arguments="{not json")))
+
+    def test_a_reply_cut_off_at_the_token_limit_fails(self, openai_sdk):
+        reply = _openai_reply()
+        reply.choices[0].finish_reason = "length"
+        with pytest.raises(LLMError, match="output limit"):
+            _ask(_openai(openai_sdk, reply))
 
     def test_the_seed_is_sent(self, openai_sdk):
         client = _openai(openai_sdk)
@@ -253,8 +266,8 @@ def _gemini_reply(prompt_token_count=100, candidates_token_count=20):
     return types.SimpleNamespace(candidates=[types.SimpleNamespace(content=content)], usage_metadata=usage)
 
 
-def _gemini(mod, errors=()):
-    mod.calls = _Calls(_gemini_reply(), errors)
+def _gemini(mod, errors=(), reply=None):
+    mod.calls = _Calls(reply or _gemini_reply(), errors)
     return GeminiClient(model="gemini-x", max_retries=2)
 
 
@@ -272,3 +285,9 @@ class TestGemini:
         with pytest.raises(LLMError):
             _ask(_gemini(genai, errors=[_GoogleError("400 Request contains an invalid argument.", 400)]))
         assert len(genai.calls.kwargs) == 1
+
+    def test_a_reply_cut_off_at_the_token_limit_fails(self, genai):
+        reply = _gemini_reply()
+        reply.candidates[0].finish_reason = types.SimpleNamespace(name="MAX_TOKENS")
+        with pytest.raises(LLMError, match="output limit"):
+            _ask(_gemini(genai, reply=reply))

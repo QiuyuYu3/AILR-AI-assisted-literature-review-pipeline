@@ -306,10 +306,10 @@ class LLMReviewer(Reviewer):
                 )
             )
 
-        verdicts = _normalize_flag_check(output.get("_flag_check")) if flag_check else None
-        if flag_check and verdicts is None:
-            # The full-text verdict comes from these, so a paper without them is not done.
-            raise LLMError("The response had no usable _flag_check, so there is no full-text verdict. Re-run this paper.")
+        verdicts = None
+        if flag_check:
+            # The full-text verdict comes from these, so a paper missing any of them is not done.
+            verdicts = _complete_verdicts(_normalize_flag_check(output.get("_flag_check")), criterion_ids)
         return SourceExtraction(
             source_id=source.id or 0,
             results=results,
@@ -328,11 +328,14 @@ def _format_paper_message(source: Source, paper_text: str) -> str:
     return f"{header}\n\n--- FULL TEXT ---\n\n{paper_text}"
 
 
+_VERDICTS = ("PASS", "FAIL", "UNCERTAIN")
+
+
 def _flag_check_item_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            "verdict": {"type": "string", "enum": ["PASS", "FAIL", "UNCERTAIN"]},
+            "verdict": {"type": "string", "enum": list(_VERDICTS)},
             "reason": {"type": "string", "description": "One sentence."},
             "confidence": {"type": "integer", "minimum": 1, "maximum": 10},
             "quote": {"type": ["string", "null"], "description": "Verbatim quote from the full text supporting this verdict, or null if not stated."},
@@ -381,24 +384,41 @@ def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: list[str] 
 
 
 def _normalize_flag_check(raw: Any) -> list[dict[str, Any]] | None:
-    """Normalize either the named-slot object {ID: {verdict,...}} or the legacy array
-    [{criterion_id, verdict,...}] into the canonical list[dict] stored in the DB."""
+    """Canonical list[dict] from the named-slot object, its flat {ID: verdict} form, or the legacy array."""
     if isinstance(raw, str):  # serialized into a JSON string, as models sometimes do
         try:
             raw = json.loads(raw)
         except ValueError:
             return None
-    if raw is None:
-        return None
     if isinstance(raw, dict):
-        out: list[dict[str, Any]] = []
-        for cid, v in raw.items():
-            if isinstance(v, dict):
-                out.append({"criterion_id": cid, **v})
-        return out
-    if isinstance(raw, list):
-        return raw
-    return None
+        raw = [{"criterion_id": cid, **(v if isinstance(v, dict) else {"verdict": v})} for cid, v in raw.items()]
+    if not isinstance(raw, list):
+        return None
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, dict):
+            verdict = item.get("verdict")
+            out.append({**item, "verdict": verdict.strip().upper() if isinstance(verdict, str) else verdict})
+    return out
+
+
+def _complete_verdicts(verdicts: list[dict[str, Any]] | None, criterion_ids: list[str] | None) -> list[dict[str, Any]]:
+    """The verdicts for the known criteria, in order; LLMError unless every one is PASS, FAIL or UNCERTAIN."""
+    if verdicts is None:
+        raise LLMError("The response had no usable _flag_check, so there is no full-text verdict. Re-run this paper.")
+    missing: list[str] = []
+    if criterion_ids:
+        by_id = {str(v.get("criterion_id")): v for v in verdicts}
+        missing = [c for c in criterion_ids if c not in by_id]
+        verdicts = [by_id[c] for c in criterion_ids if c in by_id]
+    invalid = [str(v.get("criterion_id", "?")) for v in verdicts if v.get("verdict") not in _VERDICTS]
+    if missing or invalid or not verdicts:
+        named = ", ".join(missing + invalid) or "any criterion"
+        raise LLMError(
+            f"The response's _flag_check has no valid verdict for {named}, so a full-text verdict would "
+            f"skip it. Re-run this paper."
+        )
+    return verdicts
 
 
 def _parse_json_blob(raw: Any, field: FieldSpec, *, opens: str = "[{") -> Any:

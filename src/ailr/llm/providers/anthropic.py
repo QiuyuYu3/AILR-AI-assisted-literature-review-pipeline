@@ -107,17 +107,6 @@ class AnthropicClient(LLMClient):
 
         latency_ms = int((time.monotonic() - t0) * 1000)
 
-        tool_use_block = None
-        for block in response.content:
-            if block.type == "tool_use" and block.name == tool_schema.name:
-                tool_use_block = block
-                break
-        if tool_use_block is None:
-            raise LLMError(
-                f"No tool_use block named {tool_schema.name!r} in response. "
-                f"Got blocks: {[b.type for b in response.content]}"
-            )
-
         usage = response.usage
         input_tokens = getattr(usage, "input_tokens", 0) or 0
         output_tokens = getattr(usage, "output_tokens", 0) or 0
@@ -135,4 +124,24 @@ class AnthropicClient(LLMClient):
             latency_ms=latency_ms,
         )
 
+        stop_reason = getattr(response, "stop_reason", None)
+        if stop_reason == "max_tokens":
+            raise LLMError(
+                f"The response hit the {max_tokens}-token output limit and was cut off, so it is incomplete.",
+                metadata=meta,
+            )
+        if stop_reason == "refusal":
+            raise LLMError("The model refused to answer.", metadata=meta)
+
+        tool_use_block = None
+        for block in response.content:
+            if block.type == "tool_use" and block.name == tool_schema.name:
+                tool_use_block = block
+                break
+        if tool_use_block is None:
+            raise LLMError(
+                f"No tool_use block named {tool_schema.name!r} in response. "
+                f"Got blocks: {[b.type for b in response.content]}",
+                metadata=meta,
+            )
         return dict(tool_use_block.input), meta

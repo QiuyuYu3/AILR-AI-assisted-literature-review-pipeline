@@ -71,6 +71,11 @@ class TestCriteriaImport:
         save_criteria(path, rows)
         assert [(c.id, c.name) for c in load_criteria(path).criteria] == [("I1", "A"), ("I2", "B"), ("I3", "C")]
 
+    def test_a_hand_written_criterion_without_an_id_gets_one_on_load(self, tmp_path):
+        path = tmp_path / "criteria.yaml"
+        path.write_text("criteria:\n- id: B1\n  name: Population\n- name: Design\n", encoding="utf-8")
+        assert [c.id for c in load_criteria(path).criteria] == ["B1", "B2"]
+
 
 # ----- variables -----
 

@@ -102,15 +102,6 @@ class OpenAIClient(LLMClient):
 
         latency_ms = int((time.monotonic() - t0) * 1000)
 
-        choice = response.choices[0]
-        tool_calls = getattr(choice.message, "tool_calls", None)
-        if not tool_calls:
-            raise LLMError(f"No function call named {tool_schema.name!r} in OpenAI response.")
-        try:
-            output = json.loads(tool_calls[0].function.arguments)
-        except (ValueError, TypeError) as e:
-            raise LLMError(f"OpenAI returned invalid JSON arguments: {e}") from e
-
         usage = response.usage
         input_tokens = getattr(usage, "prompt_tokens", 0) or 0
         output_tokens = getattr(usage, "completion_tokens", 0) or 0
@@ -127,4 +118,21 @@ class OpenAIClient(LLMClient):
             cached_input_tokens=cached,
             latency_ms=latency_ms,
         )
+
+        choice = response.choices[0]
+        finish_reason = getattr(choice, "finish_reason", None)
+        if finish_reason == "length":
+            raise LLMError(
+                f"The response hit the {max_tokens}-token output limit and was cut off, so it is incomplete.",
+                metadata=meta,
+            )
+        if finish_reason == "content_filter":
+            raise LLMError("The response was withheld by OpenAI's content filter.", metadata=meta)
+        tool_calls = getattr(choice.message, "tool_calls", None)
+        if not tool_calls:
+            raise LLMError(f"No function call named {tool_schema.name!r} in OpenAI response.", metadata=meta)
+        try:
+            output = json.loads(tool_calls[0].function.arguments)
+        except (ValueError, TypeError) as e:
+            raise LLMError(f"OpenAI returned invalid JSON arguments: {e}", metadata=meta) from e
         return output, meta

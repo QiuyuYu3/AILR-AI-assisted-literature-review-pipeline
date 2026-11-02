@@ -73,6 +73,9 @@
 - Prompt and protocol versions saved within the same second could be read in the wrong order (v9 after v10).
 - `ailr metrics` crashed on logged calls without latency or token figures.
 - PDF conversion listed a linked PDF in `data/pdfs` as unmatched when it was not named by paper ID.
+- An AI full-text verdict skipped criteria the model left out, counting them as passes; every criterion now needs a verdict.
+- A flag_check returned as `{ID: "FAIL"}` lost its verdicts; criteria without an ID could never fail a paper.
+- AI responses cut off at the output token limit were accepted as complete; they now fail.
 
 ---
 ## [0.36.0] – 2026-10-04

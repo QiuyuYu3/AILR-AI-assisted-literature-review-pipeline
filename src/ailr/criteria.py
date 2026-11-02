@@ -69,9 +69,11 @@ def load_criteria(path: Path) -> CriteriaSet:
     if isinstance(data, list):
         data = {"criteria": data}
     try:
-        return CriteriaSet(**data)
+        cs = CriteriaSet(**data)
     except PydanticValidationError as e:
         raise ConfigError(f"Invalid criteria in {path}:\n{e}") from e
+    # A criterion without an ID would get no flag_check slot, so it could never fail a paper.
+    return CriteriaSet(criteria=assign_ids(cs.criteria))
 
 
 def save_criteria(path: Path, items: list[dict]) -> CriteriaSet:

@@ -112,18 +112,6 @@ class GeminiClient(LLMClient):
             raise LLMError(f"Gemini call failed: {e}") from e
         latency_ms = int((time.monotonic() - t0) * 1000)
 
-        output: dict | None = None
-        try:
-            for part in response.candidates[0].content.parts:
-                fc = getattr(part, "function_call", None)
-                if fc is not None and getattr(fc, "name", None) == tool_schema.name:
-                    output = _proto_to_py(fc.args)
-                    break
-        except (AttributeError, IndexError) as e:
-            raise LLMError(f"Could not parse Gemini function call: {e}") from e
-        if output is None:
-            raise LLMError(f"No function call named {tool_schema.name!r} in Gemini response.")
-
         usage = getattr(response, "usage_metadata", None)
         input_tokens = getattr(usage, "prompt_token_count", 0) or 0 if usage else 0
         output_tokens = getattr(usage, "candidates_token_count", 0) or 0 if usage else 0
@@ -134,4 +122,23 @@ class GeminiClient(LLMClient):
             output_tokens=output_tokens,
             latency_ms=latency_ms,
         )
+
+        output: dict | None = None
+        try:
+            candidate = response.candidates[0]
+            finish_reason = getattr(getattr(candidate, "finish_reason", None), "name", None)
+            if finish_reason == "MAX_TOKENS":
+                raise LLMError(
+                    f"The response hit the {max_tokens}-token output limit and was cut off, so it is incomplete.",
+                    metadata=meta,
+                )
+            for part in candidate.content.parts:
+                fc = getattr(part, "function_call", None)
+                if fc is not None and getattr(fc, "name", None) == tool_schema.name:
+                    output = _proto_to_py(fc.args)
+                    break
+        except (AttributeError, IndexError) as e:
+            raise LLMError(f"Could not parse Gemini function call: {e}", metadata=meta) from e
+        if output is None:
+            raise LLMError(f"No function call named {tool_schema.name!r} in Gemini response.", metadata=meta)
         return dict(output), meta

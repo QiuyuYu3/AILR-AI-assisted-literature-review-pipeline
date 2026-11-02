@@ -15,10 +15,16 @@ from ailr.core.source import Source
 from ailr.exceptions import LLMError
 from ailr.extraction import FieldSpec
 from ailr.ingest.results_import import import_ai_results, import_ai_screening_results
-from ailr.reviewers import QUOTE_SEPARATOR, ExtractionResult, ScreeningDecision, _unwrap_value_quote
+from ailr.reviewers import (
+    QUOTE_SEPARATOR,
+    ExtractionResult,
+    LLMReviewer,
+    ScreeningDecision,
+    _unwrap_value_quote,
+)
 from ailr.tasks.extract import _derive_ft_decision
 from ailr.ui import extract_view, screen_view
-from tests.helpers import add_source, callbacks_of, component_text, count_decisions
+from tests.helpers import StubClient, add_source, callbacks_of, component_text, count_decisions
 
 _LIST_FIELD = FieldSpec(name="study_design", type="list", item_type="string")
 _INT_FIELD = FieldSpec(name="n_dyads", type="integer")
@@ -124,6 +130,37 @@ class TestDeriveFtDecision:
     def test_empty_or_unknown_verdicts_are_uncertain(self):
         assert _derive_ft_decision([]) == "uncertain"
         assert _derive_ft_decision([{"verdict": None}, {"reason": "no verdict key"}]) == "uncertain"
+
+
+_CRITERIA = ["I1", "I2", "I3"]
+
+
+def _verdict(v):
+    return {"verdict": v, "reason": "r", "confidence": 8, "quote": None}
+
+
+def _extract_with(flag_check):
+    reviewer = LLMReviewer(StubClient({"_flag_check": flag_check}))
+    return reviewer.extract(Source(title="T", id=1), "text", [], "prompt", "criteria", criterion_ids=_CRITERIA)
+
+
+class TestFlagCheckCompleteness:
+    def test_a_criterion_the_model_skipped_fails_the_paper(self):
+        with pytest.raises(LLMError, match="I2, I3"):
+            _extract_with({"I1": _verdict("PASS")})
+
+    def test_the_flat_shape_keeps_its_fail(self):
+        out = _extract_with({"I1": "pass", "I2": " FAIL ", "I3": "PASS"})
+        assert _derive_ft_decision(out.flag_check) == "exclude"
+
+    def test_a_verdict_outside_the_enum_fails_the_paper(self):
+        with pytest.raises(LLMError, match="I3"):
+            _extract_with({"I1": _verdict("PASS"), "I2": _verdict("PASS"), "I3": _verdict("MAYBE")})
+
+    def test_a_criterion_not_in_the_protocol_is_dropped(self):
+        out = _extract_with({cid: _verdict("PASS") for cid in _CRITERIA} | {"I9": _verdict("FAIL")})
+        assert [v["criterion_id"] for v in out.flag_check] == _CRITERIA
+        assert _derive_ft_decision(out.flag_check) == "include"
 
 
 class TestImportAiScreening:

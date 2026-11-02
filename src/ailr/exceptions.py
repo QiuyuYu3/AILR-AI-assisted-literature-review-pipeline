@@ -43,3 +43,8 @@ class ModeError(AILRError):
 
 class LLMError(AILRError):
     """Raised on LLM API errors (auth, malformed response, exhausted retries)."""
+
+    def __init__(self, message: str = "", *, metadata=None) -> None:
+        super().__init__(message)
+        # Usage of a billed call whose response was rejected, so its tokens can still be recorded.
+        self.metadata = metadata
