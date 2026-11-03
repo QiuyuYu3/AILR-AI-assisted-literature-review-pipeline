@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 import ailr.ui.ai_runner as ai_runner
+from ailr.core.project import Project
 from ailr.reviewers import ExtractionResult
 from ailr.ui import screen_view
+from ailr.ui._project import switch_project
 from tests.helpers import ApiClient, add_source, callbacks_of, count_decisions, settle, vote
 
 
@@ -68,6 +70,17 @@ class TestJobGuard:
         # A one-paper re-run would write the same rows as the batch, so it shares the key.
         assert ai_runner.start_single_extraction(tmp_project, 1, mock=True) is False
         assert ai_runner.start_screening(tmp_project, mock=True) is True
+
+    def test_a_job_belongs_to_its_project(self, tmp_project, tmp_path, monkeypatch):
+        """The other project's job goes on, but this page must not report it as its own."""
+        monkeypatch.setattr(ai_runner, "threading", SimpleNamespace(Thread=_HeldThread))
+        assert ai_runner.start_extraction(tmp_project, mock=True) is True
+
+        Project.init(tmp_path / "other").db.close()
+        other = switch_project(tmp_path / "other")
+
+        assert ai_runner.get_status("extraction")["started"] is False
+        assert ai_runner.start_extraction(other, mock=True) is True
 
     def test_a_finished_job_can_start_again(self, tmp_project):
         assert ai_runner.start_screening(tmp_project, mock=True) is True

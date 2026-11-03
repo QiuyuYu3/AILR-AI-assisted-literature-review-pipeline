@@ -18,8 +18,11 @@ from ailr.prompt_versions import (
 from ailr.reviewers import LLMReviewer
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.screen import ScreeningTask
+from ailr.ui._project import get_project, has_project
 
-_jobs: dict[str, dict] = {}
+JobKey = tuple[str, str]  # (project root, job kind): a project's job goes on while another is open
+
+_jobs: dict[JobKey, dict] = {}
 _lock = threading.Lock()
 
 
@@ -27,7 +30,15 @@ def _default() -> dict:
     return {"running": False, "started": False, "done": 0, "total": 0, "error": None, "summary": None}
 
 
-def get_status(key: str) -> dict:
+def _job_key(project: Any, kind: str) -> JobKey:
+    return str(project.root.resolve()), kind
+
+
+def get_status(kind: str) -> dict:
+    """The job of this kind in the open project, never one still running for another project."""
+    if not has_project():
+        return _default()
+    key = _job_key(get_project(), kind)
     with _lock:
         return dict(_jobs.get(key, _default()))
 
@@ -53,7 +64,7 @@ def _make_client(project: Any, stage: str, mock: bool, synth: bool = False):
     )
 
 
-def _progress_cb(key: str) -> Callable:
+def _progress_cb(key: JobKey) -> Callable:
     def cb(idx, total, *_):
         with _lock:
             if key in _jobs:
@@ -62,12 +73,13 @@ def _progress_cb(key: str) -> Callable:
     return cb
 
 
-def _start(key: str, runner: Callable, *args: Any) -> bool:
+def _start(kind: str, runner: Callable, project: Any, *args: Any) -> bool:
+    key = _job_key(project, kind)
     with _lock:
         if _jobs.get(key, {}).get("running"):
             return False
         _jobs[key] = {**_default(), "running": True, "started": True}
-    threading.Thread(target=runner, args=(key, *args), daemon=True).start()
+    threading.Thread(target=runner, args=(key, project, *args), daemon=True).start()
     return True
 
 
@@ -99,7 +111,7 @@ def start_crosscheck(project: Any, source_ids=None) -> bool:
     return _start("crosscheck", _run_crosscheck, project, source_ids)
 
 
-def _run_crosscheck(key: str, project: Any, source_ids) -> None:
+def _run_crosscheck(key: JobKey, project: Any, source_ids) -> None:
     try:
         from ailr.tasks.crosscheck import DeterministicCrossCheckTask
 
@@ -126,7 +138,7 @@ def _screening_crosscheck_source_ids(project: Any, stage: str, source_ids) -> li
     return project.db.source_ids_with_decisions(project.project_id, stage, targets)
 
 
-def _run_screening_crosscheck(key: str, project: Any, stage: str, source_ids) -> None:
+def _run_screening_crosscheck(key: JobKey, project: Any, stage: str, source_ids) -> None:
     try:
         from ailr.tasks.crosscheck import ScreeningCrossCheckTask
 
@@ -147,7 +159,7 @@ def start_screening_llm_crosscheck(project: Any, stage: str = "abstract", mock: 
     )
 
 
-def _run_screening_llm_crosscheck(key: str, project: Any, stage: str, mock: bool, source_ids) -> None:
+def _run_screening_llm_crosscheck(key: JobKey, project: Any, stage: str, mock: bool, source_ids) -> None:
     try:
         from ailr.crosschecker import ScreeningCrossChecker
         from ailr.tasks.crosscheck import ScreeningLLMCrossCheckTask
@@ -203,7 +215,7 @@ def _crosscheck_client(project: Any, mock: bool, stage: str = "extraction"):
     ), None
 
 
-def _run_llm_crosscheck(key: str, project: Any, mock: bool, source_ids) -> None:
+def _run_llm_crosscheck(key: JobKey, project: Any, mock: bool, source_ids) -> None:
     try:
         from ailr.crosschecker import LLMCrossChecker
         from ailr.tasks.crosscheck import LLMCrossCheckTask
@@ -229,7 +241,7 @@ def start_quicktest_crosscheck(project: Any, run_id: int, mock: bool = False) ->
     return _start("crosscheck-quicktest", _run_quicktest_crosscheck, project, run_id, mock)
 
 
-def _run_quicktest_crosscheck(key: str, project: Any, run_id: int, mock: bool) -> None:
+def _run_quicktest_crosscheck(key: JobKey, project: Any, run_id: int, mock: bool) -> None:
     try:
         from ailr.crosschecker import LLMCrossChecker
         from ailr.tasks.crosscheck import QuickTestCrossCheckTask
@@ -249,7 +261,7 @@ def _run_quicktest_crosscheck(key: str, project: Any, run_id: int, mock: bool) -
             _jobs[key].update({"running": False, "error": str(e)})
 
 
-def _run_preprocess(key: str, project: Any, force: bool, only_ids) -> None:
+def _run_preprocess(key: JobKey, project: Any, force: bool, only_ids) -> None:
     try:
         from ailr.tasks.preprocess import PreprocessTask
 
@@ -276,7 +288,7 @@ current_screening_composed = screening_composed
 current_extraction_composed = extraction_composed
 
 
-def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None, force: bool = False) -> None:
+def _run_screening(key: JobKey, project: Any, mock: bool, flag_check: Any = None, force: bool = False) -> None:
     try:
         client = _make_client(project, "screen", mock)
         # After the client exists, so a run that cannot start keeps the mock results it would replace.
@@ -298,7 +310,7 @@ def _run_screening(key: str, project: Any, mock: bool, flag_check: Any = None, f
             _jobs[key].update({"running": False, "error": str(e)})
 
 
-def _run_quick_test(key: str, project: Any, mock: bool, n: int, stage: str, source_ids=None) -> None:
+def _run_quick_test(key: JobKey, project: Any, mock: bool, n: int, stage: str, source_ids=None) -> None:
     try:
         if stage == "extraction":
             from ailr.tasks.calibrate import ExtractionQuickTestTask
@@ -357,7 +369,7 @@ def _extraction_summary_text(summary: Any) -> str:
     return text
 
 
-def _run_single_extraction(key: str, project: Any, mock: bool, source_id: int) -> None:
+def _run_single_extraction(key: JobKey, project: Any, mock: bool, source_id: int) -> None:
     try:
         client = _make_client(project, "extract", mock)
         reviewer = LLMReviewer(client, prompt_version=extraction_prompt_version(project))
@@ -379,7 +391,7 @@ def _run_single_extraction(key: str, project: Any, mock: bool, source_id: int) -
             _jobs[key].update({"running": False, "error": str(e)})
 
 
-def _run_extraction(key: str, project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> None:
+def _run_extraction(key: JobKey, project: Any, mock: bool, all_sources: bool = False, force: bool = False) -> None:
     try:
         client = _make_client(project, "extract", mock)
         # After the client exists, so a run that cannot start keeps the mock results it would replace.

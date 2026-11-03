@@ -91,6 +91,7 @@
 - Paging a sorted queue on Postgres could repeat or skip papers with equal sort values.
 - Importing an AI result that held only a verdict emptied the paper's current AI extraction.
 - AI calls whose response was rejected or cut off were billed but left out of the token counts.
+- With an AI job running in one project, starting one in another showed the first job's progress as its own; each project now has its own jobs.
 
 ---
 ## [0.36.0] – 2026-10-04
