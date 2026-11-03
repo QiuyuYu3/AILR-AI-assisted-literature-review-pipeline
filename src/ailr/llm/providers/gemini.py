@@ -1,10 +1,6 @@
-"""Gemini provider (EXPERIMENTAL — untested without an API key).
+"""Gemini provider (experimental: not yet run against a live key). Function calling forced to the one tool."""
 
-Uses google-generativeai function calling forced via tool_config mode=ANY.
-The JSON-schema-to-Gemini-schema path and proto arg parsing may need adjustment
-against a live key; report errors and we'll refine.
-"""
-
+import importlib
 import time
 from typing import Any
 
@@ -12,37 +8,16 @@ from ailr.exceptions import LLMError
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 from ailr.llm.retry import with_retries
 
-# Errors that will fail identically on every attempt: a wrong key or a schema the API rejects
-# does not become valid by waiting. Anything else is assumed transient and still gets retried,
-# so an error this list has not seen behaves as it did before rather than failing fast.
-_PERMANENT_MARKERS = (
-    "api key", "api_key", "unauthenticated", "permission",
-    "invalid argument", "invalid_argument", "bad request",
-)
 
-
-def _is_retryable(e: Exception) -> bool:
-    """Whether another attempt could plausibly succeed. google-generativeai has no stable exception
-    hierarchy across versions (the other two providers use isinstance on their SDK's classes), so
-    this reads the HTTP status when the error carries one, and the message otherwise. Retrying a bad
-    key 3 times with backoff costs ~7s per call, which on a batch run is hours of sleeping before
-    the user learns the key is wrong."""
-    code = getattr(e, "code", None)
-    if isinstance(code, int):
-        return code in (408, 429) or code >= 500
-    msg = str(e).lower()
-    return not any(m in msg for m in _PERMANENT_MARKERS)
-
-
-def _proto_to_py(obj: Any) -> Any:
-    """Recursively convert Gemini proto Map/Repeated composites into plain Python."""
-    if obj is None or isinstance(obj, (str, bytes, bool, int, float)):
-        return obj
-    if hasattr(obj, "items"):  # MapComposite / dict-like
-        return {k: _proto_to_py(v) for k, v in obj.items()}
-    if hasattr(obj, "__iter__"):  # RepeatedComposite / list-like
-        return [_proto_to_py(v) for v in obj]
-    return obj
+def _transport_errors() -> tuple[type[Exception], ...]:
+    """Connection and timeout errors from whichever of the two HTTP libraries the SDK is using."""
+    found = []
+    for name in ("httpx", "httpx2"):
+        try:
+            found.append(importlib.import_module(name).TransportError)
+        except (ImportError, AttributeError):
+            pass
+    return tuple(found)
 
 
 class GeminiClient(LLMClient):
@@ -54,12 +29,14 @@ class GeminiClient(LLMClient):
         api_key: str | None = None,
     ) -> None:
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import errors, types
         except ImportError as e:
-            raise LLMError("google-generativeai SDK not installed. Run: pip install ailr[gemini]") from e
-        self._genai = genai
-        if api_key:
-            genai.configure(api_key=api_key)
+            raise LLMError("google-genai SDK not installed. Run: pip install ailr[gemini]") from e
+        self._errors, self._types = errors, types
+        self._transport_errors = _transport_errors()
+        # The SDK retries only when given retry options, so with_retries stays the one retry layer.
+        self._client = genai.Client(api_key=api_key)
         self._model = model
         self._max_retries = max_retries
 
@@ -78,61 +55,64 @@ class GeminiClient(LLMClient):
         user_message: str,
         tool_schema: ToolSchema,
         max_tokens: int = 4096,
-        cache_system: bool = True,
+        cache_system: bool = True,  # Gemini caches implicitly; flag accepted for interface parity
     ) -> tuple[dict[str, Any], CallMetadata]:
-        genai = self._genai
-        tool = {
-            "function_declarations": [
-                {
-                    "name": tool_schema.name,
-                    "description": tool_schema.description,
-                    "parameters": tool_schema.input_schema,
-                }
-            ]
-        }
-        model = genai.GenerativeModel(self._model, system_instruction=system, tools=[tool])
+        errors, types = self._errors, self._types
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=max_tokens,
+            tools=[types.Tool(function_declarations=[types.FunctionDeclaration(
+                name=tool_schema.name,
+                description=tool_schema.description,
+                # plain JSON Schema, so ailr's schemas need no translation into Gemini's own Schema type
+                parameters_json_schema=tool_schema.input_schema,
+            )])],
+            tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig(
+                mode="ANY", allowed_function_names=[tool_schema.name],
+            )),
+        )
 
         def call():
-            return model.generate_content(
-                user_message,
-                generation_config={"max_output_tokens": max_tokens},
-                tool_config={"function_calling_config": {"mode": "ANY", "allowed_function_names": [tool_schema.name]}},
-            )
+            return self._client.models.generate_content(model=self._model, contents=user_message, config=config)
+
+        def is_retryable(e: Exception) -> bool:
+            if isinstance(e, errors.APIError):
+                return isinstance(e.code, int) and (e.code in (408, 429) or e.code >= 500)
+            return isinstance(e, self._transport_errors)
 
         t0 = time.monotonic()
         try:
-            response = with_retries(call, is_retryable=_is_retryable, max_retries=self._max_retries)
+            response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
         except Exception as e:
             raise LLMError(f"Gemini call failed: {e}") from e
         latency_ms = int((time.monotonic() - t0) * 1000)
 
-        usage = getattr(response, "usage_metadata", None)
-        input_tokens = getattr(usage, "prompt_token_count", 0) or 0 if usage else 0
-        output_tokens = getattr(usage, "candidates_token_count", 0) or 0 if usage else 0
+        usage = response.usage_metadata
         meta = CallMetadata(
             provider="gemini",
             model=self._model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
+            # Gemini counts thinking apart from the answer; the other providers include it in output.
+            output_tokens=(getattr(usage, "candidates_token_count", 0) or 0)
+            + (getattr(usage, "thoughts_token_count", 0) or 0),
+            cached_input_tokens=getattr(usage, "cached_content_token_count", 0) or 0,
             latency_ms=latency_ms,
         )
 
-        output: dict | None = None
-        try:
-            candidate = response.candidates[0]
-            finish_reason = getattr(getattr(candidate, "finish_reason", None), "name", None)
-            if finish_reason == "MAX_TOKENS":
-                raise LLMError(
-                    f"The response hit the {max_tokens}-token output limit and was cut off, so it is incomplete.",
-                    metadata=meta,
-                )
-            for part in candidate.content.parts:
-                fc = getattr(part, "function_call", None)
-                if fc is not None and getattr(fc, "name", None) == tool_schema.name:
-                    output = _proto_to_py(fc.args)
-                    break
-        except (AttributeError, IndexError) as e:
-            raise LLMError(f"Could not parse Gemini function call: {e}", metadata=meta) from e
-        if output is None:
-            raise LLMError(f"No function call named {tool_schema.name!r} in Gemini response.", metadata=meta)
-        return dict(output), meta
+        if not response.candidates:
+            reason = getattr(getattr(response.prompt_feedback, "block_reason", None), "name", None)
+            raise LLMError(f"Gemini returned no answer (prompt blocked: {reason}).", metadata=meta)
+        candidate = response.candidates[0]
+        finish_reason = getattr(candidate.finish_reason, "name", None)
+        if finish_reason == "MAX_TOKENS":
+            raise LLMError(
+                f"The response hit the {max_tokens}-token output limit and was cut off, so it is incomplete.",
+                metadata=meta,
+            )
+        for part in (candidate.content.parts if candidate.content else None) or []:
+            if part.function_call is not None and part.function_call.name == tool_schema.name:
+                return dict(part.function_call.args or {}), meta
+        raise LLMError(
+            f"No function call named {tool_schema.name!r} in Gemini response (finish reason: {finish_reason}).",
+            metadata=meta,
+        )

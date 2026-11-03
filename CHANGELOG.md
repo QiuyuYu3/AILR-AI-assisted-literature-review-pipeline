@@ -14,6 +14,8 @@
 - Assisted screening settles a paper only once the AI has voted too; new Awaiting AI filter and dashboard count.
 - Imported AI results must name their model; the methods text names the recorded model at each stage.
 - Requires Dash 3.1, dash-bootstrap-components 2.0 and dash-ag-grid 31.3.1.
+- Gemini runs on google-genai instead of the retired google-generativeai; reinstall with `pip install ailr[gemini]`.
+- Provider SDKs now need anthropic 0.47, openai 1.55.3 and google-genai 1.21.1; the `llm` extra installs all three.
 - Quick tests now count toward the token usage on the dashboard, Reports and `ailr metrics`.
 - `ailr metrics` reports the papers awaiting the AI's vote at each assisted stage.
 - Extraction exports fetch each record kind once for the whole project instead of once per paper.
@@ -106,6 +108,7 @@
 - `extraction_rows_long` returned superseded values and internal rows.
 - Claude models that refuse a forced tool call failed every paper; ailr now tells them in the prompt to use the tool.
 - The output caps of screening and cross-check calls left too little room on models that think by default.
+- Gemini rejected every screening, extraction and cross-check schema.
 
 ---
 ## [0.36.0] – 2026-10-04

@@ -24,10 +24,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-llm = ["anthropic>=0.40"]
-anthropic = ["anthropic>=0.40"]
-openai = ["openai>=1.40"]
-gemini = ["google-generativeai>=0.8"]
+llm = ["anthropic>=0.47", "openai>=1.55.3", "google-genai>=1.21.1"]
+anthropic = ["anthropic>=0.47"]
+openai = ["openai>=1.55.3"]
+gemini = ["google-genai>=1.21.1"]
 pdf = ["pymupdf>=1.24", "pymupdf4llm>=0.0.10"]
 # ui and postgres are now core dependencies; kept as no-op aliases for back-compat.
 ui = []

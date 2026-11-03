@@ -1,4 +1,4 @@
-"""The three provider adapters, offline: fake SDK modules stand in for the network."""
+"""The Anthropic and OpenAI adapters, offline: fake SDK modules stand in for the network."""
 
 import sys
 import types
@@ -9,7 +9,6 @@ from ailr.exceptions import LLMError
 from ailr.llm import retry as retry_mod
 from ailr.llm.base import ToolSchema
 from ailr.llm.providers.anthropic import AnthropicClient
-from ailr.llm.providers.gemini import GeminiClient, _is_retryable
 from ailr.llm.providers.openai import OpenAIClient
 
 _TOOL = ToolSchema(name="record", description="d", input_schema={"type": "object", "properties": {}})
@@ -276,85 +275,3 @@ class TestOpenAI:
         _ask(client)
         assert openai_sdk.calls.kwargs[0]["seed"] == client.effective_seed == 42
 
-
-# ----- Gemini -----
-
-
-class _GoogleError(Exception):
-    def __init__(self, message, code=None):
-        super().__init__(message)
-        if code is not None:
-            self.code = code
-
-
-@pytest.mark.parametrize("message,code,retry", [
-    ("504 Deadline of 400.0s exceeded", 504, True),
-    ("Deadline of 400.0s exceeded", None, True),            # a duration is not a status code
-    ("429 Resource has been exhausted", 429, True),
-    ("503 The service is currently unavailable.", 503, True),
-    ("400 Request contains an invalid argument.", 400, False),
-    ("403 Permission denied", 403, False),
-    ("404 models/gemini-x is not found", 404, False),       # no marker in the text: only the code says so
-    ("Request contains an invalid argument.", None, False),
-    ("API key not valid. Please pass a valid API key.", None, False),
-])
-def test_gemini_retries_what_could_succeed_next_time(message, code, retry):
-    assert _is_retryable(_GoogleError(message, code)) is retry
-
-
-@pytest.fixture
-def genai(monkeypatch):
-    mod = types.ModuleType("google.generativeai")
-    google = types.ModuleType("google")
-    google.generativeai = mod
-
-    class GenerativeModel:
-        def __init__(self, name, **kwargs):
-            self.name, self.kwargs = name, kwargs
-
-        def generate_content(self, message, **kwargs):
-            return mod.calls(message=message, **kwargs)
-
-    mod.GenerativeModel = GenerativeModel
-    mod.configure = lambda **_kwargs: None
-    monkeypatch.setitem(sys.modules, "google", google)
-    monkeypatch.setitem(sys.modules, "google.generativeai", mod)
-    return mod
-
-
-def _gemini_reply(prompt_token_count=100, candidates_token_count=20):
-    call = types.SimpleNamespace(name=_TOOL.name, args={"answer": 1, "items": ["a"]})
-    content = types.SimpleNamespace(parts=[types.SimpleNamespace(function_call=call)])
-    usage = types.SimpleNamespace(prompt_token_count=prompt_token_count, candidates_token_count=candidates_token_count)
-    return types.SimpleNamespace(candidates=[types.SimpleNamespace(content=content)], usage_metadata=usage)
-
-
-def _gemini(mod, errors=(), reply=None):
-    mod.calls = _Calls(reply or _gemini_reply(), errors)
-    return GeminiClient(model="gemini-x", max_retries=2)
-
-
-class TestGemini:
-    def test_the_function_call_and_token_counts_come_back(self, genai):
-        out, meta = _ask(_gemini(genai))
-        assert out == {"answer": 1, "items": ["a"]}
-        assert (meta.input_tokens, meta.output_tokens) == (100, 20)
-
-    def test_no_temperature_is_sent(self, genai):
-        _ask(_gemini(genai))
-        assert "temperature" not in genai.calls.kwargs[0]["generation_config"]
-
-    def test_a_deadline_is_retried(self, genai):
-        out, _meta = _ask(_gemini(genai, errors=[_GoogleError("504 Deadline of 400.0s exceeded", 504)]))
-        assert out["answer"] == 1 and len(genai.calls.kwargs) == 2
-
-    def test_an_invalid_argument_fails_at_once(self, genai):
-        with pytest.raises(LLMError):
-            _ask(_gemini(genai, errors=[_GoogleError("400 Request contains an invalid argument.", 400)]))
-        assert len(genai.calls.kwargs) == 1
-
-    def test_a_reply_cut_off_at_the_token_limit_fails(self, genai):
-        reply = _gemini_reply()
-        reply.candidates[0].finish_reason = types.SimpleNamespace(name="MAX_TOKENS")
-        with pytest.raises(LLMError, match="output limit"):
-            _ask(_gemini(genai, reply=reply))

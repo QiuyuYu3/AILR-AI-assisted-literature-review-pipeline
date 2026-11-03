@@ -109,7 +109,7 @@ The top-level `llm:` block holds the defaults both stages inherit; each stage ma
 
 ```yaml
 llm:
-  provider: anthropic        # anthropic | openai | gemini
+  provider: anthropic        # anthropic | openai | gemini (experimental)
 
 screening:
   llm:

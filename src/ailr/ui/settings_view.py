@@ -33,7 +33,7 @@ from ailr.ui._project import (
 _PROVIDERS = [
     {"label": "Anthropic", "value": "anthropic"},
     {"label": "OpenAI", "value": "openai"},
-    {"label": "Gemini", "value": "gemini"},
+    {"label": "Gemini (experimental)", "value": "gemini"},
 ]
 
 _API_KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
