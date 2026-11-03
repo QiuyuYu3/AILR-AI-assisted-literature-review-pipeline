@@ -33,8 +33,9 @@ class TestDedupFunctions:
         a = Source(title="A", doi="10.1/abc")
         b = Source(title="A from another database", doi="https://doi.org/10.1/ABC")
         c = Source(title="A once more", doi="doi: 10.1/abc")
-        unique, dups = dedup.dedup_by_doi([a, b, c])
-        assert unique == [a] and dups == [b, c]
+        d = Source(title="A cited in a sentence", doi="https://www.doi.org/10.1/abc.")
+        unique, dups = dedup.dedup_by_doi([a, b, c, d])
+        assert unique == [a] and dups == [b, c, d]
 
     def test_doi_dedup_is_case_insensitive(self):
         a = Source(title="A", doi="10.1/ABC")
@@ -295,6 +296,9 @@ class TestIngestPipeline:
     @pytest.mark.parametrize("stored,incoming", [
         ("10.1/dyad", "https://doi.org/10.1/dyad"),
         ("https://doi.org/10.1/dyad", "10.1/DYAD"),     # a link kept from an earlier import
+        ("10.1/dyad", "https://www.doi.org/10.1/dyad"),
+        ("10.1/dyad", "10.1/dyad."),
+        ("10.1/dyad;", "10.1/dyad"),
     ])
     def test_an_existing_doi_in_another_notation_blocks_a_reimport(self, tmp_project, tmp_path, stored, incoming):
         first = _RIS_A.replace("DO  - 10.1/dyad", f"DO  - {stored}")

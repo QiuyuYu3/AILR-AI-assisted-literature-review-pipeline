@@ -109,6 +109,7 @@
 - Claude models that refuse a forced tool call failed every paper; ailr now tells them in the prompt to use the tool.
 - The output caps of screening and cross-check calls left too little room on models that think by default.
 - Gemini rejected every screening, extraction and cross-check schema.
+- A DOI on www.doi.org or ending in a period, comma or semicolon did not match the same DOI, so the paper was imported twice.
 
 ---
 ## [0.36.0] – 2026-10-04

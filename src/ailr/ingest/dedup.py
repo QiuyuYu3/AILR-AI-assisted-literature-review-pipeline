@@ -12,7 +12,7 @@ TITLE_MATCH_SCORER = fuzz.token_sort_ratio
 TITLE_MATCH_MAX_YEAR_GAP = 1      # online-first and print years of one paper can differ by one
 TITLE_MIN_WORDS = 4               # "Editorial", "Introduction", "Reply": too generic to merge on title alone
 
-_DOI_PREFIX = re.compile(r"^(?:https?://)?(?:dx\.)?doi\.org/|^doi:\s*", re.IGNORECASE)
+_DOI_PREFIX = re.compile(r"^(?:https?://)?(?:(?:dx|www)\.)?doi\.org/|^doi:\s*", re.IGNORECASE)
 _NO_ABSTRACT = {"no abstract available", "abstract not available", "no abstract"}
 
 
@@ -24,10 +24,10 @@ def normalize_title(title: str) -> str:
 
 
 def bare_doi(doi: str | None) -> str | None:
-    """The DOI without a URL or doi: prefix, case kept; None when blank."""
+    """The DOI without a URL or doi: prefix or the punctuation a citation ends with, case kept; None when blank."""
     if not doi or not doi.strip():
         return None
-    return _DOI_PREFIX.sub("", doi.strip()).strip() or None
+    return _DOI_PREFIX.sub("", doi.strip()).strip().rstrip(".,;").strip() or None
 
 
 def normalize_doi(doi: str | None) -> str | None:
