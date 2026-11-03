@@ -160,8 +160,10 @@ def layout() -> Any:
                     ),
                     dbc.Col(
                         [
-                            dbc.Button("Save draft", id="extract-save", color="secondary", outline=True, size="sm", className="me-2"),
-                            dbc.Button("Submit extraction", id="extract-submit", color="primary", size="sm"),
+                            # disabled until _render has drawn the paper's form, which enables them
+                            dbc.Button("Save draft", id="extract-save", color="secondary", outline=True, size="sm",
+                                       className="me-2", disabled=True),
+                            dbc.Button("Submit extraction", id="extract-submit", color="primary", size="sm", disabled=True),
                         ],
                         width="auto",
                         className="ms-auto",

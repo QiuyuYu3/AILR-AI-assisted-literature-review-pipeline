@@ -115,6 +115,12 @@ def test_layout_renders(seeded_project, build, required):
     assert set(required) <= ids, f"missing: {sorted(set(required) - ids)}"
 
 
+def test_extraction_buttons_wait_for_the_form(seeded_project):
+    """Clicked before the form arrived, Submit read the empty form as changed variables."""
+    buttons = [n for n in walk(extract_view.layout()) if getattr(n, "id", None) in ("extract-submit", "extract-save")]
+    assert len(buttons) == 2 and all(b.disabled for b in buttons)
+
+
 class TestPortSelection:
     """`ailr ui` must not die on a port it cannot have — on Windows, Hyper-V reserves a block
     that moves on every boot, so the default port works one day and not the next."""

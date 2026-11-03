@@ -110,6 +110,7 @@
 - The output caps of screening and cross-check calls left too little room on models that think by default.
 - Gemini rejected every screening, extraction and cross-check schema.
 - A DOI on www.doi.org or ending in a period, comma or semicolon did not match the same DOI, so the paper was imported twice.
+- Submit extraction clicked before the form loaded said the extraction variables had changed; Save and Submit now wait for the form.
 
 ---
 ## [0.36.0] – 2026-10-04
