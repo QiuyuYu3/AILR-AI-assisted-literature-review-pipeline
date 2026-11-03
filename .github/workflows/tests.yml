@@ -13,6 +13,16 @@ jobs:
       matrix:
         # the oldest version pyproject allows, and the one development runs on
         python-version: ["3.11", "3.14"]
+    # tests/infra/test_postgres.py creates and drops its own databases on this server
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      AILR_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
