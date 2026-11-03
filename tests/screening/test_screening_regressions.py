@@ -1,9 +1,4 @@
-"""Regression tests for screening bugs recorded in the CHANGELOG:
-- 0.24: batch inserts are chunked (bind-parameter limit)
-- 0.17: summary counts only the latest decision per (source, reviewer)
-- 0.16.1: reset removes only the human's vote (AI verdict kept) and clears the
-  reconciliation so a new differing vote re-enters Conflicts
-"""
+"""Regression tests for screening bugs: batch chunking, latest-vote counts, and vote resets."""
 
 from ailr.reviewers import ScreeningDecision
 from tests.helpers import add_source, count_decisions

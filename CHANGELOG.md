@@ -1,735 +1,395 @@
-# Changelog — ailr
+# Changelog
 
----
 ## [Unreleased]
 
 ### Changed
-- Calibration κ counts uncertain as include; the three-way κ is shown beside it.
-- Methods text: the calibration paragraph reports the quick tests actually run.
-- PRISMA diagram labels say records and reports, as PRISMA 2020 does.
-- Extraction exports are one ZIP; "included" now means the PRISMA included box.
-- Titles repeated inside one import file are deduplicated by the same rule as across imports.
-- Importing AI results archives the earlier AI extraction instead of deleting it.
-- Schema sub-fields can no longer be named value, quote or confidence.
-- Assisted screening settles a paper only once the AI has voted too; new Awaiting AI filter and dashboard count.
-- Imported AI results must name their model; the methods text names the recorded model at each stage.
-- Requires Dash 3.1, dash-bootstrap-components 2.0 and dash-ag-grid 31.3.1.
-- Gemini runs on google-genai instead of the retired google-generativeai; reinstall with `pip install ailr[gemini]`.
-- Provider SDKs now need anthropic 0.47, openai 1.55.3 and google-genai 1.21.1; the `llm` extra installs all three.
-- Quick tests now count toward the token usage on the dashboard, Reports and `ailr metrics`.
-- `ailr metrics` reports the papers awaiting the AI's vote at each assisted stage.
-- Extraction exports fetch each record kind once for the whole project instead of once per paper.
+- Calibration κ counts uncertain as include, with the three-way κ alongside.
+- PRISMA labels say records and reports, as PRISMA 2020 does.
+- The methods text names the model used at each stage and the quick tests run.
+- Assisted screening settles a paper only after the AI has voted; new "Awaiting AI" filter.
+- Extraction exports download as one ZIP.
+- Imported AI results must name their model and no longer delete the earlier AI extraction.
+- Quick tests count toward token usage.
+- Gemini now uses google-genai: reinstall with `pip install ailr[gemini]`. Requires Dash 3.1 and newer provider SDKs.
 
 ### Removed
-- The retired full calibration: the hidden `ailr calibrate` command and `CalibrationTask` / `CalibrationSummary`; quick tests remain.
-- Settings `target_kappa`, `calibration.fraction` and `calibration.n`, read only by the full calibration; older configs still open.
-- Temperature: no provider is sent one, since current models refuse it, and Settings and the AI import forms no longer ask. Older configs still open, and rows that recorded one keep it.
+- Full calibration (`ailr calibrate`) and its settings; quick tests remain.
+- The temperature setting, which current models reject.
 
 ### Fixed
-- PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.
-- Hand-flagged duplicates now count as duplicates removed in PRISMA.
-- Two-arm PRISMA: the SVG subtracted duplicates twice; each arm is counted before deduplication.
-- Methods text used the wrong numbers for records screened and completed extractions.
-- Title deduplication merged papers with merely similar titles; it now needs identical titles and no conflicting DOI, year or first author.
-- DOIs written as links are now stored and matched as bare DOIs.
-- Import dropped or misread records in RIS, BibTeX and CSV exports (IEEE, Scopus, WoS, PubMed).
-- RIS export and AI extraction candidates now follow the full-text queue.
-- The final extraction export included unsubmitted drafts.
-- Agreement figures and the reliability CSV now leave out records flagged as duplicates.
-- `ailr metrics --json` failed on Postgres: the average latency came back as a Decimal.
-- The dashboard, CLI counts and Conflicts queue now leave out records flagged as duplicates.
-- The extraction import template now lists the same papers an in-app extraction run takes.
-- An AI extraction returning no flag_check counted as done; it now fails, and normal runs redo earlier ones.
-- Imports list records without a full-text decision; Protocol warns when flag_check is off under assisted full text.
-- Anthropic input token counts left out cache reads and writes; they now count them, as other providers do.
-- LLM calls retry dropped connections, and the SDKs' own retries no longer multiply attempts.
-- Gemini treated a 504 timeout as a permanent error.
-- `ailr extract --mock` failed every paper; it now gives schema-shaped answers like the UI's mock.
-- `ailr screen` and `ailr extract` real runs now replace earlier mock results, as the UI does.
-- `ailr prompt-bump` saved a version the next run never used, so its notes were orphaned.
-- `ailr db-migrate` now refuses a target database that already holds data.
-- A real AI run that failed to start had already deleted the mock results it was meant to replace.
-- Clearing mock screening results also deleted the full-text verdicts of mock extractions.
-- AI result imports skip records whose source_id and DOI point to different papers, and list them.
-- A paper repeated in one AI result file is imported once, from its last record, and listed.
-- AI result imports now match DOIs written as links.
-- A cross-check flag for a required field left empty now clears once the field gets a value.
-- The abstract queue's cross-check filter now counts AI findings only, matching the badges and dashboard.
-- Opening the app, the consensus page or changing reviewer no longer logs Dash "nonexistent object" errors.
-- A criteria or variables save that failed was still recorded as a protocol amendment.
-- DOIs edited on the Sources tab are stored bare, as imports store them.
-- Renaming a tag to an existing name now says so instead of silently doing nothing.
-- Imported criteria: IDs are trimmed, a null rule reads as empty, and type errors name the key.
-- Imported variables: blank, padded, repeated or underscore-prefixed names and non-object sub-fields are rejected.
-- PDF and markdown paths written on Windows now resolve on macOS and Linux; new paths are stored with forward slashes.
-- Zotero attachments given as Windows file:/// URLs were treated as missing.
-- BibTeX import now runs on bibtexparser 2.x; fresh installs pulled 2.x and could not import ailr.
-- A BibTeX entry that cannot be read now stops the import, naming its line, instead of vanishing.
-- PDF linking no longer matches a title onto a paper with a different DOI; Re-scan names those papers.
-- The variables editor rejects names starting with _ and repeated sub-field names.
-- An unreachable or silent Postgres server froze the UI indefinitely; connections now time out after 10 seconds.
-- `ailr show stats` counted empty abstracts as abstracts; it now also reports flagged duplicates.
-- `ailr show sources` with an offset past the end now gives the total instead of "(no sources)".
-- With Dash before 3.1, the screening and full-text status filters reset on every tab switch or reload.
-- The methods text wrote counts of one in the plural ("1 records were screened").
-- `ailr screen`, `extract` and `preprocess` exited 0 when papers failed; they now exit 1 after the summary.
-- Prompt and protocol versions saved within the same second could be read in the wrong order (v9 after v10).
-- `ailr metrics` crashed on logged calls without latency or token figures.
-- PDF conversion listed a linked PDF in `data/pdfs` as unmatched when it was not named by paper ID.
-- An AI full-text verdict skipped criteria the model left out, counting them as passes; every criterion now needs a verdict.
-- A flag_check returned as `{ID: "FAIL"}` lost its verdicts; criteria without an ID could never fail a paper.
-- AI responses cut off at the output token limit were accepted as complete; they now fail.
-- A conflict could be adjudicated twice, leaving the paper both included and excluded; a ruling now needs an open conflict, and the newest ruling decides.
-- Undoing a ruling withdraws every ruling of that stage, needs a reviewer ID, and is logged under whoever clicked it.
-- The banner Undo withdraws the vote it announced even after the reviewer ID changed; a reset with no vote of one's own no longer clears someone else's ruling.
-- Assisted conflicts compare the AI with each human's latest vote, so votes cast before a switch from independent still count.
-- A tab left open while another tab switched projects wrote its clicks into the new project, onto papers with the same IDs; it is now refused and asked to reload.
-- RIS imports dropped abstracts stored in N2 (EBSCOhost, older EndNote); placeholders such as Scopus's "[No abstract available]" no longer count as abstracts.
-- Two new versions of one title (different DOIs) matching an existing record lost the first without a trace; each record now absorbs one, and the other is imported.
-- PRISMA's per-database counts left out records dropped at import, so they did not add up to the total.
-- Duplicates inside a file imported via other methods were counted in the database arm.
-- PRISMA and the included export kept counting a full-text verdict after the paper's abstract decision changed; they now follow the full-text queue.
-- A paper judged by two AI models counted twice in the AI figures, and the methods headline could report agreement between the two models.
-- Flagged duplicates are now out of the metrics JSON, the sidebar counts, normal AI runs and `ailr show disagreements`.
-- Paging a sorted queue on Postgres could repeat or skip papers with equal sort values.
-- Importing an AI result that held only a verdict emptied the paper's current AI extraction.
-- AI calls whose response was rejected or cut off were billed but left out of the token counts.
-- With an AI job running in one project, starting one in another showed the first job's progress as its own; each project now has its own jobs.
-- Screening quotes or criteria returned as one string were read character by character; they are now repaired, and other shapes fail the paper.
-- A value and quote serialized into one string were stored whole as the value.
-- A screening flag_check returned as a JSON string was lost on conflict cards and in the cross-check.
-- Dated Opus 4 and 4.1 model IDs failed every extraction before the request was sent; OpenAI reasoning models now get parameters they accept.
-- A Zotero RIS that could not be read was reported as no RIS found; Re-scan now names the file and the reason.
-- `ailr ingest` exited 0 when records failed to insert.
-- A refused "Same study as" save closed nothing and said nothing; it now says why.
-- The tag dialog removed tags a teammate had added after it opened.
-- Keyword search on SQLite missed accented capitals that Postgres finds.
-- The legacy `blinding` setting was ignored whenever a mode preset applied.
-- `extraction_rows_long` returned superseded values and internal rows.
-- Claude models that refuse a forced tool call failed every paper; ailr now tells them in the prompt to use the tool.
-- The output caps of screening and cross-check calls left too little room on models that think by default.
-- Gemini rejected every screening, extraction and cross-check schema.
-- A DOI on www.doi.org or ending in a period, comma or semicolon did not match the same DOI, so the paper was imported twice.
-- Submit extraction clicked before the form loaded said the extraction variables had changed; Save and Submit now wait for the form.
+- PRISMA counts (excluded boxes, duplicates, two-arm diagrams, per-database totals) and the numbers in the methods text.
+- Deduplication: titles must now match exactly; DOIs written as links or ending in punctuation now match.
+- Import from IEEE, Scopus, WoS, PubMed and EBSCOhost exports, and BibTeX on bibtexparser 2.x.
+- Flagged duplicates are left out of all counts, agreement figures and AI runs.
+- Adjudication and undo could leave a paper both included and excluded.
+- Truncated or malformed AI responses now fail instead of being saved; token counts are complete.
+- Compatibility with current Gemini, Claude and OpenAI reasoning models.
+- Shared projects: paths work across Windows, macOS and Linux; an unreachable Postgres no longer freezes the UI; a stale tab can no longer write into another project.
+- `ailr screen`, `extract`, `preprocess` and `ingest` exit 1 when papers fail.
+- Many smaller UI and CLI fixes.
 
----
 ## [0.36.0] – 2026-10-04
 
 ### Added
-- Full-text queue: an "In progress (mine)" status filter for papers you have saved but not submitted. It is a subset of "To extract", which keeps listing drafts.
-- Cross-check now covers title/abstract screening on the same principle as extraction: the deterministic layer matches evidence quotes against the abstract and checks the record's own consistency (criterion IDs, per-criterion verdicts, decision against those verdicts), and the LLM layer asks a second model whether the abstract supports the recorded decision. Runs from the AI screening page; findings appear as a badge and a Cross-check link on the card, and as a "Cross-check flagged" queue filter.
-- Screening cross-check ships its own built-in prompt, overridable with `prompts/crosscheck_screening.txt` and editable under Abstract → Workflow → Prompt.
+- Cross-check for title/abstract screening, with a "Cross-check flagged" filter and an editable prompt.
+- Full-text queue: "In progress (mine)" filter for saved but unsubmitted extractions.
 
 ### Changed
-- Full-text queue: the Status filter is grouped into Review / Extraction / Checks / All instead of one flat list of seven.
-- Abstract screening sidebar: Status grouped into Review / Checks / All to match the full-text queue, and all its filters now persist for the session.
-- The Prompt tab on both Workflow pages uses an accordion (stage prompt open, cross-check prompt collapsed) instead of a second row of tabs inside the first.
-- AI screening now requires `evidence_quotes` in its output, so the quote check has something to verify.
+- Queue status filters are grouped into Review, Extraction and Checks.
+- AI screening now returns evidence quotes.
 
 ### Fixed
-- Tagging a paper, creating a tag, adding or deleting a note, and setting a study group each saved the change and then crashed before telling the page to refresh, so nothing moved on screen until the paper was reopened. `modals.py` used `time.time()` without importing `time`.
-- Cohen's κ confidence interval: a table where one reviewer used a single category has zero variance, but the subtraction that computes it left float noise, so the interval read as a hair-wide band instead of collapsing onto κ. The interval is now pinned against R's `vcd::Kappa` on three tables.
-- Extraction: a field the paper does not report can now come back as null. `value` was typed non-nullable while being required, so a model with nothing to record had to put something in the slot and wrote the string `"null"` — which then counted as a value in exports and in the quote-coverage denominator. Enum fields list null as an option alongside their own. Existing rows are untouched; this affects future runs.
+- Tags, notes and study groups were saved but the page did not refresh.
+- A field the paper does not report is stored as empty instead of the text "null".
+- κ confidence interval when one reviewer used a single category.
 
----
 ## [0.35.0] – 2026-08-12
 
 ### Added
-- Cross-check: a per-field verification pass over an AI extraction, stored in a new `cross_checks` table and shown as advisory badges in the extraction view's AI panel. This first layer is deterministic (verbatim quotes, enum values, empty required fields) so it makes no API calls; findings never block a submission, and a finding goes stale when the row it judged is re-extracted. Configured under `crosscheck` in `lit_review.yaml`, on by default.
+- Cross-check for extractions: checks quotes, options and required fields, with an optional second-model review. Findings show as badges and never block a submission.
+- Cross-check the whole project, for AI or human extractions; "Cross-check flagged" filter.
+- "Use this value" takes a cross-check suggestion into the extraction form.
+- Quick tests can rehearse the cross-check, with a per-field breakdown.
 
-- Cross-check can run over the whole project at once (AI extraction page), and `crosscheck.targets` now decides whose extractions are read — AI, humans, or both — with a switch for it under Settings -> Cross-check. Each extractor's findings are stored separately, so checking one human's rows no longer clears another's. The full-text queue gains a "Cross-check flagged" filter and the dashboard's extraction card counts flagged papers; both ignore findings that went stale.
-
-- Cross-check gained its LLM layer: a second model is given each recorded value with the quote offered as its support, plus the paper and the schema, and returns agree / disagree / uncertain per field with a one-sentence reason and an optional suggested value. It refuses to run on the same model that produced the extraction (`crosscheck.allow_same_model` overrides), costs one call per paper, and is off until enabled under Settings -> Cross-check. The prompt ships with the package; a project can override it with `prompts/crosscheck.txt`. The checker is deliberately not shown the extractor's confidence or reasoning, which would anchor it onto the answer it is meant to test. Verdicts store as `check_kind = llm` alongside the deterministic findings rather than replacing them, and stay out of agreement statistics.
-
-- The cross-check prompt and its additional instructions are edited on the full-text Workflow page, under Prompt -> Cross-check, beside the extraction prompt it judges. Includes a live preview of the composed prompt and a button to restore the built-in one.
-
-- A cross-check that suggests a different value now offers a one-click "Use this value" that drops it into the extraction form, the same way the per-field "Use" button works for AI's own values. Nothing is written until Save/Submit. Offered for scalar fields only, since a suggestion is a plain string.
-
-- Calibration can rehearse the cross-check: run it over a quick-test run's output and get a per-field breakdown of what got flagged, so a prompt or a schema description can be fixed before the full run. Same checker, same prompt, smaller sample — findings are stored against the run (`stage = quick_test`) and never mix into the real extraction badges or counts. The per-field table is deliberately the headline rather than one overall rate: "this field is flagged in 8 of 10 papers" points at something to fix, a percentage does not.
-
-### Removed
-- `crosscheck.deterministic`. The deterministic layer runs on demand and costs nothing, so not pressing the button was already the off switch.
-
----
 ## [0.34.0] – 2026-08-12
 
-### Fixed
-- The UI froze for 30 seconds and then failed every database call once ~15 web-server threads had come and gone ("QueuePool limit of size 5 overflow 10 reached"): each thread pinned a pooled connection for its lifetime and only the garbage collector gave it back. Connections are now handed back at the end of each request, connections held by dead threads are reclaimed, and the pool is larger.
-- Adjudicating a conflict, undoing an adjudication, undoing a vote, submitting an extraction, and moving a paper back a stage each wrote two or three rows without a shared commit, so a failure partway through could leave a final decision with no vote behind it, or drop the History entry for a decision that did take effect. Each is now one transaction.
-- "AI screening outdated" was on for every AI result that carries no prompt version (early runs, imported results) and for anything tagged with a version that stored no composed prompt: unknown provenance compared as the empty string, so it read as changed. Unknown is now unknown, and the same rule applies to AI extractions.
-
 ### Added
-- The full-text conflicts cards now carry the outdated badge too ("AI extraction outdated"), since their AI vote is the flag_check verdict of an extraction run. Both conflict pages check only the papers on screen instead of scanning the whole project.
+- Full-text conflict cards show the "AI extraction outdated" badge.
 
 ### Changed
-- Entering the full-text pages no longer blocks on scanning `data/pdfs` for a Zotero RIS export: the first entry in a session still scans inline, later ones scan in the background. The walk itself ran on every tab switch, which is slow on a synced drive.
-- Full-text review resolves the abstract-stage conflict set once per render instead of re-scanning it inside each candidate query, and `sources_needing_consensus` no longer costs a second query to exclude adjudicated papers.
-- Opening a paper for extraction fetches its AI rows and retired AI runs once instead of twice each.
-- The composed screening/extraction prompt is cached on its input files' mtime. The queues rebuilt it — re-reading and re-parsing the prompt, `criteria.yaml` and `schema.yaml` — on every render just to mark stale AI runs.
-- `ailr calibrate` is hidden from `--help`. Full calibration is retired in the UI and no queue lists the sample it draws, so the command still runs but is no longer offered; its closing hint pointed at a UI screen that no longer exists.
-- The queues' "Calibration sample" status filter is now "Last quick test": it lists the papers the most recent quick-test run covered, so it works from the UI alone. It used to read the full-calibration sample, which only `ailr calibrate` writes and which was empty in any UI-only project.
+- The "Calibration sample" filter is now "Last quick test".
+- Faster full-text pages on synced drives.
 
----
+### Fixed
+- The UI froze after a while and then failed every database call.
+- An error during adjudication, undo or submit could leave a half-saved result.
+- "AI screening outdated" showed on results with no recorded prompt version.
+
 ## [0.33.0] – 2026-08-11
 
 ### Added
-- History now shows the adjudicator's rationale under each final decision, and the PRISMA reasons under a full-text exclude vote, at both stages. Adjudications also survive the queue's per-reviewer blinding filter (named, with the undo alongside): the final decision is the team's conclusion, not a blinded vote, so a rationale written by one reviewer was previously invisible to the other. Needs `ALTER TABLE screening_actions ADD COLUMN rationale TEXT` on databases created before this release.
-
-- Extraction form: per-field "Use" buttons and a confirmed "Fill all fields from AI" button that take AI's values back into the form, which previously stayed pinned to your first saved edit. Fill-all can draw from the current run or any earlier run a re-run retired. Fields the chosen run left empty are untouched, and nothing is written until Save/Submit.
-
-- Conflicts and full-text conflicts cards now show tag chips plus Tags and Note buttons, matching the screening and full-text queues.
-- Full-text conflicts cards gained the History button (all-reviewer timeline) and the "Same study as #n" badge; abstract conflicts cards now carry the "AI screening outdated" badge, so a conflict produced by a superseded prompt is visible before adjudicating.
-- Adjudicating a full-text conflict as Exclude now opens the same PRISMA exclusion-reason dialog the full-text queue uses, instead of taking a free-text rationale.
+- History shows adjudication rationales and PRISMA exclusion reasons. Older databases need `ALTER TABLE screening_actions ADD COLUMN rationale TEXT`.
+- Extraction form: take the AI's value per field, or fill all fields from an AI run.
+- Conflict cards gain tags, notes, History and the outdated badge; a full-text exclude ruling asks for a PRISMA reason.
 
 ### Changed
-- Every standalone statement now runs on an AUTOCOMMIT connection, cutting three network round trips per query to one; on a remote Postgres (Neon) the full-text conflicts page dropped from ~2.4s to ~0.8s and every other page benefits equally. Methods needing several writes to land together were moved onto the existing `transaction()` context.
-- Conflicts and full-text conflicts no longer rebuild the whole card list on each keystroke in the reviewer ID field.
+- Much faster pages on a remote Postgres.
 
 ### Fixed
-- PRISMA dropped every full-text report whose exclusion came only from adjudication: the counts were read from human exclude votes, so an assisted AI-exclude vs human-include conflict, or two 'uncertain' votes, resolved as exclude appeared in neither the included nor the excluded box. Both the report count and the per-reason breakdown now read the adjudication, whose rationale supplies the reason.
-- `ailr ui` gave up when all 25 ports it scanned fell inside one Hyper-V reservation; it now restarts the scan at each following hundred, matches werkzeug's `SO_REUSEADDR` so a port in `TIME_WAIT` from the previous run is not skipped, and gives non-Windows users an `lsof` hint instead of `netsh`.
-- Abstract and full-text screening search could not find a paper by the `#123` number shown on its card; `#123` now matches that paper exactly, and a bare `123` matches it alongside the usual text search.
-- When the model serialized a structured field into a JSON string that does not parse, it was stored as that raw string instead of failing; the paper is now reported as failed so it can be re-run.
-- Full-text conflicts: text typed in the adjudicator rationale box was silently dropped when the decision was Exclude, since that button routes through the PRISMA reason dialog. It is now kept on the audit row (and shown in History) while the reconciliation itself keeps the bare PRISMA reasons, which the per-reason counts split on.
-- Markdown was stored as an absolute path, so on a teammate's copy of a shared project every reader, extraction and calibration saw "no markdown" even though the file was there; paths are now stored relative to the project root and fall back to `data/markdown/<id>.md`, which also repairs existing rows without a migration. `preprocess` was overwriting the relative `pdf_path` from `import-pdfs` with an absolute one, which would have broken PDFs the same way.
+- PRISMA left out full-text reports excluded only by adjudication.
+- `ailr ui` could not find a free port on some Windows machines.
+- Searching `#123` finds that paper.
+- Markdown files were not found on a teammate's copy of a shared project.
 
----
 ## [0.32.0] – 2026-07-29
 
-### Fixed
-- Quick-extract calibration ran without the additional-instructions file, so it tested a prompt the real run never uses; it now composes the same prompt as `ailr extract`.
-- Abstract quick-test calibration hardcoded `flag_check=True`; it now follows `screening.flag_check` like the real run.
-- Extraction output cap raised 8192 → 16000 tokens; real runs were measured within 3% of the old ceiling, and a truncated tool-use JSON fails the whole paper.
-- AI extraction kept only the first quote when the model attached one to each item of a list field; all of them are now stored.
-- Wide CSV export emitted no `_quote` column for list fields, dropping their evidence entirely.
-- Extraction form hid a list field's AI quote whenever the proposed value was empty.
-- The extraction page's flag_check panel dropped each criterion verdict's supporting quote; captured all along, now shown.
-- "Changed from AI" highlighting only appeared on re-render, so edits looked unmarked until the paper was reopened; it now updates as you type.
-- "Force re-extract" appended a second set of AI rows per paper instead of retiring the first, so exports counted every field twice. A forced run now keeps the previous run as an earlier version, matching the single-paper re-run.
-- Re-extracting a paper failed at the last step: the derived full-text verdict collided with the one the earlier run wrote (unique per source/reviewer/stage), so the paper was reported as failed even though its fields had already been saved. A forced re-run now replaces that verdict.
-- Extraction run summaries reported "failed N" without the reason; the recorded error (and its exception type) is now shown.
-- Extraction list-of-object tables could only add rows, never remove them, so a mis-added row was saved as an empty object; rows are now selectable and deletable, and blank rows are dropped on save.
-
 ### Added
-- Extraction page: re-run the AI extraction for the open paper with the current prompt and schema. The run it replaces is kept as an earlier version, viewable under the AI extraction panel.
-- Verbatim quote audit: every AI quote is checked word-for-word against the paper's markdown. Coverage + verbatim rates on the extraction run summary, a per-field breakdown on quick-extract calibration results, and a project-wide report with not-found CSV on Reports.
-- Projects → Recent: `×` removes an entry from the list without touching the project folder.
-- Extraction: a locked paper now says who claimed it, and you can release your own unsubmitted claim.
-- Full-text list marks papers someone holds an unsubmitted draft on; they used to read "To extract".
+- Re-run the AI extraction for one paper; the earlier run is kept as a version.
+- Verbatim quote audit: each AI quote is checked against the paper, with coverage on run summaries, quick tests and Reports.
+- Extraction shows who holds a paper, and you can release your own claim.
+- Recent projects can be removed from the list.
 
 ### Changed
-- Extraction prompt template and the schema's `quote` description now require a quote whenever a field has a value, including categorical answers. The old wording ("supporting this value, or null if not stated") left categorical fields almost entirely unquoted.
-- Under `verify`, the To-extract queue hides papers another reviewer already holds.
-- AI quote blocks in the extraction view start expanded.
-- Summary drops its title line, which repeated the app header.
+- The extraction prompt asks for a quote whenever a field has a value.
 
----
+### Fixed
+- Quick tests now use the same prompt as the real run.
+- "Force re-extract" duplicated AI rows, and re-extraction failed at the last step.
+- Quotes for list fields were dropped from the form and the CSV.
+- Rows in list-of-object tables can be deleted.
+- Run summaries say why a paper failed.
+
 ## [0.31.0] – 2026-07-27
 
-### Fixed
-- `/pdf/<id>` resolved a source by id alone, so on a database holding several projects it served PDFs belonging to another one. PDFs recorded as absolute paths outside the project (the Zotero flow) are unaffected.
-- Sources → bulk decision bypassed the vote lock: on a paper another reviewer had already screened the vote was written but ignored by every queue and PRISMA count, while still counting towards inter-rater agreement. It now goes through the same lock as the inline buttons and reports what it skipped.
-- Consensus could be saved from two moments at once: the agreed fields were read fresh while the picked answers came from the page as it was opened, so a reviewer re-submitting in between produced a record matching neither. It now refuses and re-renders the comparison.
-- Criteria IDs were dropped from the "what the AI receives" preview and from saved criteria versions; restoring an old version then saving could renumber criteria and unlink existing flag-checks.
-- Extraction Save/Submit wrote null over fields whose widget was missing because the variables changed after the page was opened; it now refuses to save instead.
-- Screening's abstract toggle acted on the first re-rendered card rather than the clicked one.
-- Methods export named a seed on every run; only the OpenAI API takes one.
-- Methods export described AI screening from the current config; it now reports the models and decoding settings the decisions were actually made with.
-- `ailr screen` / `extract` / `calibrate` stamped every decision `prompt_version` "v1" without snapshotting; they now version prompts the same way the UI does.
-- Calibration sampling read `llm.seed`; it now uses its own constant.
-
 ### Added
-- Decisions record the temperature (and seed, where the provider sends one) used to produce them.
+- Decisions record the temperature and seed used.
 
 ### Changed
-- `llm.seed` defaults to unset; the Anthropic and Gemini clients no longer accept it.
-- UI split into smaller modules: the shared modals, the PDF-preparation tools, the card parts, and project loading each moved out of the file they had grown inside. No behaviour or component ids changed.
-- "Same study as…" moved into the full-text card's action row beside Duplicate, leaving only the grouping badge above; that row's four record-level actions now carry hover tooltips, and Duplicate's and "Same study"'s say how the two differ.
+- "Same study as" moved beside Duplicate on full-text cards.
 
 ### Removed
-- `extraction.chunk_strategy` and `preprocess.keep_sections`: declared but never read by anything.
+- Unused settings `extraction.chunk_strategy` and `preprocess.keep_sections`.
 
----
+### Fixed
+- PDFs could be served from another project in the same database.
+- Bulk decisions on Sources bypassed the vote lock.
+- Consensus and extraction saves could write stale or missing values.
+- Restoring a criteria version could renumber criteria.
+- The methods text reports the models and settings actually used.
+
 ## [0.30.0] – 2026-07-27
 
 ### Added
-- `screening.full_text_workflow`: full-text screening runs its own workflow, so a review can be AI-assisted at title/abstract and two-human at full text. Defaults to the abstract setting.
-- `ailr workflow PROJECT [--stage abstract|full-text|extraction] [--set VALUE]` prints or sets the three stage workflows.
+- Full-text screening can use a different workflow from abstract screening.
+- `ailr workflow` prints or sets the stage workflows.
 
 ### Changed
-- All three stage workflows moved to Protocol → Workflow; the Abstract "Workflow" tab is gone and the full-text one is now "Preparation" (PDF prep only).
-- A paper reaches full-text review only once abstract screening is finished with it and settled on include; one still in an unresolved conflict, or waiting on a second reviewer, now stays at the abstract stage.
-- PRISMA counts a paper as included only once its stage is settled; unresolved disagreements and half-reviewed papers count as neither.
-- Spend estimates removed; they were always $0.00. Token counts unchanged.
-- `ailr show disagreements` takes `--stage abstract|full_text`.
-- API token rows are written once per run instead of once per paper.
+- Stage workflows moved to Protocol → Workflow; the full-text Workflow tab is now "Preparation".
+- A paper reaches full text only once its abstract decision is settled as include; PRISMA counts only settled papers.
+- Spend estimates removed (they were always $0.00).
 
 ### Fixed
-- Independent extraction: "To extract" dropped a paper as soon as the first extractor submitted, hiding it from the second.
-- A paper the AI alone voted include, with no human having screened it, was listed as a full-text candidate.
-- "Final include" had two implementations; with two reviewers the answer depended on who voted last.
-- Methods export reported a title-dedup threshold of 90; the real value is 95.
-- Clearing a project left its artifact history, so a re-import inherited the old protocol amendments.
-- Re-adjudicating a consensus extraction could destroy the old record without writing the new one.
-- `show disagreements` paired every AI vote against every human vote, across stages.
+- Independent extraction hid a paper from the second extractor.
+- "Final include" could depend on who voted last.
+- Clearing a project left its protocol amendments.
 
----
 ## [0.29.0] – 2026-07-27
 
 ### Added
-- Full-text calibration: run the AI on a sample, review the same papers yourself, get κ. Same shape as screening calibration.
-- Companion reports: group several publications of one study, so PRISMA counts studies and reports separately.
-- Protocol → Registration: register, registration number, protocol URL, and an amendment log.
-- 95% CI on Cohen's κ, on the reliability report and in the methods export.
+- Full-text calibration with κ.
+- Companion reports: group publications of one study; PRISMA counts studies and reports.
+- Protocol → Registration with an amendment log.
+- 95% CI on Cohen's κ.
 
 ### Changed
-- "Reports not retrieved" is marked by hand instead of guessed from a missing markdown file.
-- Full calibration is off in independent workflow, where the AI is not one of the reviewers.
-- Methods and PRISMA exports say PRISMA-ScR for a scoping review, PRISMA 2020 for a systematic one.
+- "Reports not retrieved" is marked by hand.
+- Exports say PRISMA-ScR for scoping reviews.
 
-### Removed
-- Automatic column patching when a project opens; two unused indexes on sources.
-
-### Fixed
-- Screening's "Calibration sample" filter matched nothing.
-- Extraction-stage calibration crashed instead of running.
-
----
 ## [0.28.0] – 2026-07-26
 
 ### Added
-- PRISMA 2020's second identification arm: records found by citation searching, hand searching, or on websites are picked as such on Import and reported as their own arm in the flow diagram, the SVG, and the PRISMA export. Reviews without any such records keep the single-column diagram. Existing projects migrate with everything marked as database-identified.
-- README and the reports docs note that meta-analysis and GRADE are out of scope.
-- `rob2` (Cochrane RoB 2) and `newcastle_ottawa` ship as opt-in variable modules on Protocol → Variables, so a quality appraisal goes through the same extraction, verification, and consensus flow as any other variable. Neither is on by default.
-- Summary's extraction card counts papers awaiting reconciliation; Settings → Project shows which mode preset the project was created with.
-- Consensus for independent extraction: once two reviewers submit, the paper appears under Full-text review → "To reconcile" → "Open comparison", where agreed variables are carried over and only disagreements ask for a decision (take a reviewer's answer with its quote, or type your own). Saved as an adjudicated record that "Extraction — final" exports; Undo puts the paper back in the queue.
-- Reliability report covers any reviewer pair at either stage: pick abstract or full-text and the two reviewers (AI vs human, or human vs human), instead of only AI vs human at the abstract stage.
-- PABAK (prevalence-adjusted κ) alongside Cohen's κ, since κ reads low at screening's typical include rate.
-- "Download the votes behind this (CSV)" on the reliability report: every reviewer's vote per record, for computing agreement under other conventions.
-- Review type (scoping / systematic) is chosen when creating a project and editable in Settings; `ailr init --type` on the CLI.
-
-### Fixed
-- Agreement paired the latest human vote regardless of who cast it, so with two reviewers on a paper the AI was compared against whichever human voted last. Pairing is now per reviewer.
-- Extraction exports merged two reviewers' values into one row, silently keeping whichever was written last; CSV/JSON/ZIP now carry an `extractor_id` and emit one record per extractor.
-- Human extraction exports no longer include the internal `_submitted` marker as if it were a variable.
-- A full-text report excluded for several reasons counted as one combined category in the PRISMA table instead of once under each reason. The excluded box now also counts reports rather than votes, and skips reports a reconciliation turned into includes.
-- `project.type` was hardcoded to `scoping` with no way to change it, so every methods export called the review a scoping review.
+- PRISMA 2020 second identification arm (citation searching, hand searching, websites).
+- Optional RoB 2 and Newcastle-Ottawa variable modules.
+- Consensus for independent extraction: reconcile disagreements field by field.
+- Reliability report for any reviewer pair at either stage, with PABAK and a votes CSV.
+- Review type (scoping or systematic) per project.
 
 ### Changed
-- No built-in default model: the project template and the config no longer name one, and an AI run without a model set stops with a message pointing at Settings → Models (Mock is unaffected). Settings notes that screening is where a cheap model pays off.
-- Agreement counts `uncertain` as include (it carries a record forward) with a three-way toggle; figures use votes as first cast, ignoring reconciliations.
-- Methods export reports agreement for both stages and names the reviewer pair; `ailr metrics --json` returns an `agreement` block per stage and pair.
-- The `strict` preset now sets independent extraction (two reviewers, reconciled) to match its independent screening; it previously left extraction as AI-extract-then-verify.
+- No built-in default model: set one under Settings → Models.
+- Agreement counts uncertain as include.
+- The `strict` preset uses independent extraction.
 
----
+### Fixed
+- Agreement compared the AI with whichever human voted last.
+- Extraction exports merged two reviewers' values; they now have one row per extractor.
+- PRISMA counted multi-reason exclusions as one category.
+
 ## [0.27.0] – 2026-07-26
 
 ### Added
-- Full-text conflicts page: "Read full text" button on each card opens the PDF/markdown in the shared reader modal, matching the full-text review tab.
-
-### Fixed
-- Prompt version dropdowns refresh after an AI run: the full-text side never refreshed, and both sides left the "Compare the selected version with" list stale.
+- "Read full text" on full-text conflict cards.
 
 ### Changed
-- FT Conflicts cards now show the DOI link and a collapsed abstract, matching the abstract-stage conflicts card.
-- Conflicts and FT Conflicts: title, description, and unresolved count moved to the top of the page; the cards now use the full width instead of a 9-column strip.
-- Database tab paginates (25/50/100/200 per page) and loads the whole table so sort/filter/paging span all rows, not just the first 500.
-- `criteria.yaml` is now the only criteria source: the free-text `inclusion_criteria.md` fallback and the `screening.criteria` config key are gone (a stale key in an old `lit_review.yaml` is ignored).
-- `ailr init` now writes `criteria.yaml` and the two `prompts/*_additional.txt` files.
-- Starter prompts and `lit_review.yaml` template updated to the current pipeline: `{{additional}}` on both stages, per-criterion re-check wording, `criteria_structured` / `additional` paths, no `codebook` line.
-- `examples/` rewritten as a complete minimal setup (criteria, variables, and both prompts, in YAML and importable JSON) and linked from the protocol docs.
-- Default model updated to `claude-sonnet-5`; dropped the hardcoded "Common models" hint under the Settings model inputs.
-- Docs screenshots refreshed to the current UI; Protocol criteria/variables, both Prompt tabs, Settings Prompts, and the data-exports tab are now documented.
+- Conflict pages use the full width and show DOI and abstract.
+- Database tab pages through all rows.
+- `criteria.yaml` is the only criteria source; `ailr init` writes it.
+- Starter prompts and `examples/` match the current pipeline.
 
----
 ## [0.26.0] – 2026-07-20
 
 ### Added
-- Protocol page: "Import JSON file" button on both Criteria and Variables to load `criteria.json` / `extraction_variables.json` directly (validates and fills the editor, same as pasting).
-- Abstract AI screening now records a per-criterion PASS/FAIL/UNCERTAIN verdict, reason, and confidence for every decision (always on; `screening.flag_check` default true is the escape hatch), making each include/exclude auditable.
-- Abstract conflicts / reconciliation shows the AI's per-criterion verdicts under its rationale, matching the full-text side (parsed from the screening decision's raw_output).
-- Abstract calibration / Quick test shows the same per-criterion verdicts, rendered per-paper as cards like the extraction quick test.
+- Import criteria and variables from a JSON file.
+- AI screening records a verdict per criterion, shown on conflicts and quick tests.
 
 ### Changed
-- Per-criterion flag-check rendering unified into one shared `flag_check_block` helper used by both quick tests and both conflict views; the conflict cards now also show each criterion's confidence and supporting quote.
-- Abstract screening messages now include the journal/venue and DOI (alongside title/year/authors) so the AI can better judge publication type (journal vs thesis vs conference).
-- Calibration quick-test cards (both screening and extraction) show a clickable DOI.
+- AI screening also sees the journal and DOI.
 
----
 ## [0.25.0] – 2026-07-16
 
-### Added
-- Tests for the screening vote lock, conflict detection (assisted + independent), and the click-routing regression (`triggered_click_id`); the Screen tab's vote/reset callback body is now module-level (`_apply_vote` / `_apply_reset`) so it can be tested directly.
-- Tests for the extraction claim lock / submit markers / to-extract queue, AI-output parsing (multi-select JSON strings, flag_check derivation, external-results import), calibration κ pairing, import dedup (blank-DOI NULL, keep-more-complete), and reference-stripping / PDF-link year tie-break regressions.
-- Tests for PRISMA/report counts (latest-only, report+SVG share one count set), mock-run orchestration (skip screened, placeholder for no-abstract, clear-mock-then-rerun, raw_output JSON, stale detection), full-text vote lock, and conflict resolve/undo.
-- Tests for the extraction run (candidate selection, flag_check → derived FT decision, force/batch, clear-mock re-extract) and the extraction exports (CSV/JSON/ZIP quote pairing, nested flattening, only-includes filter).
-
-### Changed
-- Vote / reset / resolve / undo callback bodies unified in `ui/_actions.py` (stage-aware, shared by Screen, Full-text, and both Conflicts tabs); the full-text tab now uses the same strict click-routing helper (`triggered_click_id`) as the Screen tab.
-
 ### Fixed
-- Extraction page shows AI quotes for all field types (scalar lists and grid cells previously dropped them); quotes render as collapsible blocks, and the AI panel no longer truncates nested values mid-quote.
-- Reports κ / confusion matrix / methods export pair only the latest abstract-stage AI and human decisions (same rule as calibration κ; superseded re-votes, AI re-runs, and full-text decisions no longer skew agreement).
-- The full-text "Exclude with reasons" modal goes through the same vote lock as the inline buttons (it could previously stack a second vote by the same reviewer, and had no team cap in independent mode).
-- PRISMA flow numbers (screened / sought / retrieved / assessed / included) count papers, not decisions — in independent mode two reviewers including a paper counted it twice — and a reconciliation now overrides the votes in the flow.
-- Removed the unique-vote index from the legacy reference DDL: it never existed in the live (SQLAlchemy) schema, and it conflicts with the multiple-rows-latest-wins decision model (AI re-runs). Duplicate votes are prevented by the application-level vote lock.
+- AI quotes show for all field types in the extraction view.
+- Agreement and PRISMA count papers, not votes, and use only the latest decisions.
+- The full-text exclude dialog bypassed the vote lock.
 
----
 ## [0.24.0] – 2026-07-09
 
 ### Added
-- AI screening/extraction run LLM calls in parallel (`screening.workers`, default 4; `extraction.workers`, default 2; set 1 for the old serial behavior).
-- Prompt previews (Workflow pages + Settings) have a Plain / Rendered toggle to view the composed prompt as markdown.
-- Reports → Data exports: per-paper AI extraction export (a ZIP with one `<source_id>.json` per paper), alongside the existing combined JSON.
-- Sort by "AI confidence (lowest first)" on the Screening and Full-text pages, to surface the papers the AI was least sure about.
-- AI extraction records a per-field confidence (1–10), shown next to each field and in the AI panel.
+- AI runs call the model in parallel.
+- Rendered view for prompt previews.
+- Per-paper AI extraction export.
+- Sort by lowest AI confidence; per-field confidence on extractions.
 
 ### Changed
-- Faster title dedup on large imports (rapidfuzz C-level matching with cutoff).
-- Faster conflict counts/lists and extraction lookups (CTE-based conflict queries, batched already-extracted check, new composite index on extractions, cached SQL translation).
-- Extraction fields are required by default and always carry their `quote` (nullable); flag_check items require `verdict`, `reason`, `confidence`, and `quote`.
-- Full-text "To extract" queue, the Extract button, and the dashboard extraction count exclude papers with an unresolved full-text conflict — resolve them on FT Conflicts first.
-- Conflicts dashboard card uses a coloured border + number (amber = needs attention) instead of a full red fill.
-- Full-text page loads faster: the six per-source lookups (this reviewer's decision, peer count, AI verdict, notes, submitter, extract-eligibility) are one merged query instead of six round-trips (~0.5s saved), and the "AI extraction outdated" check compares the composed prompt in SQL instead of shipping every row's prompt text to compare in Python (~1.1s saved). Returning from Open extraction is markedly quicker.
+- Faster imports, conflict pages and full-text pages.
+- A paper with an unresolved full-text conflict cannot be extracted.
 
 ### Fixed
-- Calibration κ pairs only the latest abstract-stage decisions (full-text decisions and superseded re-votes no longer skew agreement).
-- Large batch runs no longer risk hitting the DB bind-parameter limit (batch inserts are chunked).
-- AI screening `raw_output` is stored as JSON (was a Python repr).
-- Multi-select fields the model returned as a JSON string (e.g. study_design) are parsed and shown as values instead of raw JSON.
-- Open extraction: the "AI proposed (reference)" table scrolls horizontally instead of overflowing the pane; its flag_check shows confidence and the derived full-text decision.
+- Multi-select values returned as text showed as raw JSON.
 
----
 ## [0.23.0] – 2026-06-29
 
 ### Added
-- "AI outdated" badges (and counts) on the Screening and Full-text pages flag papers screened/extracted under criteria or a prompt that have since changed — so you know which to re-run.
+- "AI outdated" badges for papers run under criteria or a prompt that has since changed.
 
 ### Changed
-- Abstract screening's matched_criteria is constrained to your criterion IDs — both stages now reference criteria by the same locked IDs.
-- Criteria list shows each criterion's full PASS/FAIL/UNCERTAIN rules (no truncation); editor/preview rebalanced; abstract Workflow shows Calibration before AI screening; full-text prompt page text updated (criteria/variables are edited on Protocol).
+- Abstract screening uses the same criterion IDs as full text.
 
-### Fixed
-- "Full prompt preview" on the screening and extraction prompt pages could render empty until you edited the prompt; it now shows the resolved prompt on load.
-
----
 ## [0.22.0] – 2026-06-29
 
-### Changed
-- Template tab reorganised: Variables / Prompt split into two sub-tabs; the add-field form now shows only the inputs relevant to the chosen type, and the preview can be expanded (cleaner, less scrolling).
-- Settings split into Project / Models / Prompts / Danger zone sub-tabs.
-- Reports split into PRISMA & methods / Reliability & API / Data exports sub-tabs.
-- "Run externally" (copy prompt + download JSON template) moved from the Template tab to the AI extraction tab, next to Import — generate and import now live together (mirrors screening).
-- Dropped sub-tab headings that duplicated the tab name (Workflow, AI screening); some long descriptions tucked into a hover "?" icon.
-- Abstract workflow aligned with full-text: prompt editing split into its own "Prompt" sub-tab, leaving run + import on "AI screening".
-- Reports load faster (shared counts; "studies extracted" is one query, not one per source).
-- New top-level **Protocol** page for the review's shared definitions (criteria + extraction variables); criteria moved here from Settings, variables from the full-text Workflow (now prompt-only).
-- Tidied the prompt pages: criteria shown once (in the prompt preview), version histories collapsed by default.
-
 ### Added
-- Criteria are now a structured form (name + PASS/FAIL/UNCERTAIN per criterion); the extraction flag-check is locked to them so the AI re-checks each one by name. Import from your existing criteria text or JSON.
-- Version history with a highlighted diff for criteria, variables, and prompts — restore or compare any two saved versions.
-- Edit any extraction variable in place (name, type, options, required), not just remove and re-add.
-- Screening: optional "Additional instructions" box for stage-specific guidance.
-- Screening panel reorganised like the Template tab (additional + live preview up front, full editor under "Advanced").
-- Settings shows the prompts as actually sent (criteria/schema/additional filled in).
-- Prompt versioning now covers extraction too and snapshots the fully-resolved prompt (new `composed` column), so any criteria/schema/additional change cuts a new version; version view shows the exact prompt sent.
+- Protocol page for criteria and extraction variables.
+- Structured criteria (PASS/FAIL/UNCERTAIN per criterion), importable from text or JSON.
+- Version history with diffs for criteria, variables and prompts.
+- Edit extraction variables in place; additional instructions for screening.
+
+### Changed
+- Settings and Reports split into sub-tabs; "Run externally" moved next to Import.
 
 ### Fixed
-- Blank page when switching between tabs: an async `dcc.Markdown` could error mid-teardown during the swap; tab content is now keyed per tab to force a clean remount.
+- Blank page when switching tabs.
 
----
 ## [0.21.0] – 2026-06-28
 
-Extraction template, schema, prompt, and calibration overhaul.
-
 ### Added
-- Template: import variable definitions drafted by your own AI — paste JSON, validate (structure + warnings), and load into the editor to review before saving.
-- Template: "Save template" also writes a re-importable JSON copy of your variables to `extraction_variables.json` (the app still runs on `schema.yaml`; the JSON is a portable mirror).
-- Template: the "draft variables with your AI" message now asks for descriptions that fully define each field — including what each option of an enum means, and preserving any codebook/prompt wording you paste — so imported field descriptions carry the per-option guidance the model needs (the model only ever sees name + description + options).
-- Schema: list (multi-select) fields now honour `enum`, so each item is constrained to a fixed option set (e.g. a "modality" field limited to Audio / Video / Text / Sensor) in both the enforced tool schema and the codebook/preview.
-- Calibration quick test (screening and extraction) can now run on specific papers you pick — a searchable multi-select (by author / title / DOI / id) — instead of only a random sample of N; choose "Random sample" or "Pick specific papers". Full calibration still uses a random draw (κ needs a representative sample).
-- Calibration extraction quick test now shows the full AI output: every field's value with its verbatim quote underneath, repeating groups (e.g. dyadic features) expanded per item with per-sub-field quotes, and the inclusion flag-check (per-criterion verdict / confidence / reason / quote) — so a test run shows exactly what and how the AI extracted and judged.
+- Import variable definitions drafted with your own AI.
+- Multi-select fields can be limited to fixed options.
+- Quick tests on hand-picked papers, showing the full AI output.
 
 ### Changed
-- Full-text Workflow tabs reordered so Calibration comes before AI extraction (AI extraction is the last step).
-- Template → Prompt section now exposes only the two parts worth editing — inclusion/exclusion criteria and free-form "additional instructions" (new `{{additional}}` placeholder, saved to `prompts/extraction_additional.txt`) — with the fixed scaffold moved into an "Advanced" collapsible and a live full-prompt preview; older scaffolds without the marker get additional instructions appended automatically.
+- Prompt editing shows only criteria and additional instructions; the rest is under Advanced.
 
 ### Fixed
-- Template: importing variable definitions and clicking "Save template" now actually persists to `schema.yaml` — a callback race was overwriting the just-loaded fields with the previous (default) ones before save.
-- Opening or switching a project in the UI now sets `AILR_PROJECT`, so background actions (e.g. calibration runs) no longer fail with "AILR_PROJECT environment variable is not set".
-- A unique index on screening decisions (source + reviewer + stage + reviewer type) now prevents duplicate votes at the database level, backing up the click-time vote lock.
-- The "Run externally" extraction prompt preview now shows the exact prompt ailr sends (your saved template with {{criteria}} and {{schema_md}} filled in, via the same composer the reviewer uses) and the real output shape (per-field {value, quote} + per-criterion _flag_check with quote), so it's faithfully reproducible in another agent — previously it was a separate hand-written wrapper with an outdated flag-check shape.
-- Extraction exports now include the verbatim quote for every field: the AI-extraction JSON pairs each leaf field as `{value, quote}` and the wide CSV's `<field>_quote` columns are populated (the quote was captured but previously dropped from both exports). The inclusion flag-check also now carries a supporting quote per verdict.
+- Imported variables were not saved.
+- The "Run externally" prompt now matches what ailr sends.
+- Extraction exports include the quote for every field.
 
-### Docs
-- New "extraction engine" page (Internals) and a recipe for drafting the extraction variables with your own AI.
-
----
 ## [0.20.0] – 2026-06-28
 
-Full-text / PDF preparation, mock-run handling, and tab-switch stability.
-
 ### Added
-- PDF→markdown conversion now runs PDFs in parallel (configurable "Parallel workers" on the full-text Workflow tab, default 4; the marker backend always uses 1).
-- Full-text: per-card "Re-convert PDF" button, "Force re-convert all" and "Re-convert low-text / failed" buttons plus a backend selector (pymupdf/marker) on the Workflow tab, and a "Low-text / failed" filter that surfaces papers whose converted markdown is empty or too short.
-- "Clear mock AI results" buttons on the Screening and Extraction pages remove only mock-provider AI rows (real AI and human decisions/extractions are kept), so runs done with the Mock toggle don't linger in the real data.
-- A real AI screening/extraction run now first clears earlier mock results, so it runs over them instead of skipping sources that were only mock-screened (the run summary reports how many mock rows it replaced).
-- Mock AI runs are much faster on a shared PostgreSQL database: results are written in a few batched multi-row INSERTs at the end instead of one round trip per row. Real runs keep the per-row, per-commit path for durability.
+- Parallel PDF conversion; re-convert one paper or all low-text ones.
+- "Clear mock AI results"; real runs replace earlier mock results.
 
 ### Changed
-- PDFs are now linked automatically from the project's `data/pdfs` folder when you open the full-text pages (export your Zotero library there with "Export Files"); the manual "Link PDFs" path entry and the Settings "PDF folder on THIS machine" override are gone. Linked paths are stored relative to the project root, so they resolve on every teammate's machine on the shared drive.
+- PDFs are linked automatically from `data/pdfs`.
 
 ### Fixed
-- Switching tabs no longer silently leaves the page blank when a tab's layout fails to build (e.g. a transient database hiccup) — the error is shown in-page and logged so it can be diagnosed, instead of looking like nothing happened until a refresh.
-- PDF linking no longer mis-assigns a PDF when two DOI-less papers have near-identical titles (e.g. "LAEO-Net" vs "LAEO-Net++"): a tie in title similarity is now broken by publication year, so each paper keeps its own PDF instead of one source being re-linked on every run.
-- Reference-stripping no longer deletes the body of a paper when an early "References" heading appears before the bibliography (e.g. JSTOR cover pages); only a heading in the latter half of the document is treated as the reference list.
+- PDF linking mixed up papers with near-identical titles.
+- Reference stripping could delete a paper's body.
 
-### Internal
-- Code cleanup / refactor (no behavior change).
-
----
 ## [0.19.0] – 2026-06-28
 
-Import, sources, conflicts, and large-corpus performance.
-
 ### Added
-- Search strategy archiving: record each database's search query / date / limits at import (with record counts), listed on the Import page and emitted in the methods export.
-- Duplicates: "Removed at import" records can now be restored as sources (select + Restore) — the full record is stored at import so a wrongly-dropped paper comes back complete.
-- Settings → Danger zone: clear all of a project's data, or delete the project entirely (data + row, files on disk kept), each guarded by a type-the-name confirmation.
-- Screening filter: "All fields" search now also matches DOI, PMID, year, and source database.
-- Sources: edit a paper's metadata (DOI, title, authors, year, journal, source database, abstract) — select a row and click "Edit metadata" to open a confirm dialog — plus a missing-DOI reminder on the Sources tab, after import, and when exporting the includes RIS, since DOI is what keeps de-duplication and PDF linking reliable.
+- Record each database's search strategy at import, for the methods export.
+- Restore records removed as duplicates at import.
+- Clear or delete a project under Settings → Danger zone.
+- Edit a paper's metadata on Sources.
 
 ### Changed
-- Title deduplication now keeps the more complete record (DOI first, then authors, then other fields) instead of always keeping the first-imported one, and the fuzzy-title match threshold was raised from 90 to 95 to cut false-positive merges.
-- Imports are much faster on a shared PostgreSQL database: records are inserted in batched transactions and existing DOIs are loaded in one query instead of one per record.
-- Screening and full-text review stay fast at thousands of records: the lists now filter/sort/paginate in SQL (only the visible page is fetched, not the whole table), votes commit in one transaction, a composite index speeds the status filters and vote locks, and the Sources overview query was rewritten to avoid a per-row subquery scan.
-- The shared-database hints (new-project form, Settings, config template, db-migrate `--to`) now say to paste the Neon/Postgres URL as-is (`postgresql://` or `postgres://`) — no need to rewrite the prefix, the driver is set automatically.
+- Title deduplication keeps the more complete record.
+- Much faster import and screening for large projects on Postgres.
 
 ### Fixed
-- Conflicts page "Recently resolved" list for abstract screening was always empty (queried the wrong stage label).
-- Records with a blank (empty-string) DOI failed to import on PostgreSQL (unique-key collision); blank DOIs are now stored as NULL. Import failures now list the offending title and error in the UI.
-- PostgreSQL URLs work with any common prefix (`postgresql://`, `postgres://`, `postgresql+psycopg2://`) — they are normalized to the psycopg driver automatically.
-- Clicking include/exclude (and the tag/note/duplicate/conflict-resolve actions) now always acts on the clicked card; previously, when the list re-rendered at the same moment, an action could land on a different paper.
-- Vote locking: a rapid double-click no longer records a duplicate of your own vote, and the team cap (1 human + AI in assisted, 2 humans in independent) now blocks a third reviewer in both modes (independent previously had no lock).
-- Conflicts: two reviewers both voting "uncertain" (AI + human in assisted, or both humans in independent) are now flagged for adjudication instead of silently disappearing — at both the abstract and full-text stages — and the dashboard conflict count uses the same rule as the Conflicts tab for each mode.
+- A click could land on a different paper while the list re-rendered.
+- Double clicks and a third reviewer are blocked by the vote lock.
+- Two "uncertain" votes now go to Conflicts.
 
----
 ## [0.18.0] – 2026-06-10
 
 ### Added
-- Audit log (`data/audit.jsonl`): every screening decision, extraction, and flag-check is also appended as a JSONL line (best-effort backup copy alongside the DB). `core/audit.py` `log_event`/`read_events` implemented (were stubs).
+- Audit log in `data/audit.jsonl`.
 
 ### Changed
-- Shared database is now configured via `storage.database_url` in `lit_review.yaml` (removed the `AILR_DATABASE_URL` env var); new projects ship a `.gitignore` that excludes `lit_review.yaml` since it holds the DB password.
+- The shared database URL is set under `storage.database_url` in `lit_review.yaml`.
 
----
 ## [0.17.0] – 2026-06-10
 
 ### Added
-- Import: required source-database selector (common databases + custom field; "Auto-detect" still available).
-- PRISMA flow: identification box lists records per source database; added "reports not retrieved" step.
-- PRISMA flow diagram exports as SVG (vector, no dependency) — UI button + `export --format prisma-svg`.
-- Full-text convert step: editable low-text warning threshold (persisted to `preprocess.low_text_threshold`), replacing the hardcoded 2000.
+- Source database is picked at import; PRISMA lists records per database.
+- PRISMA diagram exports as SVG.
 
 ### Changed
-- Extraction page now surfaces the AI's evidence: the AI extraction card shows each field's verbatim quote (+ confidence/section), and verify-mode fields show the AI's quote inline.
+- The extraction page shows the AI's quotes.
 
-### Fixed
-- Summary decision counts no longer include superseded re-votes; each card also reports unique sources screened.
-- PRISMA visual diagram and Markdown report now share one set of counts (previously disagreed on "included" and "assessed").
-
----
 ## [0.16.1] – 2026-06-08
 
 ### Changed
-- UI theme refresh: soft cards, pill buttons/badges, near-black primary + green accent, narrower sidebar.
-- Summary stacked one card per row; abstract and full-text conflicts now shown separately.
-- Extraction `verify` mode enforces one human per paper (mirrors assisted screening); a second human's submit is blocked.
-- Extraction is now entered from Full-text review: a "To extract" filter + per-card "Open extraction" button open the form; removed the separate Extraction sidebar item.
-- Full-text review cards can expand abstracts inline (toggle).
-- Extraction form highlights fields where your value differs from the AI's ("changed from AI" badge + marker).
-- Settings: model config is now per-stage (each has its own provider/model/temperature); removed the redundant top-level Model section.
-- Sources: bulk "Mark as duplicate / Move to abstract screening / Move back to full-text" on selected rows.
-- Sources: bulk include/exclude/uncertain can target the abstract or full-text stage.
-- Settings: removed project create/open/switch (handled on the Projects page); Settings now only holds the current project's config.
-- Low-text PDFs (tiny markdown → likely scanned/failed) are reported right after PDF→markdown conversion, and badged on full-text cards.
-- Full-text review: "To extract" now means not-yet-extracted; added an "Extracted by me" filter; cards show "Extracted by <who>".
-
-### Removed
-- Sources: per-decision confidence slider in bulk actions (human decisions don't need it).
+- New UI theme.
+- Extraction is opened from Full-text review.
+- Per-stage model settings.
+- Bulk actions on Sources for duplicates, stage moves and decisions.
 
 ### Fixed
-- Resetting/undoing a screening decision now clears its reconciliation, so a new differing decision can re-enter Conflicts (a stale reconciliation used to hide it forever). Resets only remove the human's vote — the AI verdict is always kept.
-- Reports: compute the AI/human decision pairing once instead of twice when the page opens.
+- Undoing a decision now lets a new disagreement reach Conflicts.
 
-### Fixed
-- Conflict cards and Sources now show flag-check criterion/reason instead of "?" (was reading wrong keys).
-
----
 ## [0.16.0] – 2026-06-08
 
 ### Added
-- **PostgreSQL support for team collaboration.** Set `AILR_DATABASE_URL` to a Postgres URL to share a project's data in one database (team co-edits in real time); unset = a local SQLite file. The URL lives in the environment (like the API key), so the password isn't written to the project.
-- **Project manager:** `ailr ui` with no project opens a page to create (SQLite or Postgres) or open a project.
-- **`ailr db-migrate`** copies a SQLite project's data into an empty Postgres database.
-- Mock AI extraction fabricates schema-shaped values so the extraction UI can be tested with no API call; plus a **Force re-extract** toggle.
+- PostgreSQL for team collaboration, and `ailr db-migrate` to move a SQLite project there.
+- Project manager page in `ailr ui`.
+- Mock AI extraction.
 
-### Changed
-- The web UI and PostgreSQL drivers are now **core dependencies** (`[ui]` / `[postgres]` are no-op aliases); LLM providers and PDF stay optional.
-- AI extraction runs on **abstract-screening includes**; the extraction verify queue shows papers whose **final full-text decision is include**.
-- **Move to screening / back to full-text** clear only the human's decision (AI verdict + extracted data are kept). Prompt versions are snapshotted when AI is run, not on every save.
-
-### Fixed
-- **`assisted` mode enforces one human per paper** — a second vote on an already-screened paper is rejected.
-- The extraction form prefills your saved values (not the AI's) after you submit.
-- PostgreSQL compatibility and a DB-layer fix so delete/update actions (undo, move-back) don't error after committing.
-
----
 ## [0.15.1] – 2026-06-05
 
 ### Changed
-- **Package restructure (no API change):** collapsed four single/two-file leaf packages into flat modules — `metrics/`, `preprocess/`, `extraction/`, `reviewers/` are now `metrics.py`, `preprocess.py`, `extraction.py`, `reviewers.py`. Top-level imports (`from ailr import ...`, `from ailr.extraction import ...`, etc.) are unchanged; only internal submodule paths were rewritten.
-- **API keys are now environment-only.** Removed `.env` auto-loading; the provider SDKs read `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` straight from the shell. Nothing is read from or written to the project folder.
+- API keys are read from the environment only; `.env` files are no longer loaded.
 
-### Removed
-- `python-dotenv` dependency (no longer used).
-
-### Docs
-- README and Settings now explain exporting the API key in the terminal before launch (with `~/.bashrc` as the persist-it option).
-
----
 ## [0.15.0] – 2026-06-05
 
 ### Added
-- **Selective human verification:** in Template, choose which extracted fields a human must verify; the Extraction page shows only those and accepts the AI value for the rest.
-- **Extraction page** now shows read-only bibliographic fields (from the imported record) and per-paper **History / Tags / Note / Duplicate / Move to screening / Move back to full-text** actions on the card.
-- **Reports:** confusion matrix, API usage table, and a JSON extraction export.
+- Choose which extracted fields a human must verify.
+- Confusion matrix, API usage and JSON extraction export on Reports.
 
 ### Changed
-- **Full text & extraction → Workflow** split into tabs: Workflow / Template / AI extraction / Calibration. The Template tab is organized into Variables / Human verification / Prompt / Run externally, and hosts the download-JSON-template and copy-prompt helpers.
-- Extraction (both the run and the downloadable template) is limited to papers **included at the full-text stage** (with markdown).
-- Default extraction no longer includes bibliographic fields (title/authors/year/journal/doi) — they come from the imported record and are auto-joined into CSV/JSON exports by `source_id`.
-- Removed the Mode selector from Settings; new projects start in assisted mode (change the workflow afterward).
+- Extraction runs only on papers included at full text.
 
-### Fixed
-- Extraction / Reports / Database no longer go blank when switching tabs, downloading, or opening modals (cross-tab callback errors).
-
----
 ## [0.14.0] – 2026-06-04
 
 ### Added
-- **Calibration / prompt test** as a tab on each stage's Workflow page: Quick test (try the prompt on a small sample without touching real data) + full calibration (Cohen's κ vs human).
-- **Prompt versioning:** save named snapshots of the screening prompt, view history, restore; AI runs are tagged with the version used.
-- **Inclusion/exclusion criteria editor** in Settings (shared by screening and extraction).
-- **Per-stage model override** in Settings — e.g. a cheaper model for abstract screening, a stronger one for full-text extraction.
-- **Create and switch projects from the UI**, with a recent-projects list (no terminal needed).
-- **Database tab:** read-only browser for any table, including the isolated test runs and extractions.
-- **Sources:** choose which columns to show (view presets) + a per-paper "View AI extraction".
-- **Reports:** confusion matrix, API usage table, and a JSON extraction export.
-- **Per-machine PDF folder override** for shared drives (Box/OneDrive) where each person's local path differs.
-- **"Run externally" helper:** copy a ready-made prompt or download a JSON template to run the AI outside the tool and import the results.
+- Quick test and calibration for each stage.
+- Prompt versioning.
+- Criteria editor, per-stage models, and project creation in the UI.
 
-### Changed
-- Workflow pages reorganized into sub-tabs (Workflow / AI screening / Calibration for abstract; Workflow / Template / Calibration for full-text); Template moved off the sidebar.
-- Full-text review filters aligned with abstract screening (search scope, has/needs full-text, reset).
-
-### Fixed
-- Several pages went blank when switching tabs or downloading; fixed the underlying cross-tab callback errors.
-- Full-text conflicts now show the AI's per-criterion reasoning, not a placeholder.
-
----
 ## [0.13.0] – 2026-06-01
 
 ### Added
-- **Full-text review** is now a distinct stage with its own tab (separate from abstract screening), plus a **FT Conflicts** tab.
-- Extraction automatically records a full-text include/exclude decision from its inclusion re-check.
+- Full-text review as its own stage, with its own conflicts tab.
 
----
 ## [0.12.0] – 2026-06-01
 
 ### Changed
-- Switched from top tabs to a **left sidebar** grouped into Summary / Abstract / Full text / Manage — gives the review cards much more room.
+- Left sidebar navigation.
 
----
 ## [0.11.0] – 2026-06-01
 
 ### Added
-- **Tag system:** create/rename/recolor/delete tags, tag chips on cards, filter by tag, and bulk-tag from the Sources tab.
-- After a screening vote, a top banner shows what was saved with a one-click **Undo**.
-- History is now a popup showing a source's full timeline (votes / resets / reconciliations).
+- Tags, an Undo banner after each vote, and a History popup.
 
-### Fixed
-- Cards now disappear reliably right after a vote (database read/write race).
-
----
 ## [0.10.0] – 2026-05-22
 
 ### Added
-- **Summary dashboard:** review overview (imports, screening counts, conflicts, extraction progress, API usage).
-- Per-source **History** panel/audit trail.
+- Summary dashboard.
 
-### Changed
-- "To screen" is team-aware in independent mode (won't resurface papers two people already did).
-- Conflicts: final decision is Include/Exclude only; recently-resolved list with Undo.
-
----
 ## [0.9.0] – 2026-05-22
 
 ### Added
-- **Conflicts tab:** reconcile sources where reviewers disagree, with each reviewer's vote and an optional rationale.
+- Conflicts tab.
 
----
 ## [0.8.0] – 2026-05-22
 
 ### Changed
-- **Screening redesigned:** scrollable card list with inline Include/Exclude/Uncertain, sidebar filters (status / sort / search / page size), and pagination — replaces one-at-a-time navigation.
+- Screening shows a filterable card list.
 
----
 ## [0.7.0] – 2026-05-22
 
-### Changed
-- **Workflow model:** screening = `assisted` (AI + 1 human, both blinded) or `independent` (2 humans); extraction = `verify` (AI extracts, human verifies) or `independent`. Both blind the AI until the human commits.
-
 ### Added
-- Workflow selector in the UI; `--workflow` flag on the CLI.
+- Workflows: assisted or independent screening, verify or independent extraction.
 
----
-## [0.5.0] – 2026-05-21
-
-### Changed
-- **UI rewritten on Dash** (was Streamlit); `ailr ui <project>` launches one app with all tabs.
-
----
 ## [0.5.1] – 2026-05-21
 
 ### Added
-- **Exports:** extraction table (CSV/JSON), PRISMA flow diagram, and a methods-section skeleton.
+- Exports: extraction table, PRISMA flow diagram and methods text.
 
----
+## [0.5.0] – 2026-05-21
+
+### Changed
+- UI rewritten on Dash.
+
 ## [0.4.0] – 2026-05-21
 
 ### Added
-- **PDF → Markdown** preprocessing (PyMuPDF / marker backends).
-- **Extraction:** schema-driven AI extraction with verbatim quotes and an inclusion re-check; editable extraction form in the UI.
-- **Extraction template editor:** define your fields (incl. repeating groups / nested objects) without editing YAML.
+- PDF to markdown conversion, AI extraction with verbatim quotes, and the extraction template editor.
 
----
 ## [0.3.0] – 2026-05-21
 
 ### Added
-- **Calibration:** sample N papers, run AI, and report Cohen's κ vs human to tune the prompt.
-- First screening UI; disagreement triage view.
+- Calibration with Cohen's κ, and the first screening UI.
 
----
 ## [0.2.0] – 2026-05-21
 
 ### Added
-- **AI layer:** provider-agnostic client (Anthropic, later OpenAI/Gemini) with structured output, retries, and a mock client.
-- **AI screening** (`ailr screen`) with agreement metrics (`ailr metrics`).
+- AI screening with Anthropic, OpenAI and Gemini, and agreement metrics.
 
----
 ## [0.1.0] – 2026-05-21
 
 ### Added
-- Initial release: project scaffold (`ailr init`), reference import (RIS/BibTeX/CSV) with deduplication, config + mode presets (strict / assisted / custom), and the SQLite data model.
+- Project setup, reference import with deduplication, and the SQLite data model.
