@@ -20,6 +20,14 @@ from ailr.ingest.pdf_link import (
 from tests.helpers import add_source
 
 
+def test_an_unreadable_ris_is_reported_not_skipped(tmp_project):
+    folder = tmp_project.root / "data" / "pdfs"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "library.ris").write_bytes(b"TY  - JOUR\nTI  - Caf\xe9\nER  - \n")
+    summary = pdf_link.auto_link_pdfs(tmp_project, force=True)
+    assert len(summary.unreadable) == 1 and "library.ris" in summary.unreadable[0]
+
+
 def _record(title, attachment=None, doi=None):
     lines = ["TY  - JOUR", f"TI  - {title}"]
     if doi:

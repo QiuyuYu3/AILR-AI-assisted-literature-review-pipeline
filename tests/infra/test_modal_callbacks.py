@@ -8,6 +8,7 @@ page was reopened. Nothing else in the module touches the name, which is why it 
 
 
 import pytest
+from dash import no_update
 
 from ailr.core.source import Source
 from ailr.ui import modals
@@ -26,8 +27,8 @@ def source(tmp_project):
 
 def test_applying_a_tag_stamps_the_tags_refresh(callbacks, tmp_project, source):
     tag_id = tmp_project.db.create_tag(tmp_project.project_id, "to-revisit")
-    out = callbacks["_apply_tag_changes"]([tag_id], {"source_id": source})
-    assert "ts" in out
+    stamp, store = callbacks["_apply_tag_changes"]([tag_id], {"source_id": source, "checked": []})
+    assert "ts" in stamp and store["checked"] == [tag_id]
     assert [t["id"] for t in tmp_project.db.get_tags_for_source(source)] == [tag_id]
 
 
@@ -35,8 +36,18 @@ def test_unticking_a_tag_removes_it(callbacks, tmp_project, source):
     keep, drop = (tmp_project.db.create_tag(tmp_project.project_id, name) for name in ("keep", "drop"))
     for tag_id in (keep, drop):
         tmp_project.db.tag_source(source, tag_id)
-    assert "ts" in callbacks["_apply_tag_changes"]([keep], {"source_id": source})
+    stamp, _store = callbacks["_apply_tag_changes"]([keep], {"source_id": source, "checked": [keep, drop]})
+    assert "ts" in stamp
     assert [t["id"] for t in tmp_project.db.get_tags_for_source(source)] == [keep]
+
+
+def test_a_tag_a_teammate_added_meanwhile_survives_my_tick(callbacks, tmp_project, source):
+    mine, theirs, new = (tmp_project.db.create_tag(tmp_project.project_id, name) for name in ("mine", "theirs", "new"))
+    tmp_project.db.tag_source(source, mine)
+    opened_with = {"source_id": source, "checked": [mine]}
+    tmp_project.db.tag_source(source, theirs)            # a teammate, after the dialog opened
+    callbacks["_apply_tag_changes"]([mine, new], opened_with)
+    assert {t["id"] for t in tmp_project.db.get_tags_for_source(source)} == {mine, theirs, new}
 
 
 def test_creating_a_tag_stamps_the_tags_refresh(callbacks, tmp_project, source):
@@ -61,10 +72,17 @@ def test_adding_and_deleting_a_note_stamps_the_notes_refresh(callbacks, tmp_proj
     assert tmp_project.db.list_notes(source) == []
 
 
+def test_a_refused_study_group_says_why_and_stays_open(callbacks, tmp_project, source, click):
+    click("study-modal-save")
+    is_open, stamp, feedback = callbacks["_save_study_group"](1, None, source, {"source_id": source})
+    assert is_open is no_update and stamp is no_update
+    assert "Could not save" in str(feedback.children)
+
+
 def test_saving_a_study_group_closes_the_modal_and_stamps_the_refresh(callbacks, tmp_project, source, click):
     other = tmp_project.db.insert_source(Source(title="Same study, second report", project_id=tmp_project.project_id))
     click("study-modal-save")
-    is_open, stamp = callbacks["_save_study_group"](1, None, other, {"source_id": source})
+    is_open, stamp, _feedback = callbacks["_save_study_group"](1, None, other, {"source_id": source})
     assert is_open is False and "ts" in stamp
     assert tmp_project.db.get_source(source).study_group_id == other
 

@@ -105,6 +105,7 @@ def ingest(
             for m in result.title_matches:
                 typer.echo(f"  - NEW:  {m['new_title'][:80]}")
                 typer.echo(f"    DB:   {m['existing_title'][:80]} (id={m['existing_id']})")
+        _exit_on_failures(result.failed)
     except AILRError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)

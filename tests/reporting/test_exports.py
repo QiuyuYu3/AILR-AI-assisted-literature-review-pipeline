@@ -17,6 +17,7 @@ from ailr.exports.ris import export_includes_ris
 from ailr.exports.tables import (
     extraction_bundle_zip,
     extraction_per_paper_zip,
+    extraction_rows_long,
     extraction_table_csv,
     extraction_table_json,
 )
@@ -144,6 +145,17 @@ class TestJsonExport:
         blob = extraction_per_paper_zip(export_project, extractor_type="human")
         with zipfile.ZipFile(io.BytesIO(blob)) as zf:
             assert sorted(zf.namelist()) == [f"{sid}__amber.json", f"{sid}__lin.json"]
+
+
+class TestLongExport:
+    def test_one_row_per_field_with_its_latest_value(self, export_project):
+        db = export_project.db
+        sid = _add_included_source(export_project, "included")
+        for value in ("old", "new"):
+            db.insert_extractions([ExtractionResult("human", "amber", "country", value, source_id=sid)])
+        db.mark_extraction_submitted(sid, "amber")
+        rows = extraction_rows_long(export_project, extractor_type="final")
+        assert [(r["field_name"], r["value"]) for r in rows] == [("country", "new")]
 
 
 class TestWhichPapersAnExportCovers:

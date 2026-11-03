@@ -157,6 +157,15 @@ class Config(BaseModel):
         return self.screening.workflow
 
 
+def _renamed_legacy_keys(user_config: dict[str, Any]) -> dict[str, Any]:
+    """`blinding` is the old name of `workflow`; a preset's `workflow` would outrank it once merged."""
+    screening = user_config.get("screening")
+    if not isinstance(screening, dict) or "blinding" not in screening or "workflow" in screening:
+        return user_config
+    renamed = {("workflow" if k == "blinding" else k): v for k, v in screening.items()}
+    return {**user_config, "screening": renamed}
+
+
 def load_config(project_dir: Path) -> Config:
     config_path = project_dir / "lit_review.yaml"
     if not config_path.exists():
@@ -183,7 +192,7 @@ def load_config(project_dir: Path) -> Config:
             preset_path = project_dir / preset_path
         merged = merge_preset_into(merged, load_custom_preset(preset_path))
 
-    merged = merge_preset_into(merged, user_config)
+    merged = merge_preset_into(merged, _renamed_legacy_keys(user_config))
 
     try:
         return Config(**merged)

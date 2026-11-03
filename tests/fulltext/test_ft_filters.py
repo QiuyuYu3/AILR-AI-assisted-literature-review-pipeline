@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from ailr.core._db_screening import _keyword_filter
 from ailr.ui.full_text_view import (
     _AWAITING_AI_FILTER,
     _RECONCILE_FILTER,
@@ -17,6 +18,7 @@ from ailr.ui.full_text_view import (
     _status_group_of,
     _status_groups,
 )
+from tests.helpers import add_source
 
 
 @pytest.mark.parametrize(
@@ -105,3 +107,10 @@ def test_low_text_md_passes_a_full_conversion(tmp_path):
 
 def test_low_text_md_is_false_when_there_is_no_markdown(tmp_path):
     assert _low_text_md(tmp_path, 99, 500) is False
+
+
+def test_a_keyword_search_folds_accented_capitals(tmp_project):
+    sid = add_source(tmp_project, "Émotion et regard chez le nourrisson")
+    clause, params = _keyword_filter("émotion", "title_and_abstract")
+    rows = tmp_project.db._conn.execute(f"SELECT s.id FROM sources s WHERE {clause}", params).fetchall()
+    assert [r["id"] for r in rows] == [sid]

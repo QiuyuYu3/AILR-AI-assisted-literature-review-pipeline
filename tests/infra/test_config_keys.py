@@ -4,6 +4,7 @@ import pytest
 import yaml
 
 from ailr.core.project import Project
+from tests.helpers import set_config
 
 
 def _with_retired_keys(root):
@@ -28,3 +29,7 @@ def test_an_older_yaml_with_retired_calibration_settings_still_opens(tmp_path, m
             assert settings[section]["calibration"] == {"min": 4}     # the one setting still read
     finally:
         project.db.close()
+
+
+def test_the_legacy_blinding_key_outranks_the_mode_preset(tmp_project):
+    assert set_config(tmp_project, "screening", blinding="independent").config.screening.workflow == "independent"

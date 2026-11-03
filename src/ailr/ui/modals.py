@@ -292,7 +292,7 @@ def register_callbacks(app: Any) -> None:
         value = [t["id"] for t in source_tags]
         empty_msg = "" if all_tags else "No tags exist yet. Create some in the Tags tab."
         title = f"Tag #{sid}"
-        return True, title, options, value, empty_msg, {"source_id": sid}
+        return True, title, options, value, empty_msg, {"source_id": sid, "checked": value}
 
     @app.callback(
         Output("study-modal", "is_open"),
@@ -341,6 +341,7 @@ def register_callbacks(app: Any) -> None:
     @app.callback(
         Output("study-modal", "is_open", allow_duplicate=True),
         Output("ft-refresh", "data", allow_duplicate=True),
+        Output("study-modal-current", "children", allow_duplicate=True),
         Input("study-modal-save", "n_clicks"),
         Input("study-modal-clear", "n_clicks"),
         State("study-modal-pick", "value"),
@@ -349,16 +350,16 @@ def register_callbacks(app: Any) -> None:
     )
     def _save_study_group(_save, _clear, picked, source_data):
         if not source_data:
-            return no_update, no_update
+            return no_update, no_update, no_update
         sid = source_data.get("source_id")
         if sid is None:
-            return no_update, no_update
+            return no_update, no_update, no_update
         primary = None if ctx.triggered_id == "study-modal-clear" else (int(picked) if picked else None)
         try:
             get_project().db.set_study_group(int(sid), primary)
-        except Exception:
-            return no_update, no_update
-        return False, {"ts": time.time()}
+        except Exception as e:
+            return no_update, no_update, dbc.Alert(f"Could not save: {e}", color="danger", className="py-1 mb-0")
+        return False, {"ts": time.time()}, no_update
 
     @app.callback(
         Output("tags-refresh", "data", allow_duplicate=True),
@@ -408,28 +409,29 @@ def register_callbacks(app: Any) -> None:
 
     @app.callback(
         Output("tags-refresh", "data", allow_duplicate=True),
+        Output("tag-modal-source", "data", allow_duplicate=True),
         Input("tag-modal-checklist", "value"),
         State("tag-modal-source", "data"),
         prevent_initial_call=True,
     )
     def _apply_tag_changes(checked, source_data):
         if not source_data:
-            return no_update
+            return no_update, no_update
         sid = source_data.get("source_id")
         if sid is None:
-            return no_update
-        db = get_project().db
-        current = {t["id"] for t in db.get_tags_for_source(int(sid))}
+            return no_update, no_update
+        # Against the ticks this dialog last held, not the database: a tag a teammate added since
+        # it opened is not one this reviewer removed.
+        before = set(source_data.get("checked") or [])
         new = set(checked or [])
-        to_add = new - current
-        to_remove = current - new
-        for tag_id in to_add:
+        if new == before:
+            return no_update, no_update
+        db = get_project().db
+        for tag_id in new - before:
             db.tag_source(int(sid), int(tag_id))
-        for tag_id in to_remove:
+        for tag_id in before - new:
             db.untag_source(int(sid), int(tag_id))
-        if to_add or to_remove:
-            return {"ts": time.time()}
-        return no_update
+        return {"ts": time.time()}, {**source_data, "checked": sorted(new)}
 
     @app.callback(
         Output("reader-modal", "is_open"),

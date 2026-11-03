@@ -185,15 +185,20 @@ def register_callbacks(app: Any) -> None:
             s = auto_link_pdfs(get_project(), force=True)
         except Exception as e:
             return dbc.Alert(f"Failed: {e}", color="danger", className="py-1 mb-0"), no_update
+        unreadable = f"Could not read {'; '.join(s.unreadable)}." if s.unreadable else ""
         if s.total_records == 0:
+            if unreadable:
+                return dbc.Alert(unreadable, color="danger", className="py-1 mb-0"), no_update
             return dbc.Alert("No Zotero .ris found in data/pdfs. Export your library there (with 'Export Files').", color="warning", className="py-1 mb-0"), no_update
         msg = f"Newly linked {s.linked}, already linked {s.already_linked}, unmatched {len(s.unmatched)}, missing files {len(s.missing_files)}."
+        if unreadable:
+            msg += f" {unreadable}"
         conflicts = [u["doi_differs_from"] for u in s.unmatched if "doi_differs_from" in u]
         if conflicts:
             msg += (f" {len(conflicts)} not linked because the DOI differs from the paper with the same title "
                     f"({', '.join(f'#{i}' for i in conflicts[:10])}); if it is the same work, save its PDF as "
                     f"data/pdfs/<id>.pdf.")
-        return dbc.Alert(msg, color="warning" if conflicts else "success", className="py-1 mb-0"), {"ts": time.time()}
+        return dbc.Alert(msg, color="warning" if conflicts or unreadable else "success", className="py-1 mb-0"), {"ts": time.time()}
 
     @app.callback(
         Output("ft-md-import-status", "children"),

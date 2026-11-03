@@ -106,6 +106,12 @@ class TestIngest:
         assert tmp_project.db.count_sources(tmp_project.project_id) == 2
         assert tmp_project.db.count_duplicates(tmp_project.project_id) == 2
 
+    def test_records_that_fail_to_insert_end_the_run_with_a_failure(self, tmp_project, tmp_path, monkeypatch):
+        ris = tmp_path / "export.ris"
+        ris.write_text(_RIS, encoding="utf-8")
+        monkeypatch.setattr(Database, "insert_sources", lambda _db, _sources: (0, [{"title": "T", "error": "boom"}]))
+        assert _run("ingest", tmp_project.root, ris).exit_code == 1
+
     def test_a_missing_file_is_an_error(self, tmp_project, tmp_path):
         result = _run("ingest", tmp_project.root, tmp_path / "nope.ris")
 

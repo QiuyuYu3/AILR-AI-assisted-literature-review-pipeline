@@ -358,12 +358,14 @@ def extraction_rows_long(
     extractor_type: str = "ai",
     only_includes: bool = True,
 ) -> list[dict[str, Any]]:
-    """Long-format rows: one entry per (source, field). For ad-hoc analysis."""
+    """Long-format rows: one entry per (source, extractor, field), the field's latest value. For ad-hoc analysis."""
     by_source = _extraction_rows_by_source(project.db, project.project_id, extractor_type)
 
     out: list[dict[str, Any]] = []
     for src in _export_sources(project, only_includes):
-        for row in by_source.get(src.id, []):
+        latest = {(row.get("extractor_id"), row["field_name"]): row for row in by_source.get(src.id, [])
+                  if not row["field_name"].startswith("_")}
+        for row in latest.values():
             out.append(
                 {
                     "source_id": src.id,

@@ -30,6 +30,7 @@ class PdfLinkSummary:
     no_attachment: int = 0
     unmatched: list[dict] = field(default_factory=list)      # record had a PDF but no source matched
     missing_files: list[dict] = field(default_factory=list)  # source matched but the PDF file is gone
+    unreadable: list[str] = field(default_factory=list)      # RIS files that could not be parsed, with why
 
 
 def link_pdfs_from_ris(project: Project, ris_path: Path) -> PdfLinkSummary:
@@ -115,7 +116,8 @@ def auto_link_pdfs(project: Project, force: bool = False) -> PdfLinkSummary:
     for ris in ris_files:
         try:
             s = link_pdfs_from_ris(project, ris)
-        except Exception:
+        except Exception as e:
+            agg.unreadable.append(f"{ris.name} ({e})")
             continue
         agg.total_records += s.total_records
         agg.linked += s.linked

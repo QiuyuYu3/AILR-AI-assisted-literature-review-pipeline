@@ -96,6 +96,13 @@
 - A value and quote serialized into one string were stored whole as the value.
 - A screening flag_check returned as a JSON string was lost on conflict cards and in the cross-check.
 - Dated Opus 4 and 4.1 model IDs failed every extraction before the request was sent; OpenAI reasoning models now get parameters they accept.
+- A Zotero RIS that could not be read was reported as no RIS found; Re-scan now names the file and the reason.
+- `ailr ingest` exited 0 when records failed to insert.
+- A refused "Same study as" save closed nothing and said nothing; it now says why.
+- The tag dialog removed tags a teammate had added after it opened.
+- Keyword search on SQLite missed accented capitals that Postgres finds.
+- The legacy `blinding` setting was ignored whenever a mode preset applied.
+- `extraction_rows_long` returned superseded values and internal rows.
 
 ---
 ## [0.36.0] – 2026-10-04

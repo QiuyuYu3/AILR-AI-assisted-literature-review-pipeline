@@ -384,6 +384,10 @@ def _pg_network_args(url: str) -> dict:
     return {k: v for k, v in defaults.items() if k not in given}
 
 
+def _unicode_lower(text):
+    return text.lower() if isinstance(text, str) else text
+
+
 def _make_engine(url: str):
     if url.startswith("sqlite"):
         engine = create_engine(
@@ -402,6 +406,8 @@ def _make_engine(url: str):
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA synchronous=NORMAL")
             cur.close()
+            # SQLite's own lower() is ASCII only: "émotion" would miss "Émotion" here but not on Postgres.
+            dbapi_conn.create_function("lower", 1, _unicode_lower, deterministic=True)
 
         return engine
     # psycopg auto-promotes statements to server-side PREPARE after a few executions, which
