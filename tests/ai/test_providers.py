@@ -138,6 +138,19 @@ class TestAnthropic:
         with pytest.raises(LLMError, match="No tool_use block"):
             _ask(_anthropic(anthropic_sdk, reply))
 
+    def test_a_reply_stopped_by_the_context_window_fails(self, anthropic_sdk):
+        reply = _anthropic_reply()
+        reply.stop_reason = "model_context_window_exceeded"
+        with pytest.raises(LLMError, match="context window"):
+            _ask(_anthropic(anthropic_sdk, reply))
+
+    def test_a_model_with_a_non_streaming_limit_is_asked_for_that_much(self, anthropic_sdk, monkeypatch):
+        limits = types.SimpleNamespace(MODEL_NONSTREAMING_TOKENS={"claude-x": 8192})
+        monkeypatch.setitem(sys.modules, "anthropic._constants", limits)
+        client = _anthropic(anthropic_sdk)
+        client.complete_structured(system="s", user_message="u", tool_schema=_TOOL, max_tokens=16000)
+        assert anthropic_sdk.calls.kwargs[0]["max_tokens"] == 8192
+
     def test_a_reply_cut_off_at_the_token_limit_fails_with_its_usage(self, anthropic_sdk):
         reply = _anthropic_reply(output_tokens=16000)
         reply.stop_reason = "max_tokens"
@@ -201,6 +214,25 @@ class TestOpenAI:
     def test_arguments_that_are_not_json_fail(self, openai_sdk):
         with pytest.raises(LLMError, match="invalid JSON"):
             _ask(_openai(openai_sdk, _openai_reply(arguments="{not json")))
+
+    def test_the_output_limit_is_the_parameter_every_model_accepts(self, openai_sdk):
+        _ask(_openai(openai_sdk))
+        kwargs = openai_sdk.calls.kwargs[0]
+        assert "max_completion_tokens" in kwargs and "max_tokens" not in kwargs
+
+    def test_a_model_that_refuses_temperature_is_asked_again_without_it(self, openai_sdk):
+        refused = openai_sdk.BadRequestError(400)
+        refused.args = ("Unsupported value: 'temperature' does not support 0 with this model.",)
+        client = _openai(openai_sdk, errors=[refused])
+        out, _meta = _ask(client)
+        assert out == {"answer": 1}
+        assert ["temperature" in kw for kw in openai_sdk.calls.kwargs] == [True, False]
+        assert client.temperature is None
+
+    def test_another_bad_request_still_fails(self, openai_sdk):
+        with pytest.raises(LLMError, match="rejected request"):
+            _ask(_openai(openai_sdk, errors=[openai_sdk.BadRequestError(400)]))
+        assert len(openai_sdk.calls.kwargs) == 1
 
     def test_a_reply_cut_off_at_the_token_limit_fails(self, openai_sdk):
         reply = _openai_reply()

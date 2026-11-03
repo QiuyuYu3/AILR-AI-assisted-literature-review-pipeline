@@ -68,19 +68,22 @@ class OpenAIClient(LLMClient):
             }
         ]
 
+        params: dict[str, Any] = {
+            "model": self._model,
+            "seed": self._seed,
+            "max_completion_tokens": max_tokens,  # max_tokens is refused by the reasoning models
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+            "tools": tools,
+            "tool_choice": {"type": "function", "function": {"name": tool_schema.name}},
+        }
+        if self._temperature is not None:
+            params["temperature"] = self._temperature
+
         def call():
-            return self._client.chat.completions.create(
-                model=self._model,
-                temperature=self._temperature,
-                seed=self._seed,
-                max_tokens=max_tokens,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user_message},
-                ],
-                tools=tools,
-                tool_choice={"type": "function", "function": {"name": tool_schema.name}},
-            )
+            return self._client.chat.completions.create(**params)
 
         def is_retryable(e: Exception) -> bool:
             if isinstance(e, (openai.RateLimitError, openai.APITimeoutError, openai.APIConnectionError,
@@ -92,7 +95,15 @@ class OpenAIClient(LLMClient):
 
         t0 = time.monotonic()
         try:
-            response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
+            try:
+                response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
+            except openai.BadRequestError as e:
+                if "temperature" not in params or "temperature" not in str(e):
+                    raise
+                # Reasoning models accept only their default; recorded as unset from here on.
+                self._temperature = None
+                del params["temperature"]
+                response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
         except openai.AuthenticationError as e:
             raise LLMError(f"OpenAI authentication failed: {e}") from e
         except openai.BadRequestError as e:

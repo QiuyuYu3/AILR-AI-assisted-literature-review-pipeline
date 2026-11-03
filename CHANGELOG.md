@@ -92,6 +92,10 @@
 - Importing an AI result that held only a verdict emptied the paper's current AI extraction.
 - AI calls whose response was rejected or cut off were billed but left out of the token counts.
 - With an AI job running in one project, starting one in another showed the first job's progress as its own; each project now has its own jobs.
+- Screening quotes or criteria returned as one string were read character by character; they are now repaired, and other shapes fail the paper.
+- A value and quote serialized into one string were stored whole as the value.
+- A screening flag_check returned as a JSON string was lost on conflict cards and in the cross-check.
+- Dated Opus 4 and 4.1 model IDs failed every extraction before the request was sent; OpenAI reasoning models now get parameters they accept.
 
 ---
 ## [0.36.0] – 2026-10-04

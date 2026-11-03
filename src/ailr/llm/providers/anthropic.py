@@ -8,6 +8,15 @@ from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 from ailr.llm.retry import with_retries
 
 
+def _nonstreaming_limit(model: str, max_tokens: int) -> int:
+    """The SDK refuses a non-streaming call above its per-model limit before sending anything."""
+    try:
+        from anthropic._constants import MODEL_NONSTREAMING_TOKENS
+    except ImportError:
+        return max_tokens
+    return min(max_tokens, MODEL_NONSTREAMING_TOKENS.get(model, max_tokens))
+
+
 class AnthropicClient(LLMClient):
     def __init__(
         self,
@@ -73,6 +82,8 @@ class AnthropicClient(LLMClient):
             }
         ]
 
+        max_tokens = _nonstreaming_limit(self._model, max_tokens)
+
         def call():
             return self._client.messages.create(
                 model=self._model,
@@ -130,6 +141,8 @@ class AnthropicClient(LLMClient):
                 f"The response hit the {max_tokens}-token output limit and was cut off, so it is incomplete.",
                 metadata=meta,
             )
+        if stop_reason == "model_context_window_exceeded":
+            raise LLMError("The paper filled the model's context window and the response was cut off.", metadata=meta)
         if stop_reason == "refusal":
             raise LLMError("The model refused to answer.", metadata=meta)
 

@@ -9,6 +9,7 @@ from ailr.core._db_facade import _row_to_source
 from ailr.core.config import ai_votes_for, team_size_for
 from ailr.core.source import Source
 from ailr.exceptions import DatabaseError
+from ailr.flag_check import normalize_flag_check
 
 if TYPE_CHECKING:
     from ailr.reviewers import ScreeningDecision
@@ -23,9 +24,7 @@ def _flag_check_from_raw(raw_output: str | None) -> list[dict]:
         raw = json.loads(raw_output).get("_flag_check")
     except (json.JSONDecodeError, TypeError, AttributeError):
         return []
-    if isinstance(raw, dict):
-        return [{"criterion_id": cid, **v} for cid, v in raw.items() if isinstance(v, dict)]
-    return raw if isinstance(raw, list) else []
+    return normalize_flag_check(raw) or []
 
 
 def reconcile_stage_for(stage: str) -> str:

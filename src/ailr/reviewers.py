@@ -18,6 +18,7 @@ from ailr.extraction import (
     compose_screening_prompt,
     schema_to_markdown,
 )
+from ailr.flag_check import normalize_flag_check
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 
 # Several quotes can end up in one `source_quote` cell (a list field whose items each got their
@@ -263,9 +264,9 @@ class LLMReviewer(Reviewer):
             reasoning=output.get("reasoning", ""),
             reviewer_type=self.reviewer_type,
             reviewer_id=self.reviewer_id,
-            evidence_quotes=output.get("evidence_quotes", []) or [],
-            matched_criteria=output.get("matched_criteria", []) or [],
-            flag_check=_normalize_flag_check(output.get("_flag_check")) if flag_check else None,
+            evidence_quotes=_string_list(output.get("evidence_quotes"), "evidence_quotes"),
+            matched_criteria=_string_list(output.get("matched_criteria"), "matched_criteria"),
+            flag_check=normalize_flag_check(output.get("_flag_check")) if flag_check else None,
             confidence=output.get("confidence"),
             llm_params=self._llm_params(metadata, self._max_tokens),
             prompt_version=self._prompt_version,
@@ -317,7 +318,7 @@ class LLMReviewer(Reviewer):
         for spec in fields:
             if spec.name not in output:
                 continue
-            raw = output[spec.name]
+            raw = _unpacked_wrapper(output[spec.name]) if with_quotes else output[spec.name]
             value, quote = _unwrap_value_quote(raw, with_quotes=with_quotes, field=spec)
             confidence = raw.get("confidence") if isinstance(raw, dict) else None
             results.append(
@@ -337,7 +338,7 @@ class LLMReviewer(Reviewer):
         verdicts = None
         if flag_check:
             # The full-text verdict comes from these, so a paper missing any of them is not done.
-            verdicts = _complete_verdicts(_normalize_flag_check(output.get("_flag_check")), criterion_ids)
+            verdicts = _complete_verdicts(normalize_flag_check(output.get("_flag_check")), criterion_ids)
         return SourceExtraction(
             source_id=source.id or 0,
             results=results,
@@ -411,25 +412,6 @@ def _add_flag_check_to_schema(tool_schema: ToolSchema, criterion_ids: list[str] 
     )
 
 
-def _normalize_flag_check(raw: Any) -> list[dict[str, Any]] | None:
-    """Canonical list[dict] from the named-slot object, its flat {ID: verdict} form, or the legacy array."""
-    if isinstance(raw, str):  # serialized into a JSON string, as models sometimes do
-        try:
-            raw = json.loads(raw)
-        except ValueError:
-            return None
-    if isinstance(raw, dict):
-        raw = [{"criterion_id": cid, **(v if isinstance(v, dict) else {"verdict": v})} for cid, v in raw.items()]
-    if not isinstance(raw, list):
-        return None
-    out: list[dict[str, Any]] = []
-    for item in raw:
-        if isinstance(item, dict):
-            verdict = item.get("verdict")
-            out.append({**item, "verdict": verdict.strip().upper() if isinstance(verdict, str) else verdict})
-    return out
-
-
 def _complete_verdicts(verdicts: list[dict[str, Any]] | None, criterion_ids: list[str] | None) -> list[dict[str, Any]]:
     """The verdicts for the known criteria, in order; LLMError unless every one is PASS, FAIL or UNCERTAIN."""
     if verdicts is None:
@@ -447,6 +429,36 @@ def _complete_verdicts(verdicts: list[dict[str, Any]] | None, criterion_ids: lis
             f"skip it. Re-run this paper."
         )
     return verdicts
+
+
+def _string_list(raw: Any, name: str) -> list[str]:
+    """A list-of-strings output field; a lone string or a list serialized to JSON is repaired, so the
+    cross-check never iterates a string by character, and any other shape fails the paper."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text.startswith("["):
+            return [text] if text else []
+        try:
+            raw = json.loads(text)
+        except ValueError as e:
+            raise LLMError(f"{name} came back as a JSON string that does not parse ({e}). Re-run this paper.") from e
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise LLMError(f"{name} is not a list of strings. Re-run this paper.")
+    return raw
+
+
+def _unpacked_wrapper(raw: Any) -> Any:
+    """A {value, quote} wrapper serialized into a string is parsed back; anything else, including
+    text that merely looks like JSON, stays as it is."""
+    if not (isinstance(raw, str) and raw.lstrip().startswith("{")):
+        return raw
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return raw
+    return parsed if isinstance(parsed, dict) and "value" in parsed else raw
 
 
 def _parse_json_blob(raw: Any, field: FieldSpec, *, opens: str = "[{") -> Any:

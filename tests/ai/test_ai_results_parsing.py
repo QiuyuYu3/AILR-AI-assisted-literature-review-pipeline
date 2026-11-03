@@ -11,6 +11,7 @@ import json
 
 import pytest
 
+from ailr.core._db_screening import _flag_check_from_raw
 from ailr.core.source import Source
 from ailr.exceptions import LLMError
 from ailr.extraction import FieldSpec
@@ -142,6 +143,52 @@ def _verdict(v):
 def _extract_with(flag_check):
     reviewer = LLMReviewer(StubClient({"_flag_check": flag_check}))
     return reviewer.extract(Source(title="T", id=1), "text", [], "prompt", "criteria", criterion_ids=_CRITERIA)
+
+
+def _screen_with(**output):
+    reviewer = LLMReviewer(StubClient({"decision": "include", "reasoning": "r", "confidence": 5, **output}))
+    return reviewer.screen(Source(title="T", id=1), "criteria", "prompt")
+
+
+class TestScreeningListFields:
+    def test_a_lone_quote_becomes_a_list_of_one(self):
+        assert _screen_with(evidence_quotes="a quote").evidence_quotes == ["a quote"]
+
+    def test_a_list_serialized_into_a_string_is_parsed(self):
+        assert _screen_with(evidence_quotes='["a", "b"]').evidence_quotes == ["a", "b"]
+
+    def test_matched_criteria_get_the_same_repair(self):
+        assert _screen_with(matched_criteria="I1").matched_criteria == ["I1"]
+
+    @pytest.mark.parametrize("bad", [{"quote": "a"}, ["a", 1], "[not json"])
+    def test_a_shape_that_cannot_be_repaired_fails_the_paper(self, bad):
+        with pytest.raises(LLMError, match="evidence_quotes"):
+            _screen_with(evidence_quotes=bad)
+
+    def test_a_missing_list_is_empty(self):
+        out = _screen_with()
+        assert out.evidence_quotes == [] and out.matched_criteria == []
+
+
+class TestSerializedValueWrapper:
+    def _extract(self, field, raw):
+        reviewer = LLMReviewer(StubClient({field.name: raw}))
+        [result] = reviewer.extract(Source(title="T", id=1), "text", [field], "prompt", "criteria", flag_check=False).results
+        return result
+
+    def test_its_value_quote_and_confidence_survive(self):
+        result = self._extract(_INT_FIELD, '{"value": 24, "quote": "24 dyads", "confidence": 8}')
+        assert (result.value, result.source_quote, result.confidence) == (24, "24 dyads", 8)
+
+    def test_text_that_only_looks_like_json_stays_text(self):
+        text = "{curly} notation in the methods"
+        assert self._extract(FieldSpec(name="note", type="string"), text).value == text
+
+
+class TestFlagCheckReadBack:
+    def test_a_flag_check_serialized_into_a_string_reads_back(self):
+        raw_output = json.dumps({"_flag_check": json.dumps({"I1": {"verdict": "fail"}})})
+        assert _flag_check_from_raw(raw_output) == [{"criterion_id": "I1", "verdict": "FAIL"}]
 
 
 class TestFlagCheckCompleteness:
