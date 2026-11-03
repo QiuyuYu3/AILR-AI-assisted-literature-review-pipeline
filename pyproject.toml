@@ -33,6 +33,8 @@ pdf = ["pymupdf>=1.24", "pymupdf4llm>=0.0.10"]
 ui = []
 postgres = []
 dev = ["pytest>=8.0", "ruff>=0.5"]
+# The browser tests in tests/e2e, which skip without it. Then run: playwright install chromium
+e2e = ["playwright>=1.48"]
 
 [project.scripts]
 ailr = "ailr.cli:app"
