@@ -5,6 +5,7 @@ so background threads (see ai_runner) can reach it too. Anything that rewrites l
 must call reload_project() afterwards, or the running app keeps the stale config.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -73,6 +74,16 @@ def delete_current_project() -> dict:
     _project = None
     os.environ.pop("AILR_PROJECT", None)
     return counts
+
+
+PROJECT_HEADER = "X-Ailr-Project"
+
+
+def project_token() -> str:
+    """Identifies the open project, so a page loaded while another one was open can be told apart."""
+    if not has_project():
+        return ""
+    return hashlib.sha1(str(get_project().root.resolve()).encode("utf-8")).hexdigest()[:16]
 
 
 def has_project() -> bool:

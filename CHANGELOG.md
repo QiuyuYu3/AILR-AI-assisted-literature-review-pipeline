@@ -80,6 +80,7 @@
 - Undoing a ruling withdraws every ruling of that stage, needs a reviewer ID, and is logged under whoever clicked it.
 - The banner Undo withdraws the vote it announced even after the reviewer ID changed; a reset with no vote of one's own no longer clears someone else's ruling.
 - Assisted conflicts compare the AI with each human's latest vote, so votes cast before a switch from independent still count.
+- A tab left open while another tab switched projects wrote its clicks into the new project, onto papers with the same IDs; it is now refused and asked to reload.
 
 ---
 ## [0.36.0] – 2026-10-04

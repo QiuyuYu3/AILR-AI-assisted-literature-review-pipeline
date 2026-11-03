@@ -11,7 +11,7 @@ def _output_ids(spec: str) -> list[str]:
 
 def test_global_triggers_never_reach_into_an_absent_tab(tmp_project):
     app = build_app()
-    global_ids = {n.id for n in walk(app.layout) if isinstance(getattr(n, "id", None), str)}
+    global_ids = {n.id for n in walk(app.layout()) if isinstance(getattr(n, "id", None), str)}
 
     def tab_local(cid: str) -> bool:
         return not cid.startswith("{") and cid not in global_ids  # pattern ids match nothing harmlessly

@@ -5,7 +5,7 @@ import socket
 
 import dash_bootstrap_components as dbc
 from dash import ALL, Dash, Input, Output, State, dcc, html, no_update
-from flask import abort, send_file
+from flask import Response, abort, request, send_file
 
 from ailr.core._db_facade import release_thread_connections
 from ailr.ui import (
@@ -32,7 +32,13 @@ from ailr.ui import (
     workflow_view,
 )
 from ailr.ui._common import triggered_click_id, workflow_summary
-from ailr.ui._project import get_project, has_project, resolve_pdf_path
+from ailr.ui._project import (
+    PROJECT_HEADER,
+    get_project,
+    has_project,
+    project_token,
+    resolve_pdf_path,
+)
 
 
 def _nav_section(label: str):
@@ -81,14 +87,8 @@ def _build_sidebar():
     )
 
 
-def build_app() -> Dash:
-    app = Dash(
-        __name__,
-        external_stylesheets=[dbc.themes.BOOTSTRAP],
-        suppress_callback_exceptions=True,
-        title="ailr review",
-    )
-    app.layout = dbc.Container(
+def _page_layout():
+    return dbc.Container(
         fluid=True,
         children=[
             dbc.Row(
@@ -130,6 +130,8 @@ def build_app() -> Dash:
                 ],
             ),
             dcc.Location(id="settings-redirect", refresh=True),
+            # assets/project_guard.js sends this with every callback, so a tab left on an earlier project is refused.
+            html.Div(id="project-tag", hidden=True, **{"data-project": project_token()}),
             dcc.Store(id="tabs", data="dashboard", storage_type="session"),
             dcc.Store(id="screen-store", data={"idx": 0}),
             dcc.Store(id="extract-store", data={"sid": None}, storage_type="session"),
@@ -150,6 +152,16 @@ def build_app() -> Dash:
         ],
     )
 
+
+def build_app() -> Dash:
+    app = Dash(
+        __name__,
+        external_stylesheets=[dbc.themes.BOOTSTRAP],
+        suppress_callback_exceptions=True,
+        title="ailr review",
+    )
+    app.layout = _page_layout  # built per page load, so the page records the project open at that moment
+
     project_manager_view.register_callbacks(app)
 
     @app.callback(
@@ -164,6 +176,22 @@ def build_app() -> Dash:
             html.H4(f"ailr — {cfg.project.name}", className="mb-1"),
             html.P(workflow_summary(cfg), className="text-muted small mb-2"),
         ]
+
+    @app.server.before_request
+    def _refuse_a_stale_page():
+        # After another tab switches project, this tab's ids would land on the new project's papers.
+        if not request.path.endswith("_dash-update-component"):
+            return None
+        page = request.headers.get(PROJECT_HEADER)
+        if page is None:
+            return None
+        try:
+            current = project_token()
+        except Exception:  # an unreadable project fails in the callback itself, with its own message
+            return None
+        if page != current:
+            return Response("This page belongs to a project that is no longer open.", status=409, mimetype="text/plain")
+        return None
 
     @app.server.teardown_request
     def _release_db_conn(_exc=None):
