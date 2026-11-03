@@ -16,16 +16,13 @@ def _params(db, sql, *args):
     return [json.loads(r["llm_params"]) if r["llm_params"] else None for r in db._conn.execute(sql, args).fetchall()]
 
 
-@pytest.mark.parametrize("model,temperature,expected", [
-    (None, None, None),
-    ("  ", 0, None),
-    (" claude-x ", None, {"model": "claude-x"}),
-    ("claude-x", "", {"model": "claude-x"}),
-    ("claude-x", "0.2", {"model": "claude-x", "temperature": 0.2}),
-    ("claude-x", 0, {"model": "claude-x", "temperature": 0.0}),
+@pytest.mark.parametrize("model,expected", [
+    (None, None),
+    ("  ", None),
+    (" claude-x ", {"model": "claude-x"}),
 ])
-def test_the_import_form_becomes_a_model_record(model, temperature, expected):
-    assert import_llm_params(model, temperature) == expected
+def test_the_import_form_becomes_a_model_record(model, expected):
+    assert import_llm_params(model) == expected
 
 
 class TestImportedRowsCarryTheModel:
@@ -35,8 +32,7 @@ class TestImportedRowsCarryTheModel:
                                     llm_params={"model": "model-a"})
         assert _params(tmp_project.db, "SELECT llm_params FROM screening_decisions WHERE source_id = ?", sid) == [
             {"model": "model-a"}]
-        assert ("screened by model-a (temperature not recorded) and one human reviewer"
-                in build_methods_skeleton(tmp_project))
+        assert "screened by model-a and one human reviewer" in build_methods_skeleton(tmp_project)
 
     def test_extraction_rows_and_the_full_text_verdict_name_it(self, tmp_project):
         sid = add_source(tmp_project)
@@ -92,23 +88,23 @@ class TestTheImportFormsAskForTheModel:
         path = self._file(tmp_path, [{"source_id": sid, "decision": "include"}])
         run = callbacks_of(screen_view)["_import_ai_screening"]
 
-        message, _refresh = run(1, path, "", None)
+        message, _refresh = run(1, path, "")
         assert "Enter the model" in component_text(message)
         assert count_decisions(db, tmp_project.project_id, reviewer_type="ai") == 0
 
-        run(1, path, "model-a", 0)
+        run(1, path, "model-a")
         assert _params(db, "SELECT llm_params FROM screening_decisions WHERE source_id = ?", sid) == [
-            {"model": "model-a", "temperature": 0.0}]
+            {"model": "model-a"}]
 
     def test_extraction_results_need_it_too_and_papers_left_waiting_are_named(self, tmp_project, tmp_path):
         sid = add_source(tmp_project)
         path = self._file(tmp_path, [{"source_id": sid, "extraction": {"design": "x"}}])
         run = callbacks_of(extract_view)["_import_ai_results"]
 
-        message, _refresh = run(1, path, " ", None)
+        message, _refresh = run(1, path, " ")
         assert "Enter the model" in component_text(message)
         assert (sid in tmp_project.db.sources_with_extraction([sid], "ai")) is False
 
-        message, _refresh = run(1, path, "model-b", None)
+        message, _refresh = run(1, path, "model-b")
         text = component_text(message)
         assert f"(#{sid})" in text and "these papers wait for one" in text

@@ -1,4 +1,4 @@
-"""Settings tab: configure the LLM (provider/model/temperature) and view the AI prompts."""
+"""Settings tab: configure the LLM (provider/model) and view the AI prompts."""
 
 import os
 from pathlib import Path
@@ -164,7 +164,7 @@ def layout() -> Any:
     ]
 
     models_block = [
-        html.P("Each stage has its own provider / model / temperature (used when Mock is off).", className="text-muted small"),
+        html.P("Each stage has its own provider and model (used when Mock is off).", className="text-muted small"),
         html.Div(
             [
                 dbc.Badge(
@@ -205,9 +205,7 @@ def layout() -> Any:
                 dbc.Col([dbc.Label("Abstract screening — provider", className="small"),
                          dbc.Select(id="settings-screen-provider", options=_PROVIDERS, value=sc_eff.provider)], width=3),
                 dbc.Col([dbc.Label("Model", className="small"),
-                         dbc.Input(id="settings-screen-model", value=sc_eff.model or "", placeholder="not set")], width=5),
-                dbc.Col([dbc.Label("Temperature", className="small"),
-                         dbc.Input(id="settings-screen-temp", type="number", min=0, max=2, step=0.1, value=sc_eff.temperature)], width=2),
+                         dbc.Input(id="settings-screen-model", value=sc_eff.model or "", placeholder="not set")], width=7),
             ],
             className="g-2",
         ),
@@ -216,9 +214,7 @@ def layout() -> Any:
                 dbc.Col([dbc.Label("Full-text extraction — provider", className="small"),
                          dbc.Select(id="settings-extract-provider", options=_PROVIDERS, value=ex_eff.provider)], width=3),
                 dbc.Col([dbc.Label("Model", className="small"),
-                         dbc.Input(id="settings-extract-model", value=ex_eff.model or "", placeholder="not set")], width=5),
-                dbc.Col([dbc.Label("Temperature", className="small"),
-                         dbc.Input(id="settings-extract-temp", type="number", min=0, max=2, step=0.1, value=ex_eff.temperature)], width=2),
+                         dbc.Input(id="settings-extract-model", value=ex_eff.model or "", placeholder="not set")], width=7),
             ],
             className="g-2 mt-1",
         ),
@@ -382,21 +378,19 @@ def register_callbacks(app: Any) -> None:
         Input("settings-stage-save", "n_clicks"),
         State("settings-screen-provider", "value"),
         State("settings-screen-model", "value"),
-        State("settings-screen-temp", "value"),
         State("settings-extract-provider", "value"),
         State("settings-extract-model", "value"),
-        State("settings-extract-temp", "value"),
         prevent_initial_call=True,
     )
-    def _save_stage_models(n, sc_prov, sc_model, sc_temp, ex_prov, ex_model, ex_temp):
+    def _save_stage_models(n, sc_prov, sc_model, ex_prov, ex_model):
         if not n:
             return no_update
         if not str(sc_model or "").strip() or not str(ex_model or "").strip():
             return dbc.Alert("Model name required for both stages.", color="warning", className="mb-0 py-1")
         project = get_project()
         try:
-            save_stage_llm_config(project.root, "screening", sc_prov or None, sc_model, sc_temp)
-            save_stage_llm_config(project.root, "extraction", ex_prov or None, ex_model, ex_temp)
+            save_stage_llm_config(project.root, "screening", sc_prov or None, sc_model)
+            save_stage_llm_config(project.root, "extraction", ex_prov or None, ex_model)
             reload_project()
         except Exception as e:
             return dbc.Alert(f"Save failed: {e}", color="danger", className="mb-0 py-1")

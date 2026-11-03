@@ -78,7 +78,7 @@ The data layer is **SQLAlchemy Core** (`core/database.py`), so the same schema r
 The primary audit trail is the **database itself**:
 
 - `screening_decisions` and `extractions` are **append-only** and stamped with `reviewer_type` / `reviewer_id` (or `extractor_*`), `timestamp`, `llm_params`, and `prompt_version`. Nothing is overwritten in place; a changed verdict is a new row.
-- `llm_params` records the **decoding settings the decision was actually made under**, model and temperature (and the seed where the provider accepts one), which is what lets the methods export describe the run rather than the current config.
+- `llm_params` records the **decoding settings the decision was actually made under**, the model (and the seed where the provider accepts one), which is what lets the methods export describe the run rather than the current config.
 - Re-running the AI on a paper does not delete its previous extraction: those rows are re-typed as **superseded** and kept, which is what the "earlier version" view and the fill-all picker read. A run is reconstructed from the timestamp gaps between rows, since one run writes its fields one at a time.
 - `reconciliations` records *who* adjudicated a conflict and *why*.
 - `cross_checks` is the one table that is **not** append-only: re-running a check replaces that (source, stage, target, kind) set rather than accumulating, because a finding describes the current state of a record rather than an event. Each row still pins the `target_row_id` it judged, so a finding whose row was since re-extracted reads as **stale** rather than silently applying to a value it never saw.

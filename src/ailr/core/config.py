@@ -41,7 +41,6 @@ class LLMConfig(BaseModel):
     # No default: model names date fast, and a stale one shipped as a default is worse than
     # being asked to pick. Set it per stage in Settings -> Models.
     model: str | None = None
-    temperature: float = 0.0
     # No default: only some provider APIs take a seed (see llm/base._SEED_PROVIDERS). Defaulting it
     # made every project's config advertise a reproducibility control the call never sent.
     seed: int | None = None
@@ -51,7 +50,6 @@ class LLMConfig(BaseModel):
 class StageLLMOverride(BaseModel):
     provider: Literal["anthropic", "openai", "gemini"] | None = None
     model: str | None = None
-    temperature: float | None = None
     seed: int | None = None
     max_retries: int | None = None
 
@@ -325,7 +323,6 @@ def save_stage_llm_config(
     stage: Literal["screening", "extraction"],
     provider: str | None,
     model: str | None,
-    temperature: float | None = None,
 ) -> None:
     """Set or clear a stage's `llm:` override (screening.llm / extraction.llm).
     Blank model clears the override so the stage inherits the top-level `llm:`.
@@ -337,8 +334,6 @@ def save_stage_llm_config(
             override: dict = {"model": str(model).strip()}
             if provider:
                 override["provider"] = provider
-            if temperature is not None:
-                override["temperature"] = float(temperature)
             stage_block["llm"] = override
 
     _edit_config_block(project_dir, stage, mutate)

@@ -31,5 +31,12 @@ def test_an_older_yaml_with_retired_calibration_settings_still_opens(tmp_path, m
         project.db.close()
 
 
+def test_an_older_yaml_with_a_temperature_still_opens_and_ignores_it(tmp_project):
+    project = set_config(tmp_project, "llm", temperature=0.3)
+    stage = set_config(project, "screening", llm={"model": "m", "temperature": 0.3}).config
+    assert "temperature" not in stage.model_dump()["llm"]
+    assert "temperature" not in stage.model_dump()["screening"]["llm"]
+
+
 def test_the_legacy_blinding_key_outranks_the_mode_preset(tmp_project):
     assert set_config(tmp_project, "screening", blinding="independent").config.screening.workflow == "independent"

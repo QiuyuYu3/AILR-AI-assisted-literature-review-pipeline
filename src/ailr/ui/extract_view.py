@@ -124,8 +124,6 @@ def ai_extraction_panel() -> list[Any]:
                 ),
                 dbc.Input(id="extract-importai-model", placeholder="Model that produced the file (required)", size="sm",
                           className="mt-2 mb-1", persistence=True, persistence_type="session"),
-                dbc.Input(id="extract-importai-temperature", type="number", placeholder="Temperature (optional)", size="sm",
-                          className="mb-1", persistence=True, persistence_type="session"),
                 dbc.InputGroup(
                     [
                         dbc.Input(id="extract-importai-path", placeholder="C:/path/to/results.json or folder", size="sm"),
@@ -329,13 +327,12 @@ def register_callbacks(app: Any) -> None:
         Input("extract-importai-run", "n_clicks"),
         State("extract-importai-path", "value"),
         State("extract-importai-model", "value"),
-        State("extract-importai-temperature", "value"),
         prevent_initial_call=True,
     )
-    def _import_ai_results(n, path, model, temperature):
+    def _import_ai_results(n, path, model):
         if not n:
             return no_update, no_update
-        llm_params = import_llm_params(model, temperature)
+        llm_params = import_llm_params(model)
         if llm_params is None:
             return dbc.Alert("Enter the model that produced these results, so the methods text can name it.",
                              color="warning", className="py-1 mb-0"), no_update

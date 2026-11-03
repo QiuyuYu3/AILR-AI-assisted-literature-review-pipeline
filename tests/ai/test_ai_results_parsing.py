@@ -498,7 +498,7 @@ class TestImportMessages:
             {"source_id": b, "decision": "exclude"},
         ])
 
-        alert, _ = callbacks_of(screen_view)["_import_ai_screening"](1, path, "model-a", None)
+        alert, _ = callbacks_of(screen_view)["_import_ai_screening"](1, path, "model-a")
 
         text = component_text(alert)
         assert alert.color == "warning"
@@ -514,7 +514,7 @@ class TestImportMessages:
             {"source_id": b, "extraction": {"design": "y"}, "flag_check": {"decision": "include"}},
         ])
 
-        alert, _ = callbacks_of(extract_view)["_import_ai_results"](1, path, "model-a", None)
+        alert, _ = callbacks_of(extract_view)["_import_ai_results"](1, path, "model-a")
 
         text = component_text(alert)
         assert alert.color == "warning"

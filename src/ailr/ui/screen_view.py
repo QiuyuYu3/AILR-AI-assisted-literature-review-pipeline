@@ -397,8 +397,6 @@ def ai_screening_panel() -> list[Any]:
                 dbc.Input(id="screen-importai-path", placeholder="C:/path/to/screen_results.json or folder", size="sm", className="mb-1 mt-2"),
                 dbc.Input(id="screen-importai-model", placeholder="Model that produced the file (required)", size="sm",
                           className="mb-1", persistence=True, persistence_type="session"),
-                dbc.Input(id="screen-importai-temperature", type="number", placeholder="Temperature (optional)", size="sm",
-                          className="mb-1", persistence=True, persistence_type="session"),
                 dbc.Button("Import", id="screen-importai-run", color="secondary", outline=True, size="sm"),
                 html.Div(id="screen-importai-status", className="small mt-1"),
             ],
@@ -743,13 +741,12 @@ def register_callbacks(app: Any) -> None:
         Input("screen-importai-run", "n_clicks"),
         State("screen-importai-path", "value"),
         State("screen-importai-model", "value"),
-        State("screen-importai-temperature", "value"),
         prevent_initial_call=True,
     )
-    def _import_ai_screening(n, path, model, temperature):
+    def _import_ai_screening(n, path, model):
         if not n:
             return no_update, no_update
-        llm_params = import_llm_params(model, temperature)
+        llm_params = import_llm_params(model)
         if llm_params is None:
             return dbc.Alert("Enter the model that produced these results, so the methods text can name it.",
                              color="warning", className="py-1 mb-0"), no_update

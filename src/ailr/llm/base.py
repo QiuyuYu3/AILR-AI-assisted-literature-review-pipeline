@@ -53,11 +53,6 @@ class LLMClient(ABC):
         """None unless the provider sends a seed. Overridden by the providers that do."""
         return None
 
-    @property
-    def temperature(self) -> float | None:
-        """The temperature sent, recorded per decision. None for clients that send none (mock)."""
-        return None
-
     @abstractmethod
     def complete_structured(
         self,

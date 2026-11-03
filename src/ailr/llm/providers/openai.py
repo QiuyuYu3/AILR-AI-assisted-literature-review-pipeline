@@ -14,7 +14,6 @@ class OpenAIClient(LLMClient):
         self,
         *,
         model: str,
-        temperature: float = 0.0,
         seed: int | None = 42,
         max_retries: int = 3,
         api_key: str | None = None,
@@ -27,7 +26,6 @@ class OpenAIClient(LLMClient):
         # with_retries is the one retry layer; the SDK's own retries would multiply its attempts.
         self._client = openai.OpenAI(api_key=api_key, max_retries=0)
         self._model = model
-        self._temperature = temperature
         self._seed = seed
         self._max_retries = max_retries
 
@@ -38,10 +36,6 @@ class OpenAIClient(LLMClient):
     @property
     def effective_seed(self) -> int | None:
         return self._seed
-
-    @property
-    def temperature(self) -> float | None:
-        return self._temperature
 
     @property
     def model_name(self) -> str:
@@ -79,8 +73,6 @@ class OpenAIClient(LLMClient):
             "tools": tools,
             "tool_choice": {"type": "function", "function": {"name": tool_schema.name}},
         }
-        if self._temperature is not None:
-            params["temperature"] = self._temperature
 
         def call():
             return self._client.chat.completions.create(**params)
@@ -95,15 +87,7 @@ class OpenAIClient(LLMClient):
 
         t0 = time.monotonic()
         try:
-            try:
-                response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
-            except openai.BadRequestError as e:
-                if "temperature" not in params or "temperature" not in str(e):
-                    raise
-                # Reasoning models accept only their default; recorded as unset from here on.
-                self._temperature = None
-                del params["temperature"]
-                response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
+            response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
         except openai.AuthenticationError as e:
             raise LLMError(f"OpenAI authentication failed: {e}") from e
         except openai.BadRequestError as e:

@@ -58,7 +58,6 @@ def _make_client(project: Any, stage: str, mock: bool, synth: bool = False):
     return make_llm_client(
         provider=llm.provider,
         model=llm.model,
-        temperature=llm.temperature,
         seed=llm.seed,
         max_retries=llm.max_retries,
     )
@@ -210,8 +209,7 @@ def _crosscheck_client(project: Any, mock: bool, stage: str = "extraction"):
         return None, blocked
     llm = resolve_stage_llm(project.config.llm, project.config.crosscheck.llm)
     return make_llm_client(
-        provider=llm.provider, model=llm.model, temperature=llm.temperature,
-        seed=llm.seed, max_retries=llm.max_retries,
+        provider=llm.provider, model=llm.model, seed=llm.seed, max_retries=llm.max_retries,
     ), None
 
 

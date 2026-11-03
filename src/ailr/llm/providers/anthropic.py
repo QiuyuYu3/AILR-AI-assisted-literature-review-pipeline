@@ -22,7 +22,6 @@ class AnthropicClient(LLMClient):
         self,
         *,
         model: str,
-        temperature: float = 0.0,
         max_retries: int = 3,
         api_key: str | None = None,
     ) -> None:
@@ -37,7 +36,6 @@ class AnthropicClient(LLMClient):
         # with_retries is the one retry layer; the SDK's own retries would multiply its attempts.
         self._client = anthropic.Anthropic(api_key=api_key, max_retries=0)
         self._model = model
-        self._temperature = temperature
         self._max_retries = max_retries
 
     @property
@@ -47,10 +45,6 @@ class AnthropicClient(LLMClient):
     @property
     def model_name(self) -> str:
         return self._model
-
-    @property
-    def temperature(self) -> float | None:
-        return self._temperature
 
     def complete_structured(
         self,
@@ -88,7 +82,6 @@ class AnthropicClient(LLMClient):
             return self._client.messages.create(
                 model=self._model,
                 max_tokens=max_tokens,
-                temperature=self._temperature,
                 system=system_param,
                 tools=tools_param,
                 tool_choice={"type": "tool", "name": tool_schema.name},

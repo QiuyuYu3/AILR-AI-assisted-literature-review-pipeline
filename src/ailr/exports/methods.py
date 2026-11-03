@@ -23,24 +23,25 @@ def _fmt_ci(ci: tuple[float, float]) -> str:
     return "undefined" if lo != lo or hi != hi else f"[{lo:.2f}, {hi:.2f}]"
 
 
-def _model_and_decoding(cfg, db, pid: int, stage: str, fallback_model: str) -> str:
+def _model_and_decoding(db, pid: int, stage: str, fallback_model: str) -> str:
     """Name the model(s) and decoding settings for a stage from what the database recorded, since
     the config file can have been edited since the run. Falls back to the config, saying so, when
-    nothing was recorded — which is also what rows written before temperature was stored look like."""
+    nothing was recorded."""
     configs = db.recorded_llm_configs(pid, stage)
     if not configs:
-        return f"{fallback_model} (temperature {cfg.llm.temperature}, per the current configuration)"
+        return f"{fallback_model} (per the current configuration)"
     # Rows with no record are named too: leaving them out would credit their work to the recorded model.
     unrecorded = db.count_unrecorded_ai_rows(pid, stage)
 
     parts = []
     for c in configs:
-        bits = [f"temperature {c['temperature']}" if c["temperature"] is not None else "temperature not recorded"]
+        bits = [f"temperature {c['temperature']}"] if c["temperature"] is not None else []
         if c.get("seed") is not None:
             bits.append(f"seed {c['seed']}")
         if len(configs) > 1 or unrecorded:
             bits.append(_plural(c["n"], "row"))
-        parts.append(f"{c['model'] or fallback_model} ({', '.join(bits)})")
+        model = c["model"] or fallback_model
+        parts.append(f"{model} ({', '.join(bits)})" if bits else model)
     if unrecorded:
         parts.append(f"a model not recorded in the project ({_plural(unrecorded, 'row')})")
     return " and ".join(parts)
@@ -180,7 +181,7 @@ def build_methods_skeleton(
 
     screen_model = (cfg.screening.llm.model if cfg.screening.llm and cfg.screening.llm.model else cfg.llm.model) or "[model]"
     extract_model = (cfg.extraction.llm.model if cfg.extraction.llm and cfg.extraction.llm.model else cfg.llm.model) or "[model]"
-    extract_desc = _model_and_decoding(cfg, db, pid, "extraction", extract_model)
+    extract_desc = _model_and_decoding(db, pid, "extraction", extract_model)
 
     total_calls = sum(row.get("calls") or 0 for row in api_summary)
     total_tokens = sum((row.get("input_tokens") or 0) + (row.get("output_tokens") or 0) for row in api_summary)
@@ -246,7 +247,7 @@ def build_methods_skeleton(
             )
     else:
         lines.append(
-            f"Titles and abstracts were screened by {_model_and_decoding(cfg, db, pid, 'abstract', screen_model)} "
+            f"Titles and abstracts were screened by {_model_and_decoding(db, pid, 'abstract', screen_model)} "
             f"and one human reviewer, both blinded to each other (PRISMA-trAIce assisted-screening design). "
             f"Each record received an `include`, `exclude`, or `uncertain` verdict with a 1-10 confidence score "
             f"and supporting quotes from the abstract. {_plural(counts['ai_abstract_screened'], 'record')} "
@@ -314,7 +315,7 @@ def build_methods_skeleton(
         lines.append("")
         lines.append(
             "Re-running the same records is not guaranteed to reproduce identical model outputs: "
-            "decoding at temperature 0 is not deterministic in practice, and a seed parameter is "
+            "sampling is not deterministic, and a seed parameter is "
             "offered by only some provider APIs. What is reproducible is the record itself, since "
             "every decision is stored with the model, decoding settings, prompt version, and "
             "criteria version that produced it."

@@ -171,8 +171,7 @@ class AdminMixin:
         """The model configurations that actually produced this project's AI rows, with counts.
 
         stage: 'abstract' | 'full_text' read screening_decisions; 'extraction' reads extractions.
-        Rows written before temperature was recorded come back with temperature None, which the
-        caller reports as unrecorded rather than filling in from the current config.
+        Only rows from when ailr still set a temperature carry one; it stays what they ran at.
         """
         configs: list[dict] = []
         for row in self._ai_llm_param_rows(project_id, stage):

@@ -138,6 +138,10 @@ class TestAnthropic:
         with pytest.raises(LLMError, match="No tool_use block"):
             _ask(_anthropic(anthropic_sdk, reply))
 
+    def test_no_temperature_is_sent(self, anthropic_sdk):
+        _ask(_anthropic(anthropic_sdk))
+        assert "temperature" not in anthropic_sdk.calls.kwargs[0]
+
     def test_a_reply_stopped_by_the_context_window_fails(self, anthropic_sdk):
         reply = _anthropic_reply()
         reply.stop_reason = "model_context_window_exceeded"
@@ -220,16 +224,11 @@ class TestOpenAI:
         kwargs = openai_sdk.calls.kwargs[0]
         assert "max_completion_tokens" in kwargs and "max_tokens" not in kwargs
 
-    def test_a_model_that_refuses_temperature_is_asked_again_without_it(self, openai_sdk):
-        refused = openai_sdk.BadRequestError(400)
-        refused.args = ("Unsupported value: 'temperature' does not support 0 with this model.",)
-        client = _openai(openai_sdk, errors=[refused])
-        out, _meta = _ask(client)
-        assert out == {"answer": 1}
-        assert ["temperature" in kw for kw in openai_sdk.calls.kwargs] == [True, False]
-        assert client.temperature is None
+    def test_no_temperature_is_sent(self, openai_sdk):
+        _ask(_openai(openai_sdk))
+        assert "temperature" not in openai_sdk.calls.kwargs[0]
 
-    def test_another_bad_request_still_fails(self, openai_sdk):
+    def test_a_bad_request_fails_at_once(self, openai_sdk):
         with pytest.raises(LLMError, match="rejected request"):
             _ask(_openai(openai_sdk, errors=[openai_sdk.BadRequestError(400)]))
         assert len(openai_sdk.calls.kwargs) == 1
@@ -308,6 +307,10 @@ class TestGemini:
         out, meta = _ask(_gemini(genai))
         assert out == {"answer": 1, "items": ["a"]}
         assert (meta.input_tokens, meta.output_tokens) == (100, 20)
+
+    def test_no_temperature_is_sent(self, genai):
+        _ask(_gemini(genai))
+        assert "temperature" not in genai.calls.kwargs[0]["generation_config"]
 
     def test_a_deadline_is_retried(self, genai):
         out, _meta = _ask(_gemini(genai, errors=[_GoogleError("504 Deadline of 400.0s exceeded", 504)]))

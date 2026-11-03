@@ -59,17 +59,10 @@ def render_prompt_body(text: str, mode: str, *, font: float = 0.95):
     return html.Pre(text, style={"whiteSpace": "pre-wrap", "fontSize": f"{font}rem", **box})
 
 
-def import_llm_params(model, temperature) -> dict | None:
+def import_llm_params(model) -> dict | None:
     """The model an imported file came from, recorded the way an in-app run records its own."""
     name = (model or "").strip()
-    if not name:
-        return None
-    params: dict = {"model": name}
-    try:
-        params["temperature"] = float(temperature)
-    except (TypeError, ValueError):
-        pass
-    return params
+    return {"model": name} if name else None
 
 
 def import_record_notes(summary) -> str:

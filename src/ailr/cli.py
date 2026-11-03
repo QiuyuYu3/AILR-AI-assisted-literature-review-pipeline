@@ -177,7 +177,6 @@ def screen(
             client = make_llm_client(
                 provider=llm_cfg.provider,
                 model=llm_cfg.model,
-                temperature=llm_cfg.temperature,
                 seed=llm_cfg.seed,
                 max_retries=llm_cfg.max_retries,
             )
@@ -247,7 +246,6 @@ def extract(
             client = make_llm_client(
                 provider=llm_cfg.provider,
                 model=llm_cfg.model,
-                temperature=llm_cfg.temperature,
                 seed=llm_cfg.seed,
                 max_retries=llm_cfg.max_retries,
             )

@@ -146,7 +146,6 @@ class StubClient:
 
     provider_name = "stub"
     model_name = "checker-1"
-    temperature = 0.0
     effective_seed = None
 
     def __init__(self, output):

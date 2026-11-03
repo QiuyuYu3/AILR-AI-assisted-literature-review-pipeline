@@ -579,7 +579,7 @@ class TestMethodsDesign:
         a = {"model": "claude-a", "temperature": 0.0}
         self._ai_votes(tmp_project, a, a, a, {"model": "claude-b", "temperature": None})
         text = build_methods_skeleton(tmp_project)
-        assert "claude-a (temperature 0.0, 3 rows) and claude-b (temperature not recorded, 1 row)" in text
+        assert "claude-a (temperature 0.0, 3 rows) and claude-b (1 row)" in text
 
     def test_full_text_rows_are_not_title_abstract_settings(self, tmp_project):
         self._ai_votes(tmp_project, {"model": "claude-abstract", "temperature": 0.0})
@@ -588,9 +588,9 @@ class TestMethodsDesign:
         assert "screened by claude-abstract (temperature 0.0) and one human reviewer" in text
 
     def test_with_nothing_recorded_the_configuration_is_cited_as_such(self, tmp_project):
-        project = set_config(tmp_project, "llm", model="claude-config", temperature=0.3)
+        project = set_config(tmp_project, "llm", model="claude-config")
         text = build_methods_skeleton(project)
-        assert "screened by claude-config (temperature 0.3, per the current configuration)" in text
+        assert "screened by claude-config (per the current configuration)" in text
 
     def test_independent_screening_reports_the_ai_as_a_reference_only(self, tmp_project):
         for i, decision in enumerate(["include"] * 3 + ["exclude"] * 2 + ["uncertain"]):

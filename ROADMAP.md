@@ -8,7 +8,7 @@ A domain-agnostic, AI-pluggable, PRISMA-auditable framework for literature revie
 ### A `runs` table (one row per screening/extraction run, decisions keyed to it)
 Decided 2026-07 to NOT add one. The case for it was that the methods export described runs from
 the config file rather than from what happened. That is now solved more cheaply: decisions record
-their own model and temperature in `llm_params`, a JSON column that needed no migration, and the
+their own model in `llm_params`, a JSON column that needed no migration, and the
 export aggregates those. Prompt and criteria snapshots already existed, since every run resolves a
 `prompt_versions` row whose `composed` column holds the fully-resolved prompt and stamps that
 version on each decision it writes.

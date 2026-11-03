@@ -104,7 +104,7 @@ Findings are advisory: they never block a submission and stay out of κ, conflic
 
 ## Models & tokens
 
-Each stage has its own model in **Settings** (provider / model / temperature), e.g. a cheaper model for abstract screening and a stronger one for full-text extraction. No model ships as a default, so set one before the first AI run. The provider's API key must be in your environment (see above). Token usage is logged per call (see Summary / Reports). Tokens only, no spend estimate.
+Each stage has its own model in **Settings** (provider / model), e.g. a cheaper model for abstract screening and a stronger one for full-text extraction. No model ships as a default, so set one before the first AI run. The provider's API key must be in your environment (see above). Token usage is logged per call (see Summary / Reports). Tokens only, no spend estimate.
 
 ## Working as a team
 

@@ -14,7 +14,6 @@ def make_llm_client(
     provider: str,
     *,
     model: str | None,
-    temperature: float = 0.0,
     seed: int | None = None,      # honoured only by providers whose API takes one; see llm/base
     max_retries: int = 3,
     api_key: str | None = None,
@@ -33,7 +32,6 @@ def make_llm_client(
         from ailr.llm.providers.anthropic import AnthropicClient
         return AnthropicClient(
             model=model,
-            temperature=temperature,
             max_retries=max_retries,
             api_key=api_key,
         )
@@ -42,7 +40,6 @@ def make_llm_client(
         from ailr.llm.providers.openai import OpenAIClient
         return OpenAIClient(
             model=model,
-            temperature=temperature,
             seed=seed,
             max_retries=max_retries,
             api_key=api_key,
@@ -52,7 +49,6 @@ def make_llm_client(
         from ailr.llm.providers.gemini import GeminiClient
         return GeminiClient(
             model=model,
-            temperature=temperature,
             max_retries=max_retries,
             api_key=api_key,
         )

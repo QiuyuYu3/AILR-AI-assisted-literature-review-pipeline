@@ -153,7 +153,6 @@ class ScreeningCrossChecker:
         params: dict[str, Any] = {
             "provider": meta.provider if meta else self._client.provider_name,
             "model": meta.model if meta else self._client.model_name,
-            "temperature": self._client.temperature,
             "max_tokens": self._max_tokens,
         }
         seed = self._client.effective_seed
@@ -278,7 +277,6 @@ class LLMCrossChecker:
         params: dict[str, Any] = {
             "provider": meta.provider if meta else self._client.provider_name,
             "model": meta.model if meta else self._client.model_name,
-            "temperature": self._client.temperature,
             "max_tokens": self._max_tokens,
         }
         seed = self._client.effective_seed

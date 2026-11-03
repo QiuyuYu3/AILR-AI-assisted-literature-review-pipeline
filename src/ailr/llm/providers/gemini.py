@@ -50,7 +50,6 @@ class GeminiClient(LLMClient):
         self,
         *,
         model: str,
-        temperature: float = 0.0,
         max_retries: int = 3,
         api_key: str | None = None,
     ) -> None:
@@ -62,7 +61,6 @@ class GeminiClient(LLMClient):
         if api_key:
             genai.configure(api_key=api_key)
         self._model = model
-        self._temperature = temperature
         self._max_retries = max_retries
 
     @property
@@ -72,10 +70,6 @@ class GeminiClient(LLMClient):
     @property
     def model_name(self) -> str:
         return self._model
-
-    @property
-    def temperature(self) -> float | None:
-        return self._temperature
 
     def complete_structured(
         self,
@@ -101,7 +95,7 @@ class GeminiClient(LLMClient):
         def call():
             return model.generate_content(
                 user_message,
-                generation_config={"temperature": self._temperature, "max_output_tokens": max_tokens},
+                generation_config={"max_output_tokens": max_tokens},
                 tool_config={"function_calling_config": {"mode": "ANY", "allowed_function_names": [tool_schema.name]}},
             )
 

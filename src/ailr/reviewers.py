@@ -220,7 +220,6 @@ class LLMReviewer(Reviewer):
         params: dict[str, Any] = {
             "provider": metadata.provider,
             "model": metadata.model,
-            "temperature": self._client.temperature,
         }
         seed = self._client.effective_seed
         if seed is not None:

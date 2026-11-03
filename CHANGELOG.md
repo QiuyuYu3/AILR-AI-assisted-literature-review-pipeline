@@ -21,6 +21,7 @@
 ### Removed
 - The retired full calibration: the hidden `ailr calibrate` command and `CalibrationTask` / `CalibrationSummary`; quick tests remain.
 - Settings `target_kappa`, `calibration.fraction` and `calibration.n`, read only by the full calibration; older configs still open.
+- Temperature: no provider is sent one, since current models refuse it, and Settings and the AI import forms no longer ask. Older configs still open, and rows that recorded one keep it.
 
 ### Fixed
 - PRISMA excluded boxes counted votes, not papers, and counted papers still in conflict.
