@@ -104,6 +104,8 @@
 - Keyword search on SQLite missed accented capitals that Postgres finds.
 - The legacy `blinding` setting was ignored whenever a mode preset applied.
 - `extraction_rows_long` returned superseded values and internal rows.
+- Claude models that refuse a forced tool call failed every paper; ailr now tells them in the prompt to use the tool.
+- The output caps of screening and cross-check calls left too little room on models that think by default.
 
 ---
 ## [0.36.0] – 2026-10-04

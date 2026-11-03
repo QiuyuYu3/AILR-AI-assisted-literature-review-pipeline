@@ -151,6 +151,9 @@ def _screen_with(**output):
 
 
 class TestScreeningListFields:
+    def test_the_output_cap_leaves_room_for_the_models_thinking(self):
+        assert _screen_with().llm_params["max_tokens"] == 16000
+
     def test_a_lone_quote_becomes_a_list_of_one(self):
         assert _screen_with(evidence_quotes="a quote").evidence_quotes == ["a quote"]
 

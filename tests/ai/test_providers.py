@@ -142,6 +142,38 @@ class TestAnthropic:
         _ask(_anthropic(anthropic_sdk))
         assert "temperature" not in anthropic_sdk.calls.kwargs[0]
 
+    def _refused(self, anthropic_sdk):
+        refused = anthropic_sdk.BadRequestError(400)
+        refused.args = ('tool_choice: type "tool" and "any" are not supported for this model.',)
+        return _anthropic(anthropic_sdk, errors=[refused])
+
+    def test_a_model_that_refuses_a_forced_tool_is_told_to_use_it_instead(self, anthropic_sdk):
+        out, _meta = _ask(self._refused(anthropic_sdk))
+        assert out == {"answer": 1}
+        first, second = anthropic_sdk.calls.kwargs
+        assert first["tool_choice"] == {"type": "tool", "name": _TOOL.name}
+        assert second["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
+        assert _TOOL.name not in first["system"][0]["text"] and _TOOL.name in second["system"][0]["text"]
+
+    def test_that_model_is_not_offered_a_forced_tool_again(self, anthropic_sdk):
+        client = self._refused(anthropic_sdk)
+        _ask(client)
+        _ask(client)
+        assert [kw["tool_choice"]["type"] for kw in anthropic_sdk.calls.kwargs] == ["tool", "auto", "auto"]
+
+    def test_a_worker_refused_after_another_already_switched_still_retries(self, anthropic_sdk):
+        """Workers share the client, so the refusal can arrive once the flag has flipped elsewhere."""
+        client = self._refused(anthropic_sdk)
+        create = anthropic_sdk.calls
+
+        def flip_then_refuse(**kwargs):
+            client._tool_can_be_forced = False
+            return create(**kwargs)
+
+        client._client.messages.create = flip_then_refuse
+        out, _meta = _ask(client)
+        assert out == {"answer": 1}
+
     def test_a_reply_stopped_by_the_context_window_fails(self, anthropic_sdk):
         reply = _anthropic_reply()
         reply.stop_reason = "model_context_window_exceeded"

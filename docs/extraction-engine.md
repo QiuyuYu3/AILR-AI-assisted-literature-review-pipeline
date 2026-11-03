@@ -6,7 +6,7 @@
 
 1. **You define the schema** in the Variables editor (Protocol → Variables); it is saved to `schema.yaml`.
 2. **The app compiles the schema to a tool definition.** `build_extraction_tool_schema()` walks your fields into a JSON Schema: the `{value, quote}` envelope for leaves, arrays for lists and groups, `enum` for fixed options, and a `_flag_check` block for the inclusion re-check.
-3. **The app assembles one request:** the system prompt (with `{{criteria}}` and `{{schema_md}}` substituted), the tool definition, and the paper markdown as the user message. It sets `tool_choice` so the model *must* call the tool.
+3. **The app assembles one request:** the system prompt (with `{{criteria}}` and `{{schema_md}}` substituted), the tool definition, and the paper markdown as the user message. It sets `tool_choice` so the model *must* call the tool. A model that refuses a forced call is told in the system prompt to use the tool instead, and a reply without the call fails that paper, so nothing is parsed from prose.
 4. **The model returns the tool call**: a JSON object keyed by your field names.
 5. **The app unwraps and stores it:** one row per top-level field in the `extractions` table. Leaf values are unwrapped to `(value, quote)`; objects and groups are stored whole, with their inner quotes preserved. The `_flag_check` is stored separately and also derives a full-text screening verdict.
 6. **The verify queue renders the rows back into the form** so a human can confirm or edit each value. Re-running a paper repeats steps 3 to 5 and re-types the previous run's rows as superseded rather than deleting them, so an earlier version stays readable.

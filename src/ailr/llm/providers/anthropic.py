@@ -7,6 +7,8 @@ from ailr.exceptions import LLMError
 from ailr.llm.base import CallMetadata, LLMClient, ToolSchema
 from ailr.llm.retry import with_retries
 
+_USE_THE_TOOL = "Record your answer by calling the {name} tool. Do not answer in plain text."
+
 
 def _nonstreaming_limit(model: str, max_tokens: int) -> int:
     """The SDK refuses a non-streaming call above its per-model limit before sending anything."""
@@ -37,6 +39,7 @@ class AnthropicClient(LLMClient):
         self._client = anthropic.Anthropic(api_key=api_key, max_retries=0)
         self._model = model
         self._max_retries = max_retries
+        self._tool_can_be_forced = True  # until the model refuses, as the newest ones do
 
     @property
     def provider_name(self) -> str:
@@ -57,16 +60,10 @@ class AnthropicClient(LLMClient):
     ) -> tuple[dict[str, Any], CallMetadata]:
         anthropic = self._anthropic
 
-        if cache_system:
-            system_param: Any = [
-                {
-                    "type": "text",
-                    "text": system,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ]
-        else:
-            system_param = system
+        def system_param(text: str) -> Any:
+            if not cache_system:
+                return text
+            return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
 
         tools_param = [
             {
@@ -79,12 +76,16 @@ class AnthropicClient(LLMClient):
         max_tokens = _nonstreaming_limit(self._model, max_tokens)
 
         def call():
+            forced = self._tool_can_be_forced
             return self._client.messages.create(
                 model=self._model,
                 max_tokens=max_tokens,
-                system=system_param,
+                system=system_param(system if forced else f"{system}\n\n{_USE_THE_TOOL.format(name=tool_schema.name)}"),
                 tools=tools_param,
-                tool_choice={"type": "tool", "name": tool_schema.name},
+                tool_choice=(
+                    {"type": "tool", "name": tool_schema.name} if forced
+                    else {"type": "auto", "disable_parallel_tool_use": True}
+                ),
                 messages=[{"role": "user", "content": user_message}],
             )
 
@@ -96,12 +97,15 @@ class AnthropicClient(LLMClient):
             return False
 
         t0 = time.monotonic()
+        forced = self._tool_can_be_forced  # read once: a parallel worker may flip it during this call
         try:
-            response = with_retries(
-                call,
-                is_retryable=is_retryable,
-                max_retries=self._max_retries,
-            )
+            try:
+                response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
+            except anthropic.BadRequestError as e:
+                if not forced or "tool_choice" not in str(e):
+                    raise
+                self._tool_can_be_forced = False
+                response = with_retries(call, is_retryable=is_retryable, max_retries=self._max_retries)
         except anthropic.AuthenticationError as e:
             raise LLMError(f"Anthropic authentication failed: {e}") from e
         except anthropic.BadRequestError as e:

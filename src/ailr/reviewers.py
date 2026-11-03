@@ -188,10 +188,11 @@ class LLMReviewer(Reviewer):
         llm_client: LLMClient,
         *,
         prompt_version: str = "v1",
-        max_tokens: int = 2048,
         # The API requires max_tokens on every call, so some cap must exist. 16K is the safe
-        # ceiling for non-streaming SDK calls (HTTP timeout risk above that); real extractions
-        # were measured brushing the old 8192 cap, and quotes lengthen output further.
+        # ceiling for non-streaming SDK calls (HTTP timeout risk above that). Thinking counts against
+        # it on current models, and it only caps a call: billing follows what the model writes.
+        max_tokens: int = 16000,
+        # Real extractions were measured brushing the old 8192 cap, and quotes lengthen output further.
         max_tokens_extract: int = 16000,
     ) -> None:
         self._client = llm_client

@@ -15,7 +15,7 @@ When the app runs the AI, it assembles **one request** from both, plus the paper
 | tool definition | your schema, compiled to a JSON Schema | the **fillable form** the answer must match |
 | paper text | the markdown | the source material |
 
-The tool definition is the important part. The app forces the model to "fill in the form" (tool use / function calling) instead of replying in prose, so the answer always comes back with **your exact field names, types, and shapes**, whatever the prompt says. The model reads each field's **name and description** as the label for where content goes, then uses its understanding of the paper to fill each slot.
+The tool definition is the important part. The app has the model "fill in the form" (tool use / function calling) instead of replying in prose, so the answer always comes back with **your exact field names, types, and shapes**, whatever the prompt says. The model reads each field's **name and description** as the label for where content goes, then uses its understanding of the paper to fill each slot.
 
 Two consequences worth remembering:
 

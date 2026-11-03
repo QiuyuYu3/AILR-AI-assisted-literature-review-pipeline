@@ -130,7 +130,7 @@ class ScreeningCrossChecker:
     """A second model judging a screening decision that already exists. Same standing as the
     extraction checker: advisory, never a reviewer, never in the agreement statistics."""
 
-    def __init__(self, llm_client: LLMClient, *, prompt_version: str = "v1", max_tokens: int = 1024) -> None:
+    def __init__(self, llm_client: LLMClient, *, prompt_version: str = "v1", max_tokens: int = 16000) -> None:
         self._client = llm_client
         self._prompt_version = prompt_version
         self._max_tokens = max_tokens
@@ -254,7 +254,7 @@ def format_record_message(source: Source, rows: list[dict], paper_text: str) -> 
 
 
 class LLMCrossChecker:
-    def __init__(self, llm_client: LLMClient, *, prompt_version: str = "v1", max_tokens: int = 8000) -> None:
+    def __init__(self, llm_client: LLMClient, *, prompt_version: str = "v1", max_tokens: int = 16000) -> None:
         self._client = llm_client
         self._prompt_version = prompt_version
         self._max_tokens = max_tokens
