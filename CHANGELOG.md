@@ -85,6 +85,10 @@
 - Two new versions of one title (different DOIs) matching an existing record lost the first without a trace; each record now absorbs one, and the other is imported.
 - PRISMA's per-database counts left out records dropped at import, so they did not add up to the total.
 - Duplicates inside a file imported via other methods were counted in the database arm.
+- PRISMA and the included export kept counting a full-text verdict after the paper's abstract decision changed; they now follow the full-text queue.
+- A paper judged by two AI models counted twice in the AI figures, and the methods headline could report agreement between the two models.
+- Flagged duplicates are now out of the metrics JSON, the sidebar counts, normal AI runs and `ailr show disagreements`.
+- Paging a sorted queue on Postgres could repeat or skip papers with equal sort values.
 
 ---
 ## [0.36.0] – 2026-10-04

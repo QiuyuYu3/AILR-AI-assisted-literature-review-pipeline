@@ -28,8 +28,8 @@ def _build_content(reviewer: str | None) -> Any:
     rid = (reviewer or "").strip()
 
     total_sources = db.count_sources(pid, exclude_duplicates=True)
-    ai_counts = db.screening_summary(pid, "ai", exclude_duplicates=True)
-    human_counts = db.screening_summary(pid, "human", exclude_duplicates=True)
+    ai_counts = db.screening_summary(pid, "ai")
+    human_counts = db.screening_summary(pid, "human")
     # Count conflicts with the same rule the Conflicts tab uses for this mode: AI-vs-human in
     # assisted, human-vs-human in independent.
     def _count_conflicts(stage: str) -> int:
@@ -50,9 +50,9 @@ def _build_content(reviewer: str | None) -> Any:
     total_in = sum((row.get("input_tokens") or 0) for row in billed)
     total_out = sum((row.get("output_tokens") or 0) for row in billed)
 
-    abstract_sources_screened = db.count_sources_screened(pid, "human", stage="abstract", exclude_duplicates=True)
-    ft_human = db.screening_summary(pid, "human", stage="full_text", exclude_duplicates=True)
-    ft_sources_screened = db.count_sources_screened(pid, "human", stage="full_text", exclude_duplicates=True)
+    abstract_sources_screened = db.count_sources_screened(pid, "human", stage="abstract")
+    ft_human = db.screening_summary(pid, "human", stage="full_text")
+    ft_sources_screened = db.count_sources_screened(pid, "human", stage="full_text")
 
     with_md = db.count_sources_with_markdown(pid)
     ft_workflow = cfg.screening_workflow("full_text")

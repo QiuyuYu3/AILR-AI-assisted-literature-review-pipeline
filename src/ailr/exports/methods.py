@@ -136,7 +136,10 @@ def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
                 cohen_kappa_ci(pairs, categories=BINARY_CATEGORIES),
                 pabak(pairs, categories=BINARY_CATEGORIES), percent_agreement(pairs))
 
-    a, b, _ = overlaps[0]
+    # Two AI models compared with each other say nothing about the review's reliability.
+    ai_raters = {r["rater"] for r in rows if r.get("reviewer_type") == "ai"}
+    headline = next((pair for pair in overlaps if not {pair[0], pair[1]} <= ai_raters), overlaps[0])
+    a, b, _ = headline
     pairs, kappa, ci, pb, agree = _stats(a, b)
     agree_str = "undefined" if agree != agree else f"{agree:.1%}"
     lines = [
@@ -150,7 +153,7 @@ def _agreement_lines(db, pid: int, stage: str, label: str) -> list[str]:
         f"the uncertainty was resolved.",
     ]
     if len(overlaps) > 1:
-        others = [(x, y, n, _stats(x, y)) for x, y, n in overlaps[1:]]
+        others = [(x, y, n, _stats(x, y)) for x, y, n in overlaps if (x, y) != (a, b)]
         extras = ", ".join(
             f"{x} vs {y}: κ = {_fmt(st[1])} (95% CI {_fmt_ci(st[2])}, n = {n})"
             for x, y, n, st in others

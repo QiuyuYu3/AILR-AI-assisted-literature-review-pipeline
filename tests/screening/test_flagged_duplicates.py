@@ -1,8 +1,11 @@
 """A record flagged as a duplicate has left the review, as PRISMA counts it: no queue, count or run holds it."""
 
+import json
+
 import pytest
 
 from ailr.ui.dashboard_view import _build_content
+from ailr.ui.reports_view import _metrics_json
 from tests.helpers import add_source, component_text, set_config, vote
 
 
@@ -42,6 +45,29 @@ def test_a_flagged_duplicate_leaves_the_conflicts_queue(tmp_project, workflow):
     listed = db.list_screening_conflicts(pid) if workflow == "independent" else db.list_assisted_conflicts(pid)
     assert [s.id for s in listed] == [disputed]
     assert db.unresolved_conflict_ids(pid, workflow) == {disputed}
+
+
+def test_the_metrics_json_leaves_them_out(tmp_project):
+    _screened(tmp_project)
+    metrics = json.loads(_metrics_json(tmp_project))
+    assert metrics["screening"]["ai"]["include"] == 2 and metrics["screening"]["human"]["exclude"] == 1
+
+
+def test_the_sidebar_counts_leave_them_out(tmp_project):
+    _screened(tmp_project)
+    assert tmp_project.db.screen_counts(tmp_project.project_id, "amber") == (2, 2)
+
+
+def test_a_normal_ai_run_skips_them(tmp_project):
+    flagged = add_source(tmp_project, "flagged before the AI saw it")
+    waiting = add_source(tmp_project, "still waiting for the AI")
+    tmp_project.db.mark_source_duplicate(flagged, True)
+    assert [s.id for s in tmp_project.db.list_unscreened(tmp_project.project_id, "ai")] == [waiting]
+
+
+def test_the_disagreement_list_leaves_them_out(tmp_project):
+    _agreed, disputed, _flagged = _screened(tmp_project)
+    assert [r["source_id"] for r in tmp_project.db.screening_disagreements(tmp_project.project_id)] == [disputed]
 
 
 def test_the_helper_queries_leave_them_out(tmp_project):

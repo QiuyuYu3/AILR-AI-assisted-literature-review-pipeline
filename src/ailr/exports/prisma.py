@@ -15,15 +15,16 @@ def _arm_counts(db: Any, pid: int, route: str, workflow: str, ft_workflow: str) 
     deduplication or title/abstract box in the template, but ailr screens both arms through the
     same queue, so the same numbers are reported for each. `identified` is counted before
     deduplication, as PRISMA reads it."""
-    sought = db.count_final_includes(pid, "abstract", workflow=workflow, route=route)
+    carried = db.final_include_ids(pid, "abstract", workflow=workflow, route=route)
+    sought = len(carried)
     not_retrieved = db.count_final_includes(pid, "abstract", workflow=workflow, route=route, not_retrieved=True)
     after_dedup = db.count_sources(pid, route=route, exclude_duplicates=True)
     duplicates = db.count_duplicates(pid, route=route)
-    screened = db.count_sources_screened(pid, "human", stage="abstract", route=route, exclude_duplicates=True)
+    screened = db.count_sources_screened(pid, "human", stage="abstract", route=route)
     excluded_abstract = len(db.final_exclude_ids(pid, "abstract", workflow=workflow, route=route))
-    assessed = db.count_sources_screened(pid, "human", stage="full_text", route=route, exclude_duplicates=True)
-    excluded_full_text = db.count_full_text_excluded_reports(pid, workflow=ft_workflow, route=route)
-    included_reports = db.count_final_includes(pid, "full_text", workflow=ft_workflow, route=route)
+    assessed = db.count_sources_screened(pid, "human", stage="full_text", route=route, within=carried)
+    excluded_full_text = db.count_full_text_excluded_reports(pid, workflow=ft_workflow, route=route, within=carried)
+    included_reports = db.count_final_includes(pid, "full_text", workflow=ft_workflow, route=route, within=carried)
     return {
         "identified": after_dedup + duplicates,
         "duplicates": duplicates,
@@ -36,9 +37,9 @@ def _arm_counts(db: Any, pid: int, route: str, workflow: str, ft_workflow: str) 
         "not_retrieved": not_retrieved,
         "assessed": assessed,
         "excluded_full_text": excluded_full_text,
-        "full_text_exclusion_reasons": db.full_text_exclusion_counts(pid, workflow=ft_workflow, route=route),
+        "full_text_exclusion_reasons": db.full_text_exclusion_counts(pid, workflow=ft_workflow, route=route, within=carried),
         "full_text_pending": max(assessed - excluded_full_text - included_reports, 0),
-        "included": db.count_final_include_studies(pid, workflow=ft_workflow, route=route),
+        "included": db.count_final_include_studies(pid, workflow=ft_workflow, route=route, within=carried),
         "included_reports": included_reports,
     }
 
@@ -74,25 +75,28 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     duplicates_removed = db.count_duplicates(pid)
     records_after_dedup = db.count_sources(pid, exclude_duplicates=True)
 
-    ai_abstract = db.screening_summary(pid, "ai", stage="abstract", exclude_duplicates=True)
+    ai_abstract = db.screening_summary(pid, "ai", stage="abstract")
 
     # Flow numbers count PAPERS (a paper two reviewers both decided counts once, and a
     # reconciliation overrides the votes). Excluded and included alike hold only papers whose stage
     # is settled, so every screened paper is excluded, carried forward, or still awaiting a decision.
-    abstract_screened = db.count_sources_screened(pid, "human", stage="abstract", exclude_duplicates=True)
+    abstract_screened = db.count_sources_screened(pid, "human", stage="abstract")
     abstract_excluded = len(db.final_exclude_ids(pid, "abstract", workflow=workflow))
-    reports_sought = db.count_final_includes(pid, "abstract", workflow=workflow)
+    # Full-text verdicts count only for papers this stage still carries forward: an abstract decision
+    # changed after full-text review takes the paper out of the later boxes, as out of the queue.
+    carried = db.final_include_ids(pid, "abstract", workflow=workflow)
+    reports_sought = len(carried)
     # "Not retrieved" is what a human marked as unobtainable, not merely what has no markdown yet:
     # an unconverted PDF is work outstanding, which PRISMA does not report as a retrieval failure.
     reports_not_retrieved = db.count_final_includes(pid, "abstract", workflow=workflow, not_retrieved=True)
     reports_retrieved = max(reports_sought - reports_not_retrieved, 0)
-    full_text_assessed = db.count_sources_screened(pid, "human", stage="full_text", exclude_duplicates=True)
+    full_text_assessed = db.count_sources_screened(pid, "human", stage="full_text", within=carried)
     # Papers, not votes: two reviewers excluding the same report is one excluded report.
-    full_text_excluded_reports = db.count_full_text_excluded_reports(pid, workflow=ft_workflow)
+    full_text_excluded_reports = db.count_full_text_excluded_reports(pid, workflow=ft_workflow, within=carried)
     # PRISMA's included box counts studies and their reports separately: several publications of
     # one study are one study. The two are equal unless companion reports have been grouped.
-    studies_included = db.count_final_include_studies(pid, workflow=ft_workflow)
-    included_report_ids = db.final_include_ids(pid, "full_text", workflow=ft_workflow)
+    studies_included = db.count_final_include_studies(pid, workflow=ft_workflow, within=carried)
+    included_report_ids = db.final_include_ids(pid, "full_text", workflow=ft_workflow, within=carried)
     reports_included = len(included_report_ids)
     extracted = _extraction_completed(db, project.config.extraction.workflow, included_report_ids)
     by_route = db.identified_by_route_and_database(pid)
@@ -122,7 +126,7 @@ def prisma_counts(project: Project) -> dict[str, Any]:
         "reports_not_retrieved": reports_not_retrieved,
         "full_text_assessed": full_text_assessed,
         "full_text_excluded_reports": full_text_excluded_reports,
-        "full_text_exclusion_reasons": db.full_text_exclusion_counts(pid, workflow=ft_workflow),
+        "full_text_exclusion_reasons": db.full_text_exclusion_counts(pid, workflow=ft_workflow, within=carried),
         "full_text_pending": max(full_text_assessed - full_text_excluded_reports - reports_included, 0),
         "studies_included": studies_included,
         "reports_included": reports_included,

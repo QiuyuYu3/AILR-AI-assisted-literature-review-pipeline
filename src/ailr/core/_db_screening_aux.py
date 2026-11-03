@@ -236,8 +236,8 @@ class ScreeningAuxMixin:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def full_text_exclusion_counts(self, project_id: int, *, workflow: str,
-                                   route: str | None = None) -> list[dict]:
+    def full_text_exclusion_counts(self, project_id: int, *, workflow: str, route: str | None = None,
+                                   within: set[int] | None = None) -> list[dict]:
         """Full-text exclusions counted per reason (human reviewers), for PRISMA reporting.
 
         The reports counted are final_exclude_ids at full text, so an unresolved disagreement or a
@@ -255,7 +255,7 @@ class ScreeningAuxMixin:
         the individual votes: the adjudication is the final call, and in assisted mode it is often
         the only place a reason exists at all. Otherwise each reviewer's latest vote supplies it.
         """
-        excluded = self.final_exclude_ids(project_id, "full_text", workflow=workflow, route=route)
+        excluded = self.final_exclude_ids(project_id, "full_text", workflow=workflow, route=route, within=within)
         if not excluded:
             return []
 
@@ -307,11 +307,11 @@ class ScreeningAuxMixin:
             for reason, sources in sorted(per_reason.items(), key=lambda kv: (-len(kv[1]), kv[0]))
         ]
 
-    def count_full_text_excluded_reports(self, project_id: int, *, workflow: str,
-                                         route: str | None = None) -> int:
+    def count_full_text_excluded_reports(self, project_id: int, *, workflow: str, route: str | None = None,
+                                         within: set[int] | None = None) -> int:
         """Distinct reports excluded at full text. The PRISMA box needs this, not the sum of the
         per-reason counts, which double-counts a report excluded for more than one reason."""
-        return len(self.final_exclude_ids(project_id, "full_text", workflow=workflow, route=route))
+        return len(self.final_exclude_ids(project_id, "full_text", workflow=workflow, route=route, within=within))
 
     def screening_disagreements(self, project_id: int, stage: str = "abstract") -> list[dict]:
         """Paired AI+human decisions where verdicts differ, at ONE stage. Includes title + both
@@ -352,7 +352,7 @@ class ScreeningAuxMixin:
             FROM sources s
             JOIN latest_ai ai ON ai.source_id = s.id
             JOIN latest_human hum ON hum.source_id = s.id
-            WHERE s.project_id = ?
+            WHERE s.project_id = ? AND COALESCE(s.is_duplicate, 0) = 0
               AND ai.decision != hum.decision
             ORDER BY s.id
         """

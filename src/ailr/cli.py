@@ -390,8 +390,8 @@ def metrics(
     """Print AI/human screening summary, agreement (Cohen's kappa), API token usage."""
     try:
         proj = Project.load(project)
-        ai_counts = proj.db.screening_summary(proj.project_id, "ai", exclude_duplicates=True)
-        human_counts = proj.db.screening_summary(proj.project_id, "human", exclude_duplicates=True)
+        ai_counts = proj.db.screening_summary(proj.project_id, "ai")
+        human_counts = proj.db.screening_summary(proj.project_id, "human")
 
         # One entry per reviewer pair per stage. `uncertain` is folded into include (an uncertain
         # vote does not exclude) and votes are read before adjudication.

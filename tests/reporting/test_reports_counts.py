@@ -17,6 +17,7 @@ from ailr.core.project import Project
 from ailr.core.source import Source
 from ailr.exports.methods import build_methods_skeleton
 from ailr.exports.prisma import build_prisma_report, build_prisma_svg, prisma_counts
+from ailr.exports.tables import _export_sources
 from ailr.llm.base import CallMetadata
 from ailr.metrics import (
     BINARY_CATEGORIES,
@@ -122,9 +123,11 @@ class TestPrismaCounts:
     def test_reconciliation_overrides_votes_in_the_flow(self, tmp_project):
         db = tmp_project.db
         s_out = _add_source(tmp_project, "included then adjudicated out", with_md=True)
+        settle(db, s_out, "include", stage="abstract")
         vote(db, s_out, "include", "amber", stage="full_text")
         db.insert_screening_reconciliation(s_out, "exclude", adjudicator="pi", stage="full_text")
         s_in = _add_source(tmp_project, "excluded then adjudicated in", with_md=True)
+        settle(db, s_in, "include", stage="abstract")
         vote(db, s_in, "exclude", "amber", stage="full_text")
         db.insert_screening_reconciliation(s_in, "include", adjudicator="pi", stage="full_text")
         c = prisma_counts(tmp_project)
@@ -135,6 +138,67 @@ class TestPrismaCounts:
         assert c["records_identified"] == 0
         assert c["abstract_screened"] == 0
         assert c["studies_included"] == 0
+
+
+class TestFullTextBoxesFollowTheAbstractStage:
+    """A forced re-screen, or a reset abstract vote, can reopen a paper after its full text was
+    reviewed. The queue drops it at once, so the later boxes must too, or they outgrow "sought"."""
+
+    def _reopened(self, project):
+        db = project.db
+        kept = _add_source(project, "stays in the review", with_md=True)
+        reopened = _add_source(project, "abstract verdict changed later", with_md=True)
+        for sid in (kept, reopened):
+            settle(db, sid, "include", stage="abstract")
+            settle(db, sid, "include", stage="full_text")
+        vote(db, reopened, "exclude", "gpt", stage="abstract", reviewer_type="ai")
+        return kept
+
+    def test_the_flow_stops_counting_it(self, tmp_project):
+        self._reopened(tmp_project)
+        c = prisma_counts(tmp_project)
+        assert (c["reports_sought"], c["full_text_assessed"], c["reports_included"], c["studies_included"]) == (1, 1, 1, 1)
+
+    def test_each_arm_stops_counting_it(self, tmp_project):
+        self._reopened(tmp_project)
+        arm = prisma_counts(tmp_project)["database_arm"]
+        assert (arm["sought"], arm["assessed"], arm["included_reports"], arm["included"]) == (1, 1, 1, 1)
+
+    def test_the_included_export_stops_listing_it(self, tmp_project):
+        kept = self._reopened(tmp_project)
+        assert [s.id for s in _export_sources(tmp_project, only_includes=True)] == [kept]
+
+    def test_a_full_text_exclusion_stops_counting_too(self, tmp_project):
+        db = tmp_project.db
+        sid = _add_source(tmp_project, "excluded at full text", with_md=True)
+        settle(db, sid, "include", stage="abstract")
+        settle(db, sid, "exclude", stage="full_text")
+        assert prisma_counts(tmp_project)["full_text_excluded_reports"] == 1
+        vote(db, sid, "exclude", "gpt", stage="abstract", reviewer_type="ai")
+        c = prisma_counts(tmp_project)
+        assert c["full_text_excluded_reports"] == 0 and c["full_text_exclusion_reasons"] == []
+
+
+class TestTwoAiModelsOnOnePaper:
+    def _rescreened(self, project):
+        db = project.db
+        for i in range(4):
+            sid = _add_source(project, f"paper {i}")
+            vote(db, sid, "exclude", "model-a", stage="abstract", reviewer_type="ai")
+            vote(db, sid, "include", "model-b", stage="abstract", reviewer_type="ai")
+            if i:
+                vote(db, sid, "include", "amber", stage="abstract")
+
+    def test_each_paper_counts_once_with_its_latest_verdict(self, tmp_project):
+        self._rescreened(tmp_project)
+        c = prisma_counts(tmp_project)
+        assert (c["ai_abstract_screened"], c["ai_abstract_included"], c["ai_abstract_excluded"]) == (4, 4, 0)
+
+    def test_the_methods_headline_is_not_ai_against_ai(self, tmp_project):
+        self._rescreened(tmp_project)
+        text = build_methods_skeleton(tmp_project)
+        assert "Agreement between AI: model-a and amber" in text
+        assert "AI: model-a vs AI: model-b" in text      # still reported, as a further pair
 
 
 class TestPrismaFollowsTheStageWorkflows:

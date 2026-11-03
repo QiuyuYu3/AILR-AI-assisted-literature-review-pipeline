@@ -189,7 +189,7 @@ def _fetch_source_page(conn, where_sql: str, params: list, sort_by: str, page: i
     page = max(0, min(page, total_pages - 1))
     order = _SORT_ORDERS.get(sort_by, "s.id")
     rows = conn.execute(
-        f"SELECT s.* FROM sources s WHERE {where_sql} ORDER BY {order} LIMIT ? OFFSET ?",
+        f"SELECT s.* FROM sources s WHERE {where_sql} ORDER BY {order}, s.id LIMIT ? OFFSET ?",  # ties must page stably
         params + [page_size, page * page_size],
     ).fetchall()
     return [_row_to_source(r) for r in rows], total, page
@@ -378,9 +378,9 @@ class ScreeningMixin:
         stage: str = "abstract",
     ) -> list[Source]:
         # One stage only: the full-text verdict extraction writes says nothing about the abstract.
-        sql = """
+        sql = f"""
             SELECT s.* FROM sources s
-            WHERE s.project_id = ?
+            WHERE s.project_id = ? {_NOT_DUPLICATE}
               AND NOT EXISTS (
                   SELECT 1 FROM screening_decisions d
                   WHERE d.source_id = s.id AND d.reviewer_type = ? AND d.stage = ?
@@ -395,19 +395,21 @@ class ScreeningMixin:
         return [_row_to_source(r) for r in rows]
 
     def screening_summary(self, project_id: int, reviewer_type: str = "ai", stage: str = "abstract",
-                          route: str | None = None, exclude_duplicates: bool = False) -> dict[str, int]:
-        # Count only the latest decision per (source, reviewer); superseded re-votes are excluded.
+                          route: str | None = None) -> dict[str, int]:
+        # Latest decision per (source, reviewer), so superseded re-votes drop out. The AI is one
+        # reviewer however many models judged the paper, as in the conflict rule.
+        same_reviewer = "" if reviewer_type == "ai" else "AND reviewer_id = d.reviewer_id"
         rows = self._conn.execute(
             f"""
             SELECT d.decision AS decision, COUNT(*) AS n
             FROM screening_decisions d
             JOIN sources s ON d.source_id = s.id
             WHERE s.project_id = ? AND d.reviewer_type = ? AND d.stage = ?
-              {_route_filter(route)} {_NOT_DUPLICATE if exclude_duplicates else ""}
+              {_route_filter(route)} {_NOT_DUPLICATE}
               AND d.id = (
                   SELECT MAX(id) FROM screening_decisions
                   WHERE source_id = d.source_id
-                    AND reviewer_id = d.reviewer_id
+                    {same_reviewer}
                     AND reviewer_type = d.reviewer_type
                     AND stage = d.stage
               )
@@ -421,17 +423,19 @@ class ScreeningMixin:
         return out
 
     def count_sources_screened(self, project_id: int, reviewer_type: str = "human", stage: str = "abstract",
-                               route: str | None = None, exclude_duplicates: bool = False) -> int:
-        return self._conn.execute(
+                               route: str | None = None, within: set[int] | None = None) -> int:
+        rows = self._conn.execute(
             f"""
-            SELECT COUNT(DISTINCT d.source_id) AS n
+            SELECT DISTINCT d.source_id AS id
             FROM screening_decisions d
             JOIN sources s ON d.source_id = s.id
             WHERE s.project_id = ? AND d.reviewer_type = ? AND d.stage = ?
-              {_route_filter(route)} {_NOT_DUPLICATE if exclude_duplicates else ""}
+              {_route_filter(route)} {_NOT_DUPLICATE}
             """,
             (project_id, reviewer_type, stage),
-        ).fetchone()["n"]
+        ).fetchall()
+        ids = {r["id"] for r in rows}
+        return len(ids if within is None else ids & within)
 
     def get_latest_ai_decision(self, source_id: int, stage: str = "abstract") -> dict | None:
         row = self._conn.execute(
@@ -824,7 +828,7 @@ class ScreeningMixin:
 
     def final_include_ids(self, project_id: int, stage: str = "abstract", *, workflow: str,
                           require_markdown: bool = False, route: str | None = None,
-                          not_retrieved: bool | None = None) -> set[int]:
+                          not_retrieved: bool | None = None, within: set[int] | None = None) -> set[int]:
         """PAPERS whose review at this stage is FINISHED and settled on include.
 
         Three states exist, not two: include, exclude, and not-yet-decided. A paper only counts
@@ -836,6 +840,9 @@ class ScreeningMixin:
 
         The conflict rule itself lives in unresolved_conflict_ids and is only referenced here,
         so the two can never drift apart.
+
+        `within` narrows the result: a full-text verdict only counts while the abstract stage still
+        carries the paper forward, and that stage has its own workflow.
         """
         md = "AND s.markdown_path IS NOT NULL" if require_markdown else ""
         nr = ""
@@ -847,10 +854,11 @@ class ScreeningMixin:
               AND {stage_final_include_sql(stage, team_size_for(workflow), ai_votes=ai_votes_for(workflow))}
         """
         settled = {r["id"] for r in self._conn.execute(sql, (project_id,)).fetchall()}
-        return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
+        settled -= self.unresolved_conflict_ids(project_id, workflow, stage=stage)
+        return settled if within is None else settled & within
 
     def final_exclude_ids(self, project_id: int, stage: str = "abstract", *, workflow: str,
-                          route: str | None = None) -> set[int]:
+                          route: str | None = None, within: set[int] | None = None) -> set[int]:
         """PAPERS whose review at this stage is FINISHED and settled on exclude: the mirror of
         final_include_ids, so a paper sits in one of the two boxes or, while unfinished, in neither."""
         sql = f"""
@@ -859,7 +867,8 @@ class ScreeningMixin:
               AND {stage_final_exclude_sql(stage, team_size_for(workflow), ai_votes=ai_votes_for(workflow))}
         """
         settled = {r["id"] for r in self._conn.execute(sql, (project_id,)).fetchall()}
-        return settled - self.unresolved_conflict_ids(project_id, workflow, stage=stage)
+        settled -= self.unresolved_conflict_ids(project_id, workflow, stage=stage)
+        return settled if within is None else settled & within
 
     def awaiting_ai_ids(self, project_id: int, workflow: str, stage: str = "abstract") -> set[int]:
         """Papers a human has voted on that the AI has not judged yet: unsettled, but not a conflict."""
@@ -868,12 +877,12 @@ class ScreeningMixin:
         sql = f"SELECT s.id FROM sources s WHERE s.project_id = ? {_NOT_DUPLICATE} AND {_awaiting_ai_sql(stage)}"
         return {r["id"] for r in self._conn.execute(sql, (project_id,)).fetchall()}
 
-    def count_final_include_studies(self, project_id: int, *, workflow: str,
-                                    route: str | None = None) -> int:
+    def count_final_include_studies(self, project_id: int, *, workflow: str, route: str | None = None,
+                                    within: set[int] | None = None) -> int:
         """Included STUDIES, where several reports of one study count once. PRISMA 2020's included
         box reports this alongside the number of reports. Equal to the report count unless someone
         has grouped companion reports."""
-        ids = self.final_include_ids(project_id, "full_text", workflow=workflow, route=route)
+        ids = self.final_include_ids(project_id, "full_text", workflow=workflow, route=route, within=within)
         if not ids:
             return 0
         ph = ",".join("?" for _ in ids)
@@ -885,13 +894,13 @@ class ScreeningMixin:
 
     def count_final_includes(self, project_id: int, stage: str = "abstract", *, workflow: str,
                              require_markdown: bool = False, route: str | None = None,
-                             not_retrieved: bool | None = None) -> int:
+                             not_retrieved: bool | None = None, within: set[int] | None = None) -> int:
         """How many PAPERS (not decisions) final_include_ids returns. For the PRISMA flow, where
         two reviewers including the same paper must count once.
         `not_retrieved` narrows to (or excludes) reports marked as impossible to obtain."""
         return len(self.final_include_ids(
             project_id, stage, workflow=workflow, require_markdown=require_markdown,
-            route=route, not_retrieved=not_retrieved,
+            route=route, not_retrieved=not_retrieved, within=within,
         ))
 
     def list_sources_overview(self, project_id: int) -> list[dict]:
@@ -1012,10 +1021,11 @@ class ScreeningMixin:
         row = self._conn.execute(
             """
             SELECT
-                (SELECT COUNT(*) FROM sources WHERE project_id = ?) AS total,
+                (SELECT COUNT(*) FROM sources WHERE project_id = ? AND COALESCE(is_duplicate, 0) = 0) AS total,
                 (SELECT COUNT(DISTINCT d.source_id) FROM screening_decisions d
                    JOIN sources s ON s.id = d.source_id
-                   WHERE s.project_id = ? AND d.reviewer_id = ? AND d.stage = ?) AS mine
+                   WHERE s.project_id = ? AND d.reviewer_id = ? AND d.stage = ?
+                     AND COALESCE(s.is_duplicate, 0) = 0) AS mine
             """,
             (project_id, project_id, reviewer_id, stage),
         ).fetchone()

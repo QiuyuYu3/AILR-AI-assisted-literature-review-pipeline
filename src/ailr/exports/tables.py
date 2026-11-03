@@ -113,8 +113,9 @@ def _export_sources(project: Project, only_includes: bool) -> list:
     sources = project.db.list_sources_with_markdown(project.project_id)
     if not only_includes:
         return sources
-    included = project.db.final_include_ids(
-        project.project_id, "full_text", workflow=project.config.screening_workflow("full_text"))
+    db, pid, config = project.db, project.project_id, project.config
+    carried = db.final_include_ids(pid, "abstract", workflow=config.screening_workflow("abstract"))
+    included = db.final_include_ids(pid, "full_text", workflow=config.screening_workflow("full_text"), within=carried)
     return [s for s in sources if s.id in included]
 
 
