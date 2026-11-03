@@ -89,6 +89,8 @@
 - A paper judged by two AI models counted twice in the AI figures, and the methods headline could report agreement between the two models.
 - Flagged duplicates are now out of the metrics JSON, the sidebar counts, normal AI runs and `ailr show disagreements`.
 - Paging a sorted queue on Postgres could repeat or skip papers with equal sort values.
+- Importing an AI result that held only a verdict emptied the paper's current AI extraction.
+- AI calls whose response was rejected or cut off were billed but left out of the token counts.
 
 ---
 ## [0.36.0] – 2026-10-04

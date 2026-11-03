@@ -8,15 +8,25 @@ extraction standing rather than half-replacing it.
 
 from pathlib import Path
 
+import pytest
+
 from ailr.core.source import Source
 from ailr.exceptions import LLMError
 from ailr.llm.mock import MockLLMClient, synth_from_tool_schema
 from ailr.preprocess import PDFConverter
 from ailr.reviewers import LLMReviewer, Reviewer
+from ailr.tasks.calibrate import ExtractionQuickTestTask, QuickTestTask
 from ailr.tasks.extract import ExtractionTask
 from ailr.tasks.preprocess import PreprocessTask
 from ailr.tasks.screen import ScreeningTask
-from tests.helpers import add_source, count_decisions, extract_reviewer, screen_reviewer, settle
+from tests.helpers import (
+    StubClient,
+    add_source,
+    count_decisions,
+    extract_reviewer,
+    screen_reviewer,
+    settle,
+)
 
 
 class _BoomReviewer(Reviewer):
@@ -58,6 +68,52 @@ def _extractable_source(project, title="Paper"):
     sid = add_source(project, title, abstract="An abstract.", md_on_disk=True)
     settle(project.db, sid, "include", stage="abstract")
     return sid
+
+
+class TestRejectedResponsesStayOnTheBill:
+    """ailr rejecting a response does not refund it, and an extraction is a whole paper's tokens."""
+
+    @staticmethod
+    def _calls(project):
+        return [r["calls"] for r in project.db.api_call_summary(project.project_id)]
+
+    def test_a_screening_response_that_fails_validation(self, tmp_project):
+        _abstract_source(tmp_project)
+        summary = ScreeningTask(tmp_project, LLMReviewer(StubClient({"decision": "Include"}))).run()
+        assert summary.failed == 1 and summary.total_input_tokens == 10
+        assert self._calls(tmp_project) == [1]
+
+    def test_an_extraction_response_that_fails_validation(self, tmp_project):
+        _extractable_source(tmp_project)
+        summary = ExtractionTask(tmp_project, LLMReviewer(StubClient({"_flag_check": None}))).run()
+        assert summary.failed == 1 and summary.total_output_tokens == 5
+        assert self._calls(tmp_project) == [1]
+
+    def test_a_quick_test_response_that_fails_validation(self, tmp_project):
+        sid = _abstract_source(tmp_project)
+        QuickTestTask(tmp_project, LLMReviewer(StubClient({"decision": "Include"}))).run(source_ids=[sid])
+        assert self._calls(tmp_project) == [1]
+
+    def test_an_extraction_quick_test_response_that_fails_validation(self, tmp_project):
+        sid = _extractable_source(tmp_project)
+        ExtractionQuickTestTask(tmp_project, LLMReviewer(StubClient({"_flag_check": None}))).run(source_ids=[sid])
+        assert self._calls(tmp_project) == [1]
+
+    def test_a_call_that_got_no_response_does_not_repeat_the_previous_ones_usage(self):
+        """Worker threads are reused, so the last call's metadata is still on this one."""
+        ok = {"decision": "include", "reasoning": "r", "confidence": 5, "evidence_quotes": []}
+        client = StubClient(ok)
+        reviewer = LLMReviewer(client)
+        source = Source(title="T", id=1)
+        reviewer.screen(source, "criteria", "prompt")
+
+        def down(**_kwargs):
+            raise LLMError("connection refused")
+
+        client.complete_structured = down
+        with pytest.raises(LLMError) as exc:
+            reviewer.screen(source, "criteria", "prompt")
+        assert exc.value.metadata is None
 
 
 class TestScreeningFailures:

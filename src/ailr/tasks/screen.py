@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from ailr.core.project import Project
 from ailr.criteria import load_screening_inputs
-from ailr.reviewers import LLMReviewer, Reviewer, ScreeningDecision
+from ailr.reviewers import LLMReviewer, Reviewer, ScreeningDecision, note_usage
 
 
 @dataclass
@@ -138,18 +138,16 @@ class ScreeningTask:
                 done += 1
                 try:
                     decision, meta = fut.result()
+                    if not batch:
+                        note_usage(meta, summary, call_metas)
                     _save(decision)
                     summary.add_decision(decision)
-
-                    if not batch and meta is not None:
-                        call_metas.append(meta)
-                        summary.total_input_tokens += meta.input_tokens
-                        summary.total_output_tokens += meta.output_tokens
-                        summary.total_cached_input_tokens += meta.cached_input_tokens
 
                     if on_progress:
                         on_progress(done, summary.total, decision, None)
                 except Exception as e:
+                    if not batch:
+                        note_usage(getattr(e, "metadata", None), summary, call_metas)
                     summary.failed += 1
                     summary.failures.append(
                         {"source_id": source.id, "title": source.title, "error": str(e)}

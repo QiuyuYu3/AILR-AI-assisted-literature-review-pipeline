@@ -209,6 +209,14 @@ class TestImportAiScreening:
 
 
 class TestImportAiExtraction:
+    def test_a_record_with_only_a_verdict_leaves_the_fields_in_place(self, tmp_project):
+        db = tmp_project.db
+        sid = add_source(tmp_project)
+        db.insert_extraction(ExtractionResult(extractor_type="ai", extractor_id="anthropic:model-a",
+                                              field_name="sample_size", value=40, source_id=sid))
+        import_ai_results(tmp_project, [{"source_id": sid, "flag_check": {"decision": "include"}}])
+        assert [r["field_name"] for r in db.list_extractions(sid, extractor_type="ai")] == ["sample_size"]
+
     def test_fields_and_flag_check_land(self, tmp_project):
         db = tmp_project.db
         sid = add_source(tmp_project)

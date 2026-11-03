@@ -1,6 +1,7 @@
 """Reviewers: abstraction, decision dataclasses, and the LLM-backed reviewer."""
 
 import copy
+import functools
 import json
 import threading
 from abc import ABC, abstractmethod
@@ -155,6 +156,31 @@ SCREENING_TOOL = ToolSchema(
 )
 
 
+def _keeps_usage(call):
+    """A response rejected after the API billed it still reports what it cost."""
+
+    @functools.wraps(call)
+    def wrapper(self, *args, **kwargs):
+        self._tls.metadata = None  # worker threads are reused, so this may hold an earlier paper's call
+        try:
+            return call(self, *args, **kwargs)
+        except LLMError as e:
+            e.metadata = e.metadata or self.last_metadata
+            raise
+
+    return wrapper
+
+
+def note_usage(meta: CallMetadata | None, summary: Any, call_metas: list) -> None:
+    """Book one LLM call on a run summary, usable response or not: the API has billed it either way."""
+    if meta is None:
+        return
+    call_metas.append(meta)
+    summary.total_input_tokens += meta.input_tokens
+    summary.total_output_tokens += meta.output_tokens
+    summary.total_cached_input_tokens += meta.cached_input_tokens
+
+
 class LLMReviewer(Reviewer):
     def __init__(
         self,
@@ -202,6 +228,7 @@ class LLMReviewer(Reviewer):
             params["max_tokens"] = max_tokens
         return params
 
+    @_keeps_usage
     def screen(
         self,
         source: Source,
@@ -246,6 +273,7 @@ class LLMReviewer(Reviewer):
         )
 
 
+    @_keeps_usage
     def extract(
         self,
         source: Source,

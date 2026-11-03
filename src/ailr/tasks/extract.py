@@ -15,6 +15,7 @@ from ailr.reviewers import (
     LLMReviewer,
     Reviewer,
     ScreeningDecision,
+    note_usage,
 )
 
 ProgressCallback = Callable[[int, int, Source | None, Exception | None], None]
@@ -152,6 +153,8 @@ class ExtractionTask:
                 done += 1
                 try:
                     extraction, meta, audit = fut.result()
+                    if not batch:
+                        note_usage(meta, summary, call_metas)
                     extraction.source_id = source.id
                     if audit is not None:
                         summary.quote_values += audit.values
@@ -221,16 +224,12 @@ class ExtractionTask:
                                     source.id, previous_max
                                 )
 
-                    if not batch and meta is not None:
-                        call_metas.append(meta)
-                        summary.total_input_tokens += meta.input_tokens
-                        summary.total_output_tokens += meta.output_tokens
-                        summary.total_cached_input_tokens += meta.cached_input_tokens
-
                     summary.extracted += 1
                     if on_progress:
                         on_progress(done, len(candidates), source, None)
                 except Exception as e:
+                    if not batch:
+                        note_usage(getattr(e, "metadata", None), summary, call_metas)
                     summary.failed += 1
                     # Type included: several DB/IO errors stringify to an empty message, which
                     # reported as "failed" with no reason at all.

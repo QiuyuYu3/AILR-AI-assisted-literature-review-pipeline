@@ -100,6 +100,7 @@ class QuickTestTask:
                 if on_progress:
                     on_progress(idx, sample_size, decision, None)
             except Exception as e:
+                _collect_rejected_call(e, call_metas)
                 summary.failed += 1
                 summary.failures.append({"source_id": source.id, "title": source.title, "error": str(e)})
                 if on_progress:
@@ -112,6 +113,12 @@ class QuickTestTask:
 def _collect_metadata(reviewer: Reviewer, call_metas: list) -> None:
     if isinstance(reviewer, LLMReviewer) and reviewer.last_metadata:
         call_metas.append(reviewer.last_metadata)
+
+
+def _collect_rejected_call(error: Exception, call_metas: list) -> None:
+    meta = getattr(error, "metadata", None)
+    if meta is not None:
+        call_metas.append(meta)
 
 
 _KAPPA_CATEGORIES = ["include", "exclude", "uncertain"]
@@ -282,6 +289,7 @@ class ExtractionQuickTestTask:
                 if on_progress:
                     on_progress(idx, sample_size, None, None)
             except Exception as e:
+                _collect_rejected_call(e, call_metas)
                 summary.failed += 1
                 summary.failures.append({"source_id": source.id, "title": source.title, "error": str(e)})
                 if on_progress:
