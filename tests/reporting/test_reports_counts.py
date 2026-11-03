@@ -932,6 +932,29 @@ class TestIdentificationArms:
         assert c["database_arm"]["included"] + c["other_arm"]["included"] == c["studies_included"] == 2
         assert c["by_route"]["other"] == [{"source_database": "Citation searching", "n": 1}]
 
+    def test_a_record_dropped_at_import_still_counts_for_its_database(self, tmp_project):
+        """PRISMA reports what each database returned, so the split must add up to the total."""
+        add_source(tmp_project, "kept", source_database="Scopus")
+        stash_duplicate(tmp_project.db, tmp_project.project_id, "seen again", full_record_json=json.dumps(
+            {"source_database": "WoS", "identification_route": "database"}))
+        stash_duplicate(tmp_project.db, tmp_project.project_id, "seen via citations", full_record_json=json.dumps(
+            {"source_database": "Citations", "identification_route": "other"}))
+        stash_duplicate(tmp_project.db, tmp_project.project_id, "from before records were kept")
+        c = prisma_counts(tmp_project)
+        assert sum(d["n"] for d in c["by_source_database"]) == c["records_identified"] == 4
+        assert c["by_route"]["database"] == [{"source_database": "Scopus", "n": 1}, {"source_database": "WoS", "n": 1},
+                                             {"source_database": "unknown", "n": 1}]
+        assert c["by_route"]["other"] == [{"source_database": "Citations", "n": 1}]
+
+    def test_a_duplicate_inside_a_citation_file_stays_in_the_other_arm(self, tmp_project, tmp_path):
+        ris = tmp_path / "citations.ris"
+        record = "TY  - JOUR\nTI  - {}\nDO  - 10.1/same\nER  - \n"
+        ris.write_text(record.format("First copy") + record.format("Second copy"), encoding="utf-8")
+        tmp_project.ingest(ris, source_database="Citations", identification_route="other")
+        c = prisma_counts(tmp_project)
+        assert (c["other_arm"]["identified"], c["other_arm"]["duplicates"]) == (2, 1)
+        assert (c["database_arm"]["identified"], c["database_arm"]["duplicates"]) == (0, 0)
+
     def test_each_arm_splits_retrieved_from_not_retrieved(self, tmp_project):
         """The project-level split is covered above; the per-arm one runs through _arm_counts,
         which had no test of its own."""

@@ -3,6 +3,7 @@
 Generates a Markdown report. SVG diagram is a future enhancement.
 """
 
+from collections import Counter
 from typing import Any
 
 from ailr.core.config import extractors_for
@@ -40,6 +41,14 @@ def _arm_counts(db: Any, pid: int, route: str, workflow: str, ft_workflow: str) 
         "included": db.count_final_include_studies(pid, workflow=ft_workflow, route=route),
         "included_reports": included_reports,
     }
+
+
+def _across_routes(by_route: dict[str, list[dict]]) -> list[dict]:
+    totals: Counter = Counter()
+    for rows in by_route.values():
+        for d in rows:
+            totals[d["source_database"]] += d["n"]
+    return [{"source_database": name, "n": n} for name, n in totals.most_common()]
 
 
 def _extraction_completed(db: Any, extraction_workflow: str, source_ids: set[int]) -> set[int]:
@@ -86,14 +95,15 @@ def prisma_counts(project: Project) -> dict[str, Any]:
     included_report_ids = db.final_include_ids(pid, "full_text", workflow=ft_workflow)
     reports_included = len(included_report_ids)
     extracted = _extraction_completed(db, project.config.extraction.workflow, included_report_ids)
+    by_route = db.identified_by_route_and_database(pid)
 
     return {
         "project_name": project.config.project.name,
         "project_type": project.config.project.type,
-        "by_source_database": db.stats(pid)["by_source_database"],
+        "by_source_database": _across_routes(by_route),
         # PRISMA 2020's two identification arms. `other_arm` is empty for a database-only review,
         # in which case the diagram stays single-column.
-        "by_route": db.sources_by_route_and_database(pid),
+        "by_route": by_route,
         "database_arm": _arm_counts(db, pid, "database", workflow, ft_workflow),
         "other_arm": _arm_counts(db, pid, "other", workflow, ft_workflow),
         "records_identified": records_after_dedup + duplicates_removed,

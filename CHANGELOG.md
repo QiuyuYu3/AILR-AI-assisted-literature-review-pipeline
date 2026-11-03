@@ -81,6 +81,10 @@
 - The banner Undo withdraws the vote it announced even after the reviewer ID changed; a reset with no vote of one's own no longer clears someone else's ruling.
 - Assisted conflicts compare the AI with each human's latest vote, so votes cast before a switch from independent still count.
 - A tab left open while another tab switched projects wrote its clicks into the new project, onto papers with the same IDs; it is now refused and asked to reload.
+- RIS imports dropped abstracts stored in N2 (EBSCOhost, older EndNote); placeholders such as Scopus's "[No abstract available]" no longer count as abstracts.
+- Two new versions of one title (different DOIs) matching an existing record lost the first without a trace; each record now absorbs one, and the other is imported.
+- PRISMA's per-database counts left out records dropped at import, so they did not add up to the total.
+- Duplicates inside a file imported via other methods were counted in the database arm.
 
 ---
 ## [0.36.0] – 2026-10-04

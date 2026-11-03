@@ -172,12 +172,12 @@ class Project:
         # DOI given as a link is stored bare.
         for s in sources:
             s.doi = dedup.bare_doi(s.doi)
+            s.abstract = dedup.clean_abstract(s.abstract)
+            s.project_id = self._project_id
+            s.identification_route = identification_route  # the duplicates dropped below keep theirs too
 
         parsed = len(sources)
         sources, batch_dups = dedup.dedup_by_doi(sources)
-        for s in sources:
-            s.project_id = self._project_id
-            s.identification_route = identification_route
 
         # Collect every dropped record (with its full JSON so it can be restored later) and
         # write them in one bulk transaction instead of one INSERT+commit per duplicate.

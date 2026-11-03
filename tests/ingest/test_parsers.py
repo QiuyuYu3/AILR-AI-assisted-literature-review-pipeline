@@ -20,6 +20,32 @@ class TestRis:
         assert [s.title for s in parse_ris(path)] == ["First", "Second, file cut short"]
 
 
+class TestAbstractSources:
+    _RIS = "TY  - JOUR\nTI  - A paper\n{}\nER  - \n"
+
+    def test_an_abstract_in_n2_is_read(self, tmp_path):
+        [src] = parse_ris(_write(tmp_path, "ebsco.ris", self._RIS.format("N2  - Exported as N2.")))
+        assert src.abstract == "Exported as N2."
+
+    def test_ab_wins_over_n2(self, tmp_path):
+        tags = "AB  - The abstract.\nN2  - Something else."
+        [src] = parse_ris(_write(tmp_path, "both.ris", self._RIS.format(tags)))
+        assert src.abstract == "The abstract."
+
+    @pytest.mark.parametrize("text", ["[No abstract available]", "No abstract available.", " Abstract not available "])
+    def test_a_database_placeholder_is_no_abstract(self, tmp_project, tmp_path, text):
+        path = _write(tmp_path, "scopus.ris", self._RIS.format(f"AB  - {text}"))
+        tmp_project.ingest(path, source_database="Scopus")
+        [src] = tmp_project.db.list_sources(tmp_project.project_id)
+        assert src.abstract is None
+
+    def test_a_real_abstract_about_missing_abstracts_stays(self, tmp_project, tmp_path):
+        text = "No abstract available for half the records, so we screened full texts."
+        tmp_project.ingest(_write(tmp_path, "real.ris", self._RIS.format(f"AB  - {text}")), source_database="X")
+        [src] = tmp_project.db.list_sources(tmp_project.project_id)
+        assert src.abstract == text
+
+
 class TestBibtex:
     def test_biblatex_entry_types_and_fields_are_read(self, tmp_path):
         path = _write(tmp_path, "a.bib", (

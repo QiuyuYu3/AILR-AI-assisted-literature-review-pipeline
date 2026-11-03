@@ -15,6 +15,16 @@ from ailr.core.source import Source
 from ailr.ingest import dedup
 
 
+def _each_on_its_own(new_records, existing):
+    """The title rule per record: within one import an existing record absorbs only one of them."""
+    kept, matched = [], []
+    for new in new_records:
+        k, m = dedup.dedup_by_title([new], existing)
+        kept += k
+        matched += m
+    return kept, matched
+
+
 class TestDedupFunctions:
     def test_normalize_title(self):
         assert dedup.normalize_title("LAEO-Net++:  A   Deep Model!") == "laeo net a deep model"
@@ -83,7 +93,7 @@ class TestDedupFunctions:
         other_doi = Source(title="Dyadic gaze coordination in infancy", doi="10.1/second")
         same_doi_other_notation = Source(title="Dyadic gaze coordination in infancy", doi="https://doi.org/10.1/FIRST")
         no_doi = Source(title="Dyadic gaze coordination in infancy")
-        kept, matched = dedup.dedup_by_title([other_doi, same_doi_other_notation, no_doi], existing)
+        kept, matched = _each_on_its_own([other_doi, same_doi_other_notation, no_doi], existing)
         assert kept == [other_doi]
         assert [n for n, _ in matched] == [same_doi_other_notation, no_doi]
 
@@ -93,7 +103,7 @@ class TestDedupFunctions:
         formats = [Source(title="Dyadic gaze coordination in infancy", authors=[a])
                    for a in ("Lee JH", "J.-H. Lee", "Lee, J.")]
         no_authors = Source(title="Dyadic gaze coordination in infancy")
-        kept, matched = dedup.dedup_by_title([other_author, *formats, no_authors], existing)
+        kept, matched = _each_on_its_own([other_author, *formats, no_authors], existing)
         assert kept == [other_author]
         assert [n for n, _ in matched] == [*formats, no_authors]
 
@@ -109,7 +119,7 @@ class TestDedupFunctions:
         years_later = Source(title="Dyadic gaze coordination in infancy", year=2016)
         online_first = Source(title="Dyadic gaze coordination in infancy", year=2011)
         undated = Source(title="Dyadic gaze coordination in infancy")
-        kept, matched = dedup.dedup_by_title([years_later, online_first, undated], existing)
+        kept, matched = _each_on_its_own([years_later, online_first, undated], existing)
         assert kept == [years_later]
         assert [n for n, _ in matched] == [online_first, undated]
 
@@ -156,6 +166,38 @@ _RIS_A_BARE = """TY  - JOUR
 TI  - Dyadic gaze coordination in infancy
 ER  -
 """
+
+
+def _version(doi, year):
+    return f"""TY  - JOUR
+TI  - Dyadic gaze coordination in infancy
+AU  - Lee, J
+PY  - {year}
+DO  - {doi}
+ER  -
+"""
+
+
+class TestTwoVersionsOfOneTitle:
+    """A record without a DOI, then two versions of it with different DOIs in one file."""
+
+    def _import(self, project, tmp_path):
+        project.ingest(_write_ris(tmp_path / "first.ris", [_RIS_A_BARE]), source_database="test")
+        return project.ingest(
+            _write_ris(tmp_path / "second.ris", [_version("10.1/conf", 2020), _version("10.1/journal", 2021)]),
+            source_database="test",
+        )
+
+    def test_neither_version_vanishes(self, tmp_project, tmp_path):
+        self._import(tmp_project, tmp_path)
+        live = {s.doi for s in tmp_project.db.list_sources(tmp_project.project_id)}
+        assert live == {"10.1/conf", "10.1/journal"}
+
+    def test_only_the_record_they_replace_is_logged_as_a_duplicate(self, tmp_project, tmp_path):
+        result = self._import(tmp_project, tmp_path)
+        assert (result.imported, result.deduplicated) == (1, 1)
+        [dup] = tmp_project.db.list_duplicates(tmp_project.project_id)
+        assert dup["doi"] is None
 
 
 class TestIngestPipeline:

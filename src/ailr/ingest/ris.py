@@ -72,7 +72,8 @@ def detect_source_database(records: list[dict[str, Any]]) -> str | None:
 
 def _record_to_source(rec: dict[str, Any], source_database: str | None) -> Source:
     title = (rec.get("title") or rec.get("primary_title") or "").strip()
-    abstract = rec.get("abstract")
+    # EBSCOhost and older EndNote exports carry the abstract in N2, not AB.
+    abstract = rec.get("abstract") or rec.get("notes_abstract")
     doi = rec.get("doi")
     journal = rec.get("secondary_title") or rec.get("journal_name")
     authors = rec.get("authors") or rec.get("first_authors") or []

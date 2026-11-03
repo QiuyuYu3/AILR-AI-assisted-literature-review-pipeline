@@ -13,6 +13,7 @@ TITLE_MATCH_MAX_YEAR_GAP = 1      # online-first and print years of one paper ca
 TITLE_MIN_WORDS = 4               # "Editorial", "Introduction", "Reply": too generic to merge on title alone
 
 _DOI_PREFIX = re.compile(r"^(?:https?://)?(?:dx\.)?doi\.org/|^doi:\s*", re.IGNORECASE)
+_NO_ABSTRACT = {"no abstract available", "abstract not available", "no abstract"}
 
 
 def normalize_title(title: str) -> str:
@@ -33,6 +34,13 @@ def normalize_doi(doi: str | None) -> str | None:
     """One DOI written as a URL, with a doi: prefix, or in another case compares equal."""
     bare = bare_doi(doi)
     return bare.lower() if bare else None
+
+
+def clean_abstract(abstract: str | None) -> str | None:
+    """None for the placeholder some databases export in place of an abstract, e.g. Scopus."""
+    if abstract and abstract.strip().strip("[].").strip().lower() in _NO_ABSTRACT:
+        return None
+    return abstract
 
 
 def dedup_by_doi(sources: list[Source]) -> tuple[list[Source], list[Source]]:
@@ -95,18 +103,22 @@ def dedup_by_title(
     sources: list[Source],
     existing: list[Source],
 ) -> tuple[list[Source], list[tuple[Source, Source]]]:
-    """Merge only identical titles that nothing else tells apart; the rest is left for screening."""
+    """Merge only identical titles that nothing else tells apart; the rest is left for screening.
+    A record absorbs one new record at most: two versions that differ from each other (different
+    DOIs, say) would otherwise overwrite it in turn and the first would vanish without a trace."""
     by_title: dict[str, list[Source]] = {}
     for e in existing:
         by_title.setdefault(normalize_title(e.title), []).append(e)
 
     kept: list[Source] = []
     matched: list[tuple[Source, Source]] = []
+    claimed: set[int] = set()
     for new in sources:
         norm = normalize_title(new.title)
         candidates = by_title.get(norm, []) if len(norm.split()) >= TITLE_MIN_WORDS else []
-        match = next((e for e in candidates if _nothing_tells_them_apart(new, e)), None)
+        match = next((e for e in candidates if id(e) not in claimed and _nothing_tells_them_apart(new, e)), None)
         if match is not None:
+            claimed.add(id(match))
             matched.append((new, match))
         else:
             kept.append(new)

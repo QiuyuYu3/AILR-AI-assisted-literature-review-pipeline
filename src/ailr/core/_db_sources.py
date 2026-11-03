@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from collections import Counter
 
 from ailr.core._db_facade import _row_to_source
 from ailr.core.pdf_paths import path_for_db
@@ -17,6 +18,15 @@ _INSERT_SOURCE_COLS = (
 _INSERT_SOURCE_SQL = _INSERT_SOURCE_COLS + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 _EDITABLE_SOURCE_COLUMNS = {"doi", "title", "year", "journal", "authors", "abstract", "source_database"}
+
+
+def _stashed_record(raw: str | None) -> dict:
+    """A duplicates row's stored record; empty for a row stashed before records were kept."""
+    try:
+        record = json.loads(raw) if raw else {}
+    except ValueError:
+        return {}
+    return record if isinstance(record, dict) else {}
 
 
 def _source_params(source: "Source") -> tuple:
@@ -263,19 +273,28 @@ class SourcesMixin:
         ).fetchone()
         return row["n"]
 
-    def sources_by_route_and_database(self, project_id: int) -> dict[str, list[dict]]:
-        """{route: [{source_database, n}]} for the two PRISMA identification boxes."""
+    def identified_by_route_and_database(self, project_id: int) -> dict[str, list[dict]]:
+        """{route: [{source_database, n}]} for the PRISMA identification boxes: every record found,
+        so one dropped at import as a duplicate still counts for the database that returned it."""
         rows = self._conn.execute(
             """SELECT COALESCE(identification_route, 'database') AS route,
                       COALESCE(source_database, 'unknown') AS source_database,
                       COUNT(*) AS n
                FROM sources WHERE project_id = ?
-               GROUP BY route, source_database ORDER BY n DESC""",
+               GROUP BY route, source_database""",
             (project_id,),
         ).fetchall()
+        counts = Counter({(r["route"], r["source_database"]): r["n"] for r in rows})
+        stashed = self._conn.execute(
+            "SELECT full_record_json FROM duplicates WHERE project_id = ?", (project_id,)
+        ).fetchall()
+        for row in stashed:
+            record = _stashed_record(row["full_record_json"])
+            route = record.get("identification_route") or "database"
+            counts[(route, record.get("source_database") or "unknown")] += 1
         out: dict[str, list[dict]] = {"database": [], "other": []}
-        for r in rows:
-            out.setdefault(r["route"], []).append({"source_database": r["source_database"], "n": r["n"]})
+        for (route, name), n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+            out.setdefault(route, []).append({"source_database": name, "n": n})
         return out
 
     def count_sources_with_markdown(self, project_id: int) -> int:
